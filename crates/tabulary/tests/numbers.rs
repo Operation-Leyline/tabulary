@@ -12,14 +12,34 @@ fn decimal(text: &str) -> Decimal {
 fn decimal_normalizes_spelling_and_zero_without_rounding() {
     for text in ["12.30", "+001.2300e1", "123e-1"] {
         assert!(decimal(text) == decimal("12.3"));
-        assert_eq!(decimal(text).to_string(), "123e-1");
+        assert_eq!(decimal(text).to_string(), "12.3");
     }
     for text in ["0", "-0.000", "+0e9999999999999999999999999999999999999999"] {
         assert!(decimal(text) == decimal("0"));
         assert_eq!(decimal(text).to_string(), "0");
     }
-    assert_eq!(decimal(".5").to_string(), "5e-1");
-    assert_eq!(decimal("1.").to_string(), "1");
+    for (text, expected) in [
+        (".5", "0.5"),
+        ("1.", "1"),
+        ("1e3", "1000"),
+        ("1.50e2", "150"),
+        ("-000.0500", "-0.05"),
+        ("1e-130", "1e-130"),
+        ("1e125", "1e125"),
+        ("1e38", "1e38"),
+        ("1e-39", "1e-39"),
+    ] {
+        assert_eq!(decimal(text).to_string(), expected);
+    }
+    assert_eq!(decimal("1e37").to_string(), format!("1{}", "0".repeat(37)));
+    assert_eq!(
+        decimal("1e-38").to_string(),
+        format!("0.{}1", "0".repeat(37))
+    );
+    assert_eq!(
+        decimal("-12e-38").to_string(),
+        format!("-0.{}12", "0".repeat(36))
+    );
 }
 
 #[test]
@@ -161,6 +181,21 @@ fn u128_precision_is_checked_without_rounding() {
 }
 
 #[test]
+fn integer_wire_spelling_is_plain_digits() {
+    let mut cx = EncodeContext::new("Invoice");
+    for (encoded, expected) in [
+        (1000u64.encode_value(&mut cx), "1000"),
+        ((-5i64).encode_value(&mut cx), "-5"),
+        (
+            (u128::MAX - 5).encode_value(&mut cx),
+            "340282366920938463463374607431768211450",
+        ),
+    ] {
+        assert_eq!(encoded.unwrap(), AttributeValue::N(expected.into()));
+    }
+}
+
+#[test]
 fn numeric_wire_tags_and_fault_context_are_strict() {
     fn number<T: Value<Wire = wire::Number>>() {}
     number::<Decimal>();
@@ -172,7 +207,7 @@ fn numeric_wire_tags_and_fault_context_are_strict() {
         decimal("12.30")
             .encode_value(&mut EncodeContext::new("Invoice"))
             .unwrap(),
-        AttributeValue::N("123e-1".into())
+        AttributeValue::N("12.3".into())
     );
     let mut cx = DecodeContext::new("Invoice")
         .at(PathSegment::Attribute("lines".into()))

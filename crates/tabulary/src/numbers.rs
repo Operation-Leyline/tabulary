@@ -37,9 +37,10 @@ macro_rules! integers {
             type Wire = wire::Number;
 
             fn encode_value(&self, cx: &mut EncodeContext) -> Result<AttributeValue, EncodeError> {
-                let number: Decimal = self.to_string().parse()
+                let text = self.to_string();
+                text.parse::<Decimal>()
                     .map_err(|_| cx.error(EncodeFault::NumberRange))?;
-                number.encode_value(cx)
+                Ok(AttributeValue::N(text))
             }
 
             fn decode_value(value: &AttributeValue, cx: &mut DecodeContext) -> Result<Self, DecodeError> {

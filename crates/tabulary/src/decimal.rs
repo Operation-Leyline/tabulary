@@ -115,10 +115,17 @@ impl fmt::Display for Decimal {
         if self.negative {
             f.write_str("-")?;
         }
-        write!(f, "{}", self.coefficient)?;
-        if self.exponent != 0 {
-            write!(f, "e{}", self.exponent)?;
+        let digits = self.coefficient.to_string();
+        let point = digits.len() as i16 + self.exponent;
+        if point > 38 || self.exponent < -38 {
+            write!(f, "{digits}e{}", self.exponent)
+        } else if self.exponent >= 0 {
+            write!(f, "{digits:0<width$}", width = point as usize)
+        } else if point <= 0 {
+            write!(f, "0.{digits:0>width$}", width = -self.exponent as usize)
+        } else {
+            let (whole, fraction) = digits.split_at(point as usize);
+            write!(f, "{whole}.{fraction}")
         }
-        Ok(())
     }
 }
