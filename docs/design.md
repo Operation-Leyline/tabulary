@@ -179,6 +179,11 @@ indexes. Read helpers borrow the item; they never convert it through JSON.
 Manual implementations of these public traits are supported. Reserved
 `__private` macro helpers carry no semver guarantee.
 
+`WireType` exposes `const DYNAMO_TYPE: DynamoType`. The public `wire` module
+provides zero-sized `String`, `Number`, `Binary`, `Bool`, `Null`, `List`, `Map`,
+`StringSet`, `NumberSet`, and `BinarySet` markers for the corresponding SDK tags.
+Markers describe a codec's category; they do not implement value conversion.
+
 ## 3. Keys and secondary indexes
 
 Exactly one partition key and at most one sort key are required.

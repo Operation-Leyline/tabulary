@@ -786,6 +786,8 @@ name = "tabulary"
 version = "0.0.0"
 dependencies = [
  "aws-sdk-dynamodb",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
  "tabulary-derive",
 ]
 
