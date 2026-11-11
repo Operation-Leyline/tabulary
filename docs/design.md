@@ -357,6 +357,20 @@ binary floating point. `Decimal` is the choice for exact decimal arithmetic.
 coefficient, signed exponent, and sign suffice for the supported precision;
 arbitrary-precision arithmetic is not required for mapping.
 
+The decimal grammar is `[+-]?(digits+(\.digits*)?|\.digits+)([eE][+-]?digits+)?`,
+using ASCII digits only, with no whitespace. Leading and trailing zeroes do not
+count toward precision. Zero of either sign and any exponent normalizes to `0`.
+Canonical Display writes the signed coefficient without leading or trailing
+zeroes, followed by `e` and the exponent when nonzero (for example `12.30`
+becomes `123e-1`). Nonzero magnitude must be between `1e-130` and
+`9.9999999999999999999999999999999999999e125`, inclusive.
+`Decimal::from_str` returns `DecodeFault::InvalidNumber` for malformed syntax
+and `DecodeFault::NumberRange` for precision or service-domain violations.
+Integer decoding validates this domain first, then returns `InexactNumber`
+for a fractional value or `NumberRange` for a value outside the Rust type's
+range; it never truncates or rounds. Native integer encoding uses the same
+canonical decimal spelling and reports `EncodeFault::NumberRange` when needed.
+
 TTL is enabled only by `#[tabulary(ttl)]` on `TtlSeconds` or its optional form.
 At most one TTL attribute is allowed. Expired items still decode normally;
 there is no hidden filtering or deletion. The caller supplies time values and
