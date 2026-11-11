@@ -349,6 +349,12 @@ DynamoDB `N`. It must reject rather than round. The opt-in field converter
 `tabulary::convert::u128_string` stores the complete `u128` range as decimal
 `S`; its handle has string-wire equality and no numeric ADD or ordering
 methods. This is an explicit schema choice.
+The converter accepts only canonical unsigned decimal strings: `0` or ASCII
+digits starting with `1` through `9`, within `u128` range. Signs, leading zeros,
+whitespace, fractions, and exponent notation return
+`Custom { code: "invalid_u128_string" }`. Other wire types return `WrongType`.
+Its distinct `convert::u128_string::Wire` marker keeps equality separate from
+native string ordering capabilities.
 [AWS number limits](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html)
 define the boundary tests.
 
@@ -404,6 +410,21 @@ decode(&AttributeValue, &mut DecodeContext); }`, with the same result types as
 too, preventing an update from writing a different representation than a put.
 Converters return structured `Custom { code: &'static str }` faults and cannot
 override the owning path. No error value includes the rejected input.
+
+`Native<T>` adapts `Value` to `Converter<T>`. The `field` helpers
+`encode_optional`, `decode_optional`, and `decode_required` accept a context
+already positioned at the physical field and use its selected converter.
+They omit absent optional values and report `Missing` for absent required
+values, including `Nullable<T>`. `Nullable::{Null, Value(T)}` implements `Value`;
+`NULL(false)` returns `Custom { code: "invalid_null" }` because the fault
+taxonomy has no dedicated malformed-null case. Its `NullableWire<W>` marker
+uses `DYNAMO_TYPE = Unknown` for the union of NULL and W and does not inherit
+scalar expression capabilities. This metadata does not permit unknown SDK
+values; those still return `UnsupportedType`. `Option<Nullable<T>>` permits
+absence, explicit null, and a value as three distinct states.
+Encoding `Nullable::Value` rejects an inner codec's NULL output with
+`Custom { code: "null_inner_value" }` rather than silently collapsing it into
+the outer `Nullable::Null`. This includes nested nullable values.
 
 A field's `default = path` names a visible `fn() -> T`. It runs only for a
 missing field, never wrong types, NULL, malformed values, or failed validation.
