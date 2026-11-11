@@ -408,6 +408,9 @@ uses `DYNAMO_TYPE = Unknown` for the union of NULL and W and does not inherit
 scalar expression capabilities. This metadata does not permit unknown SDK
 values; those still return `UnsupportedType`. `Option<Nullable<T>>` permits
 absence, explicit null, and a value as three distinct states.
+Encoding `Nullable::Value` rejects an inner codec's NULL output with
+`Custom { code: "null_inner_value" }` rather than silently collapsing it into
+the outer `Nullable::Null`. This includes nested nullable values.
 
 A field's `default = path` names a visible `fn() -> T`. It runs only for a
 missing field, never wrong types, NULL, malformed values, or failed validation.

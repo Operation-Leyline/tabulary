@@ -5,10 +5,8 @@ use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::{DecodeContext, DecodeError, EncodeContext, EncodeError, Value, WireType};
 
-/// A field codec whose wire capabilities are independent of its logical Rust type.
-///
-/// Implementations must use the supplied context for structured errors and must
-/// never put rejected values or arbitrary error text into diagnostics.
+/// A field codec with wire capabilities independent of its Rust type.
+/// Errors must use the supplied context and omit rejected values and error text.
 pub trait Converter<T> {
     type Wire: WireType;
     fn encode(value: &T, cx: &mut EncodeContext) -> Result<AttributeValue, EncodeError>;
@@ -51,19 +49,16 @@ pub mod u128_string {
             let AttributeValue::S(text) = value else {
                 return Err(wrong_type(value, DynamoType::S, cx));
             };
+            const INVALID: DecodeFault = DecodeFault::Custom {
+                code: "invalid_u128_string",
+            };
             if text.is_empty()
                 || !text.bytes().all(|b| b.is_ascii_digit())
                 || (text.len() > 1 && text.starts_with('0'))
             {
-                return Err(cx.error(DecodeFault::Custom {
-                    code: "invalid_u128_string",
-                }));
+                return Err(cx.error(INVALID));
             }
-            text.parse().map_err(|_| {
-                cx.error(DecodeFault::Custom {
-                    code: "invalid_u128_string",
-                })
-            })
+            text.parse().map_err(|_| cx.error(INVALID))
         }
     }
 }

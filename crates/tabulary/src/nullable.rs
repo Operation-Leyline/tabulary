@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::{
-    DecodeContext, DecodeError, DecodeFault, DynamoType, EncodeContext, EncodeError, Value,
-    WireType,
+    DecodeContext, DecodeError, DecodeFault, DynamoType, EncodeContext, EncodeError, EncodeFault,
+    Value, WireType,
 };
 
 /// A present `NULL(true)` or a strictly decoded value. Missing fields still fail.
@@ -28,7 +28,12 @@ impl<T: Value> Value for Nullable<T> {
     fn encode_value(&self, cx: &mut EncodeContext) -> Result<AttributeValue, EncodeError> {
         match self {
             Self::Null => Ok(AttributeValue::Null(true)),
-            Self::Value(value) => value.encode_value(cx),
+            Self::Value(value) => match value.encode_value(cx)? {
+                AttributeValue::Null(_) => Err(cx.error(EncodeFault::Custom {
+                    code: "null_inner_value",
+                })),
+                value => Ok(value),
+            },
         }
     }
     fn decode_value(value: &AttributeValue, cx: &mut DecodeContext) -> Result<Self, DecodeError> {
