@@ -6,7 +6,8 @@
 - [x] Implement and export SDK-independent error and context types in
   `crates/tabulary/src/errors.rs` without dependencies or lockfile changes.
 - [x] Run fmt, check, clippy with warnings denied, and workspace tests; review diff.
-- [ ] Push `m02-errors`, open one PR, and verify its CI without merging.
+- [x] Push `m02-errors`, open [PR 2](https://github.com/Operation-Leyline/tabulary/pull/2),
+  and verify its fmt, check, clippy, and test CI without merging.
 
 The design fixes decode faults but leaves encode/build variant details and context
 constructors unspecified. Use structured metadata only, quoted attribute segments,
