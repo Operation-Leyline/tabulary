@@ -1,7 +1,8 @@
 # tabulary
 
-**Status: design.** The workspace builds, but its two crates contain no API yet.
-The Rust below describes the proposed API; it does not compile against this skeleton.
+**Status: early implementation.** Structured errors, paths, and encode/decode contexts
+are implemented; record codecs and derives are still planned. The Rust below describes
+the proposed API and does not yet compile against the library.
 
 tabulary makes a Rust struct a typed DynamoDB item. A derive declares attribute
 names and keys once. The same declaration drives strict decoding, expressions,
@@ -59,6 +60,7 @@ separate MSRV matrix checks the exact SDK floor and the current compatible
 release with both `--all-features` and `--no-default-features`. SDK fixtures
 exercise attribute values and modeled conditional-failure items without I/O;
 the dependency guard rejects SDK features and transitive transport dependencies.
+The error and context acceptance tests run in the same workspace test step.
 
 ```sh
 cargo check --workspace --all-targets --locked
