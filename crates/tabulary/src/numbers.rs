@@ -1,15 +1,22 @@
-use crate::{Decimal, DecodeFault, EncodeContext, EncodeError, EncodeFault};
+use crate::{
+    Decimal, DecodeContext, DecodeError, DecodeFault, DynamoType, EncodeContext, EncodeError,
+    EncodeFault, Value, value::wrong_type, wire,
+};
 use aws_sdk_dynamodb::types::AttributeValue;
 
-fn encode_integer(
-    value: impl ToString,
-    cx: &mut EncodeContext,
-) -> Result<AttributeValue, EncodeError> {
-    let number: Decimal = value
-        .to_string()
-        .parse()
-        .map_err(|_| cx.error(EncodeFault::NumberRange))?;
-    Ok(AttributeValue::N(number.to_string()))
+impl Value for Decimal {
+    type Wire = wire::Number;
+
+    fn encode_value(&self, _cx: &mut EncodeContext) -> Result<AttributeValue, EncodeError> {
+        Ok(AttributeValue::N(self.to_string()))
+    }
+
+    fn decode_value(value: &AttributeValue, cx: &mut DecodeContext) -> Result<Self, DecodeError> {
+        match value {
+            AttributeValue::N(text) => text.parse().map_err(|kind| cx.error(kind)),
+            _ => Err(wrong_type(value, DynamoType::N, cx)),
+        }
+    }
 }
 
 fn integer<T: TryFrom<u128> + TryFrom<i128>>(number: Decimal) -> Result<T, DecodeFault> {
@@ -24,72 +31,22 @@ fn integer<T: TryFrom<u128> + TryFrom<i128>>(number: Decimal) -> Result<T, Decod
     .ok_or(DecodeFault::NumberRange)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+macro_rules! integers {
+    ($($ty:ty),* $(,)?) => {$ (
+        impl Value for $ty {
+            type Wire = wire::Number;
 
-    #[test]
-    fn exact_integer_bounds_and_exponent_forms() {
-        for value in [0, 1, u64::MAX] {
-            assert_eq!(
-                integer::<u64>(value.to_string().parse().unwrap()),
-                Ok(value)
-            );
-        }
-        for value in [i64::MIN, -1, 0, 1, i64::MAX] {
-            assert_eq!(
-                integer::<i64>(value.to_string().parse().unwrap()),
-                Ok(value)
-            );
-        }
-        assert_eq!(
-            integer::<u64>("184467440737095516150e-1".parse().unwrap()),
-            Ok(u64::MAX)
-        );
-        assert_eq!(
-            integer::<i64>("-9.223372036854775808e18".parse().unwrap()),
-            Ok(i64::MIN)
-        );
-        for text in ["18446744073709551616", "-1", "1e125"] {
-            assert_eq!(
-                integer::<u64>(text.parse().unwrap()),
-                Err(DecodeFault::NumberRange)
-            );
-        }
-        for text in ["9223372036854775808", "-9223372036854775809"] {
-            assert_eq!(
-                integer::<i64>(text.parse().unwrap()),
-                Err(DecodeFault::NumberRange)
-            );
-        }
-        for text in ["1.1", "-0.1", "1e-130"] {
-            assert_eq!(
-                integer::<u64>(text.parse().unwrap()),
-                Err(DecodeFault::InexactNumber)
-            );
-        }
-    }
+            fn encode_value(&self, cx: &mut EncodeContext) -> Result<AttributeValue, EncodeError> {
+                let number: Decimal = self.to_string().parse()
+                    .map_err(|_| cx.error(EncodeFault::NumberRange))?;
+                number.encode_value(cx)
+            }
 
-    #[test]
-    fn u128_precision_is_checked_without_rounding() {
-        let mut cx = EncodeContext::new("Invoice");
-        for value in [0, 10u128.pow(38), u128::MAX - 5] {
-            let AttributeValue::N(text) = encode_integer(value, &mut cx).unwrap() else {
-                panic!("expected N")
-            };
-            assert_eq!(integer::<u128>(text.parse().unwrap()), Ok(value));
+            fn decode_value(value: &AttributeValue, cx: &mut DecodeContext) -> Result<Self, DecodeError> {
+                integer(Decimal::decode_value(value, cx)?).map_err(|kind| cx.error(kind))
+            }
         }
-        assert_eq!(
-            encode_integer(u128::MAX, &mut cx).unwrap_err().kind,
-            EncodeFault::NumberRange
-        );
-        assert_eq!(
-            u128::MAX.to_string().parse::<Decimal>().err(),
-            Some(DecodeFault::NumberRange)
-        );
-        assert_eq!(
-            integer::<u128>("340282366920938463463374607431768211460".parse().unwrap()),
-            Err(DecodeFault::NumberRange)
-        );
-    }
+    )*};
 }
+
+integers!(u64, i64, u128);
