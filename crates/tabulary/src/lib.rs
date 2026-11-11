@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod collections;
 pub mod convert;
 mod decimal;
 mod errors;
@@ -11,6 +12,7 @@ mod scalar;
 mod value;
 pub mod wire;
 
+pub use collections::{BinarySet, List, Map, NumberSet, StringSet};
 pub use convert::{Converter, Native};
 pub use decimal::Decimal;
 pub use errors::*;

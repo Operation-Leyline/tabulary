@@ -342,6 +342,18 @@ the required `Vec<u8>` binary mapping. Use `List<u8>` for numeric byte lists.
 map elements must use `Nullable<T>`. Sets require supported scalar wire
 categories; there is no set of arbitrary documents or floating NaNs.
 
+`List::from(Vec<T>)` and `Map::from(BTreeMap<String, T>)` retain their public
+tuple storage. Sets have private vector storage, `as_slice()` and `into_inner()`;
+`TryFrom<Vec<_>>` validates members and returns `EncodeError` rooted at the
+wrapper's type name. Encoding validates again in the caller's record context.
+`NumberSet<T>` requires `T: Value<Wire = wire::Number>`. Numeric members normalize
+through `Decimal`; canonical strings sort lexicographically, binary members by
+raw bytes. Empty string and binary members are allowed; empty sets are not.
+Set member errors include their input index. Lists preserve input order, maps
+traverse keys in sorted order, and sets retain input order in memory but encode
+in canonical order. The SDK's map remains a `HashMap`; its iteration order is
+not a serialized ordering guarantee.
+
 DynamoDB has a 38-significant-digit numeric domain and a bounded exponent range.
 Some `u128` values require 39 significant digits, and some finite binary64
 values are too small or large. The library cannot store all such values as
