@@ -3,7 +3,10 @@ use std::marker::PhantomData;
 
 use aws_sdk_dynamodb::types::AttributeValue;
 
-use crate::{DecodeContext, DecodeError, DecodeFault, EncodeContext, EncodeError, Value, WireType};
+use crate::{
+    DecodeContext, DecodeError, DecodeFault, DynamoType, EncodeContext, EncodeError, Value,
+    WireType,
+};
 
 /// A present `NULL(true)` or a strictly decoded value. Missing fields still fail.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,7 +18,10 @@ pub enum Nullable<T> {
 /// A nullable wire category; it does not inherit scalar expression capabilities.
 pub struct NullableWire<W>(PhantomData<W>);
 
-impl<W: WireType> WireType for NullableWire<W> {}
+impl<W: WireType> WireType for NullableWire<W> {
+    // NULL or W is a union, not one statically known DynamoDB category.
+    const DYNAMO_TYPE: DynamoType = DynamoType::Unknown;
+}
 
 impl<T: Value> Value for Nullable<T> {
     type Wire = NullableWire<T::Wire>;

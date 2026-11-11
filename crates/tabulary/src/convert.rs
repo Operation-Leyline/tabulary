@@ -36,7 +36,9 @@ pub mod u128_string {
     /// String storage with equality only, not string ordering or numeric operators.
     pub struct Wire;
 
-    impl WireType for Wire {}
+    impl WireType for Wire {
+        const DYNAMO_TYPE: DynamoType = DynamoType::S;
+    }
 
     pub struct Codec;
 

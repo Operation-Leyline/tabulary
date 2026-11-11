@@ -15,5 +15,9 @@ derive = ["dep:tabulary-derive"]
 aws-sdk-dynamodb = { version = "1.130.0", default-features = false }
 tabulary-derive = { path = "../tabulary-derive", optional = true }
 
+[dev-dependencies]
+aws-smithy-runtime-api = { version = "1.21.0", default-features = false, features = ["client"] }
+aws-smithy-types = { version = "1.9.4", default-features = false }
+
 [lints]
 workspace = true

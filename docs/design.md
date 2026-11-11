@@ -179,6 +179,11 @@ indexes. Read helpers borrow the item; they never convert it through JSON.
 Manual implementations of these public traits are supported. Reserved
 `__private` macro helpers carry no semver guarantee.
 
+`WireType` exposes `const DYNAMO_TYPE: DynamoType`. The public `wire` module
+provides zero-sized `String`, `Number`, `Binary`, `Bool`, `Null`, `List`, `Map`,
+`StringSet`, `NumberSet`, and `BinarySet` markers for the corresponding SDK tags.
+Markers describe a codec's category; they do not implement value conversion.
+
 ## 3. Keys and secondary indexes
 
 Exactly one partition key and at most one sort key are required.
@@ -399,7 +404,9 @@ They omit absent optional values and report `Missing` for absent required
 values, including `Nullable<T>`. `Nullable::{Null, Value(T)}` implements `Value`;
 `NULL(false)` returns `Custom { code: "invalid_null" }` because the fault
 taxonomy has no dedicated malformed-null case. Its `NullableWire<W>` marker
-does not inherit scalar expression capabilities. `Option<Nullable<T>>` permits
+uses `DYNAMO_TYPE = Unknown` for the union of NULL and W and does not inherit
+scalar expression capabilities. This metadata does not permit unknown SDK
+values; those still return `UnsupportedType`. `Option<Nullable<T>>` permits
 absence, explicit null, and a value as three distinct states.
 
 A field's `default = path` names a visible `fn() -> T`. It runs only for a
