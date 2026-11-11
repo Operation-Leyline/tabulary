@@ -1,0 +1,50 @@
+//! Static metadata shared by manual records, derives, and request builders.
+use crate::DynamoType;
+
+/// Whether a field may be absent. This is independent of its wire category.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Presence {
+    Required,
+    Optional,
+}
+
+/// The API that owns mutations of an attribute.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldAccess {
+    Mutable,
+    KeyOnly,
+    VersionOnly,
+    IndexSourceOnly,
+    DerivedOnly,
+}
+
+/// A field's physical metadata, without a value or a runtime registry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FieldDescriptor {
+    pub name: &'static str,
+    pub index: usize,
+    pub presence: Presence,
+    pub access: FieldAccess,
+    pub wire: DynamoType,
+}
+
+/// Attribute positions in the owning schema, not DynamoDB key values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyDefinition {
+    pub partition: usize,
+    pub sort: Option<usize>,
+}
+
+/// Metadata available before record codecs and key constructors are generated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordSchema {
+    pub name: &'static str,
+    pub fields: &'static [FieldDescriptor],
+    pub primary: KeyDefinition,
+}
+
+/// A record owns one static schema. Manual implementations are supported.
+/// Record encoding and key interfaces are added by their owning milestones.
+pub trait Record: Sized {
+    const SCHEMA: RecordSchema;
+}
