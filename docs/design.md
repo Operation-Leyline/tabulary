@@ -117,6 +117,23 @@ are `Required, Mutable, Native<T>`. A required number handle thus has type
 `Attr<Order, u64>`. Optional values use `set(T)`, comparisons against `T`,
 and `remove()`; callers never encode “absent” as an expression value.
 
+Milestone 10 introduces the metadata-only `Record { const SCHEMA: RecordSchema; }`
+contract; the document/key supertraits and methods sketched below arrive with
+their owning milestones. `RecordSchema` initially contains `name`, static
+`fields`, and a primary `KeyDefinition` of partition/sort field positions.
+`FieldDescriptor` contains the wire name, declaration index, presence, access,
+and codec's DynamoDB category. Index, TTL, and version schema metadata arrive
+with their owning milestones. The doc-hidden `field(name, index)`,
+`keys(partition, sort)`, and three-argument `schema(name, fields, primary)`
+helpers construct this initial surface; §15 sketches the completed surface.
+Presence and access marker traits are sealed; custom codecs still implement
+the public `Converter` trait. `Attr::validate()` checks all descriptor metadata
+against its owner's field at the declared position. Mutable handles additionally
+expose `validate_mutation()`, which rejects physical primary-key positions even
+if manual schema metadata labels them mutable. Future expression and operation
+builders must call these checks before accepting descriptors; these methods
+alone do not construct expressions or perform value conversion.
+
 The user constructs records with normal Rust struct literals. No generated
 record builder is required, and the derive never generates `Default`.
 
