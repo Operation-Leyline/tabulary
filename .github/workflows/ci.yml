@@ -21,6 +21,47 @@ jobs:
       - name: Check the workspace
         run: cargo +1.97.1 check --workspace --all-targets --locked
       - name: Run clippy
-        run: cargo +1.97.1 clippy --workspace --all-targets -- -D warnings
+        run: cargo +1.97.1 clippy --workspace --all-targets --locked -- -D warnings
       - name: Run tests
         run: cargo +1.97.1 test --workspace --locked
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify default dependency features
+        env:
+          RUSTUP_TOOLCHAIN: 1.97.1
+        run: python scripts/check_sdk_features.py
+
+  sdk-compatibility:
+    name: SDK ${{ matrix.sdk }} / ${{ matrix.features }} / MSRV
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [floor, current]
+        features: [all-features, no-default-features]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the minimum supported toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Select the exact SDK floor
+        if: matrix.sdk == 'floor'
+        run: cargo +1.97.1 update -p aws-sdk-dynamodb --precise 1.130.0
+      - name: Resolve current MSRV-compatible dependencies
+        if: matrix.sdk == 'current'
+        # Resolver 3 respects the workspace rust-version when selecting releases.
+        run: cargo +1.97.1 update
+      - name: Verify the resolved dependency features
+        env:
+          RUSTUP_TOOLCHAIN: 1.97.1
+        run: python scripts/check_sdk_features.py --${{ matrix.features }}
+      - name: Confirm the exact floor was selected
+        if: matrix.sdk == 'floor'
+        run: cargo +1.97.1 tree -p aws-sdk-dynamodb --depth 0 | grep -Fx 'aws-sdk-dynamodb v1.130.0'
+      - name: Check the workspace and SDK fixtures on MSRV
+        run: cargo +1.97.1 check --workspace --all-targets --locked --${{ matrix.features }}
+      - name: Exercise the SDK fixtures
+        run: cargo +1.97.1 test --workspace --locked --${{ matrix.features }}

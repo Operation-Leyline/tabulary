@@ -7,5 +7,13 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+default = ["derive"]
+derive = ["dep:tabulary-derive"]
+
+[dependencies]
+aws-sdk-dynamodb = { version = "1.130.0", default-features = false }
+tabulary-derive = { path = "../tabulary-derive", optional = true }
+
 [lints]
 workspace = true
