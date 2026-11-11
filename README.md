@@ -46,17 +46,27 @@ It is not a query planner, migration system, or opinionated single-table model.
 - [Worked Rust examples](docs/examples/README.md)
 - [Build milestones and acceptance tests](docs/milestones.md)
 
-## Checking the skeleton
+## Checking the workspace
 
-Edition 2024; MSRV **Rust 1.97.1**. Both crates forbid unsafe code. There are no
-third-party dependencies in the skeleton. CI runs formatting, check, clippy, and
-tests; there are no behavior tests until implementation begins.
+Edition 2024; MSRV **Rust 1.97.1**. Both crates forbid unsafe code. The runtime
+depends on `aws-sdk-dynamodb` with API floor **1.130.0** and default SDK features
+disabled. Applications enable the SDK transport features they need. The default
+`derive` feature includes the optional macro crate; `--no-default-features`
+omits it. The macro implementations and runtime API are still future milestones.
+
+CI runs formatting, check, clippy, and tests with the committed lockfile. A
+separate MSRV matrix checks the exact SDK floor and the current compatible
+release with both `--all-features` and `--no-default-features`. SDK fixtures
+exercise attribute values and modeled conditional-failure items without I/O;
+the dependency guard rejects SDK features and transitive transport dependencies.
 
 ```sh
 cargo check --workspace --all-targets --locked
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
+python scripts/check_sdk_features.py --all-features
+python scripts/check_sdk_features.py --no-default-features
 ```
 
 Endpoint integration tests are specified in the design and milestones; the empty
