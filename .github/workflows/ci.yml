@@ -7,9 +7,6 @@ on:
 permissions:
   contents: read
 
-env:
-  CARGO_TARGET_DIR: ${{ runner.temp }}/tabulary-target
-
 jobs:
   rust:
     runs-on: ubuntu-latest
