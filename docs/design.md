@@ -368,6 +368,15 @@ binary floating point. `Decimal` is the choice for exact decimal arithmetic.
 coefficient, signed exponent, and sign suffice for the supported precision;
 arbitrary-precision arithmetic is not required for mapping.
 
+The `f64` codec formats its shortest round-trip digits using `Decimal`'s
+canonical Display rules below. Encoding returns `NonFiniteFloat` for NaN or
+infinity, `NegativeZero` for negative zero, and `NumberRange` outside the service
+domain. Decoding validates decimal syntax and the service domain first, with
+`InvalidNumber` and `NumberRange` respectively. A negative-zero spelling returns
+`NumberRange` rather than being normalized to positive zero. A valid service
+decimal whose binary64 value would write a different decimal returns
+`InexactNumber`, including rounding across the upper service boundary.
+
 The decimal grammar is `[+-]?(digits+(\.digits*)?|\.digits+)([eE][+-]?digits+)?`,
 using ASCII digits only, with no whitespace. Leading and trailing zeroes do not
 count toward precision. Zero of either sign and any exponent normalizes to `0`.

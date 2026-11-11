@@ -4,6 +4,7 @@ pub mod convert;
 mod decimal;
 mod errors;
 pub mod field;
+mod floats;
 mod nullable;
 mod numbers;
 mod scalar;
