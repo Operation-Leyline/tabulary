@@ -77,7 +77,7 @@ alone do not prove semantic correctness.
 
 PR 38 adds a separate endpoint job. In that job:
 
-1. Start a pinned DynamoDB Local image on a loopback port.
+1. Start dynoxide at a pinned revision on a loopback port.
 2. Set `TABULARY_DYNAMODB_ENDPOINT`, a region, and dummy AWS credentials.
 3. Perform bounded readiness checks.
 4. Run `cargo test -p tabulary --test endpoint -- --ignored`.

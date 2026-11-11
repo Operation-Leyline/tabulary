@@ -52,18 +52,13 @@ Edition 2024; MSRV **Rust 1.97.1**. Both crates forbid unsafe code. There are no
 third-party dependencies in the skeleton. CI runs formatting, check, clippy, and
 tests; there are no behavior tests until implementation begins.
 
-On Windows, keep build output outside the checkout:
-
-```powershell
-$env:AWS_LC_SYS_PREBUILT_NASM = "1"
-$env:CARGO_TARGET_DIR = "D:/lwt/tabulary-target"
+```sh
 cargo check --workspace --all-targets --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --locked
 ```
 
-On other platforms, set `CARGO_TARGET_DIR` to an external temporary directory.
 Endpoint integration tests are specified in the design and milestones; the empty
 skeleton does not yet run DynamoDB tests or type-check the proposed examples.
 

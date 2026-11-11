@@ -9,7 +9,6 @@ permissions:
 
 env:
   CARGO_TARGET_DIR: ${{ runner.temp }}/tabulary-target
-  AWS_LC_SYS_PREBUILT_NASM: "1"
 
 jobs:
   rust:

@@ -1283,8 +1283,8 @@ When the variable is absent, ignored integration tests are unexecuted, not
 passed integration evidence. `cargo test --test endpoint -- --ignored` without
 the variable fails immediately. The normal unit test run needs no endpoint.
 
-An implementation CI job runs DynamoDB Local from an explicitly pinned image,
-sets the endpoint to its loopback port, uses dummy credentials and a region,
+An implementation CI job runs dynoxide, a DynamoDB emulator, at an explicitly
+pinned revision, sets the endpoint to its loopback port, uses dummy credentials and a region,
 then runs `cargo test -p tabulary --test endpoint -- --ignored`.
 It performs a bounded readiness check and unique per-test table naming, and
 cleans up only tables it created. Index/TTL activation polling has a deadline.
