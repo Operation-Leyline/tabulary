@@ -368,6 +368,28 @@ binary floating point. `Decimal` is the choice for exact decimal arithmetic.
 coefficient, signed exponent, and sign suffice for the supported precision;
 arbitrary-precision arithmetic is not required for mapping.
 
+The decimal grammar is `[+-]?(digits+(\.digits*)?|\.digits+)([eE][+-]?digits+)?`,
+using ASCII digits only, with no whitespace. Leading and trailing zeroes do not
+count toward precision. Zero of either sign and any exponent normalizes to `0`.
+Canonical Display uses plain positional notation whenever it needs at most
+38 integer digits and at most 38 fractional digits. It has no leading zeroes
+except a single `0` before a decimal point, and no trailing fractional zeroes:
+`12.30` becomes `12.3`, `.5` becomes `0.5`, and `1.50e2` becomes `150`.
+Outside those limits it writes the signed coefficient without leading or
+trailing zeroes, followed by `e` and the exponent (`1e-130`, `1e125`).
+Nonzero magnitude must be between `1e-130` and
+`9.9999999999999999999999999999999999999e125`, inclusive.
+`Decimal::from_str` returns `DecodeFault::InvalidNumber` for malformed syntax
+and `DecodeFault::NumberRange` for precision or service-domain violations.
+Integer decoding validates this domain first, then returns `InexactNumber`
+for a fractional value or `NumberRange` for a value outside the Rust type's
+range; it never truncates or rounds. Native integer encoding validates this
+domain, then writes the Rust type's plain base-10 `to_string()` without any
+exponent, even for a representable `u128` with 39 integer digits.
+These spellings keep inspected items and expressions readable and preserve
+plain-digit equality with existing clients and emulator fixtures. Encoding
+reports `EncodeFault::NumberRange` when needed.
+
 TTL is enabled only by `#[tabulary(ttl)]` on `TtlSeconds` or its optional form.
 At most one TTL attribute is allowed. Expired items still decode normally;
 there is no hidden filtering or deletion. The caller supplies time values and
