@@ -1,6 +1,8 @@
 //! Reserved derive helpers; these carry no semver guarantee.
 use std::marker::PhantomData;
 
+pub use crate::record::{decode_key, encode_key};
+
 use crate::{
     AccessMarker, Attr, Converter, FieldDescriptor, KeyDefinition, PresenceMarker, RecordSchema,
     WireType,
