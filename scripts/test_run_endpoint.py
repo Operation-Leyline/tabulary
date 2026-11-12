@@ -36,7 +36,7 @@ class RunnerFailures(unittest.TestCase):
             self.run_ready("test result: ok. 0 passed; 0 failed; 0 ignored;\n")
 
     def test_readiness_uses_the_dynamodb_data_path(self):
-        request = self.run_ready("test result: ok. 3 passed; 0 failed; 0 ignored;\n")
+        request = self.run_ready("test result: ok. 6 passed; 0 failed; 0 ignored;\n")
         self.assertEqual(request.get_method(), "POST")
         self.assertEqual(request.data, b"{}")
         self.assertEqual(request.get_header("X-amz-target"), "DynamoDB_20120810.ListTables")
@@ -47,8 +47,9 @@ class RunnerFailures(unittest.TestCase):
             run_endpoint.require_endpoint_evidence("test result: ok. 0 passed; 0 failed; 0 ignored;")
 
     def test_all_expected_endpoint_tests_must_pass_without_ignores(self):
-        run_endpoint.require_endpoint_evidence("test result: ok. 3 passed; 0 failed; 0 ignored;")
-        for output in ["", "test result: ok. 2 passed; 0 failed; 1 ignored;",
+        run_endpoint.require_endpoint_evidence("test result: ok. 6 passed; 0 failed; 0 ignored;")
+        for output in ["", "test result: ok. 3 passed; 0 failed; 0 ignored;",
+                       "test result: ok. 2 passed; 0 failed; 1 ignored;",
                        "test result: FAILED. 2 passed; 1 failed; 0 ignored;"]:
             with self.assertRaises(RuntimeError):
                 run_endpoint.require_endpoint_evidence(output)

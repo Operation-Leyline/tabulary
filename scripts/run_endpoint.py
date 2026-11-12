@@ -18,8 +18,8 @@ import urllib.request
 def require_endpoint_evidence(output):
     summary = re.findall(r"^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;", output, re.M)
     # Update this explicit gate when later milestones add endpoint tests.
-    if summary != [("3", "0", "0")]:
-        raise RuntimeError("endpoint suite did not execute and pass all 3 required tests")
+    if summary != [("6", "0", "0")]:
+        raise RuntimeError("endpoint suite did not execute and pass all 6 required tests")
 
 
 def main():
