@@ -15,6 +15,7 @@ mod errors;
 pub mod field;
 mod floats;
 mod index;
+mod index_attributes;
 pub mod key_component;
 mod nullable;
 mod numbers;

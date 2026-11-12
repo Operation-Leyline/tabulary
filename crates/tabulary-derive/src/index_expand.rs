@@ -1,4 +1,4 @@
-use crate::{index_validate::Index, parse, validate::Record};
+use crate::{index_validate::Index, key_expand, parse, validate::Record};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -45,16 +45,28 @@ pub fn expand(record: &Record) -> TokenStream {
                 "SCREAMING_SNAKE_CASE"
             )
         );
-        let partition = &record.fields[index.partition].ty;
-        let partition_codec = quote!(#path::Native<#partition>);
+        let mut codecs = Vec::new();
+        let mut key_type = |i, suffix| {
+            if key_expand::template(record, i).is_some() {
+                let codec = format_ident!("{}{}Codec", peer, suffix);
+                let (logical, declaration) = key_expand::template_codec(record, i, &codec);
+                codecs.push(declaration);
+                (logical, quote!(#codec #tg))
+            } else {
+                let ty = &record.fields[i].ty;
+                (quote!(#ty), quote!(#path::Native<#ty>))
+            }
+        };
+        let (partition, partition_codec) = key_type(index.partition, "Partition");
         let sort = index.sort.map_or_else(
             || quote!(#path::NoSort),
             |i| {
-                let ty = &record.fields[i].ty;
-                quote!(#path::SortKey<#ty>)
+                let (ty, codec) = key_type(i, "Sort");
+                quote!(#path::SortKey<#ty, #codec>)
             },
         );
         let definition = definition(record, index);
+        let helpers = key_expand::helpers_for(record, index.partition, index.sort, &peer);
         handles.push(quote!(#vis const #handle: #peer #tg = #peer(::core::marker::PhantomData);));
         peers.push(quote! {
             #vis struct #peer #generics (::core::marker::PhantomData<fn() -> #owner #tg>) #wc;
@@ -66,6 +78,7 @@ pub fn expand(record: &Record) -> TokenStream {
                 type Sort = #sort;
                 const DEFINITION: #path::IndexDefinition = #definition;
             }
+            #(#codecs)* #helpers
         });
     }
     quote!(impl #ig #indexes #tg #wc { #(#handles)* } #(#peers)*)

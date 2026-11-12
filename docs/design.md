@@ -330,6 +330,11 @@ typed `IndexSchema<R>` peers, and literal index-key update validation.
 It rejects composite index declarations until 16b. Milestone 16b reuses the primary
 template formatter and inverse parser for required composite index inputs, and
 adds physical-key `AttributeDefinition` extraction.
+Composite index sources use `IndexSourceOnly`, except primary dependencies,
+which remain `KeyOnly`. Synthetic handles use the index identifier plus
+`PARTITION` or `SORT`, for example `ParcelAttrs::BY_COURIER_PARTITION`.
+Identical templates with the same physical name share one descriptor; a
+different template or an ordinary field with that name is a collision.
 Both stages reject `sparse` and optional index inputs explicitly until milestone
 17 supplies sparse encode/decode invariants. Key-condition builders arrive in
 milestone 23; index markers in milestone 16 do not perform queries.
