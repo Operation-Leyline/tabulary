@@ -1,0 +1,44 @@
+error[E0308]: mismatched types
+ --> tests/ui/update_item/owner.rs:4:31
+  |
+3 | fn changes<R: Record + Document, S: Record, K: RecordKey<R>>(table: Table<R>, key: K) {
+  |            -                     - found type parameter
+  |            |
+  |            expected type parameter
+4 |     table.update(key).changes(Update::<S>::new());
+  |                       ------- ^^^^^^^^^^^^^^^^^^ expected `Update<R>`, found `Update<S>`
+  |                       |
+  |                       arguments to this method are incorrect
+  |
+  = note: expected struct `Update<R>`
+             found struct `Update<S>`
+  = note: a type parameter was expected, but a different one was found; you might be missing a type parameter or trait bound
+  = note: for more information, visit https://doc.rust-lang.org/book/ch10-02-traits.html#traits-as-parameters
+note: method defined here
+ --> src/update_item.rs
+  |
+  |     pub fn changes(mut self, changes: Update<R>) -> Self {
+  |            ^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/update_item/owner.rs:11:33
+   |
+ 6 | fn guard<R: Record + Document, S: Record + 'static, K: RecordKey<R>>(
+   |          -                     - found type parameter
+   |          |
+   |          expected type parameter
+...
+11 |     table.update(key).condition(attr.eq(1));
+   |                       --------- ^^^^^^^^^^ expected `Condition<R>`, found `Condition<S>`
+   |                       |
+   |                       arguments to this method are incorrect
+   |
+   = note: expected struct `Condition<R>`
+              found struct `Condition<S>`
+   = note: a type parameter was expected, but a different one was found; you might be missing a type parameter or trait bound
+   = note: for more information, visit https://doc.rust-lang.org/book/ch10-02-traits.html#traits-as-parameters
+note: method defined here
+  --> src/update_item.rs
+   |
+   |     pub fn condition(mut self, condition: Condition<R>) -> Self {
+   |            ^^^^^^^^^
