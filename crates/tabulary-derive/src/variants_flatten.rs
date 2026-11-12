@@ -22,7 +22,7 @@ pub fn validation(schema: &Record) -> TokenStream {
     };
     let (ty, path) = (&f.ty, &schema.crate_path);
     let names = schema.fields.iter().filter(|f| !f.flatten).map(|f| &f.name);
-    quote_spanned!(f.ident.span()=> const { #path::__private::assert_disjoint(&[#(#names,)*], <#ty as #path::Variants>::ATTRIBUTES) };)
+    quote_spanned!(f.ident.span()=> const { ::core::assert!(#path::__private::disjoint(&[#(#names,)*], <#ty as #path::Variants>::ATTRIBUTES), "flattened variant attribute overlaps a common field") };)
 }
 
 pub fn descriptor(schema: &Record, i: usize) -> TokenStream {

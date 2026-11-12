@@ -19,19 +19,19 @@ impl<R: crate::Record, T: Value + 'static> crate::Attr<R, T, crate::Required, cr
 
 /// Compile-time namespace check used by the derives, including across crates.
 #[doc(hidden)]
-pub const fn assert_disjoint(common: &[&str], variants: &[&str]) {
+pub const fn disjoint(common: &[&str], variants: &[&str]) -> bool {
     let mut i = 0;
     while i < common.len() {
         let mut j = 0;
         while j < variants.len() {
-            assert!(
-                !same(common[i].as_bytes(), variants[j].as_bytes()),
-                "flattened variant attribute overlaps a common field"
-            );
+            if same(common[i].as_bytes(), variants[j].as_bytes()) {
+                return false;
+            }
             j += 1;
         }
         i += 1;
     }
+    true
 }
 
 const fn same(a: &[u8], b: &[u8]) -> bool {

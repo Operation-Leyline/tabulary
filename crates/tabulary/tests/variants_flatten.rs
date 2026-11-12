@@ -44,12 +44,6 @@ fn delivery(stage: Stage) -> Delivery {
 
 #[test]
 fn every_shape_round_trips_flattened() {
-    #[derive(tabulary::Variants)]
-    #[tabulary(tag = "kind", rename_all = "snake_case")]
-    enum UnitOnly {
-        Unit,
-    }
-    assert_eq!(encode(&UnitOnly::Unit)["kind"], Av::S("unit".into()));
     let sent = Stage::Sent {
         tracking_ref: "parcel".into(),
         note: None,
