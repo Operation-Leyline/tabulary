@@ -991,12 +991,22 @@ implement `PrefixCodec<T>`; custom codecs must opt in and also declare the
 `condition::Prefix` wire capability. Composite codecs implement it with their
 generated complete-boundary prefix carrier as the associated `Prefix` input.
 
-Sort comparisons use the physical DynamoDB wire order: numeric for `N`, UTF-8
-byte order for `S`, and unsigned byte order for `B`. Composite templates produce
-`S` values, so their ordered predicates compare the formatted strings, not the
-logical component tuples. For example, `{count:dec}` places `10` before `9`;
-use `{count:dec20}` when unsigned numeric order is required. Tuple inputs select
-the encoding, and do not promise an order-preserving mapping for every codec.
+Ordered sort predicates additionally require `OrderedKeyCodec<T>`, an explicit
+promise that encoded order preserves logical input order. Native field-keyed
+sorts retain their existing wire capabilities; custom codecs opt in separately.
+For composite templates, the derive supplies this capability only when every
+component is fixed width and order-preserving (`dec20` or fixed-width `hex`),
+except that the last component may be `text` if it ends the template. Literal
+prefixes and separators between fixed-width components do not change order.
+Unknown widths are conservatively excluded. Literal-only templates preserve
+the order of their sole `()` input.
+
+`dec`, signed decimal, variable-width `hex`, and nonfinal `text` do not receive
+this capability. Final `text` with a trailing literal is also excluded:
+`{label:text}!end` reverses the order of `"a"` and `"a "`. The five ordered
+operators therefore fail to compile for these templates, with a diagnostic
+pointing to the first offending component and suggesting `dec20` or
+`sort_begins_with`. Equality and complete-boundary prefixes remain available.
 
 Query builders accept `filter(Condition<R>)`, `limit(NonZeroU32)`,
 `order(QueryOrder::Ascending | Descending)`, `select::<P>()`, and

@@ -71,6 +71,7 @@ pub use key_component::KeyComponentCodec;
 pub use key_condition::BuiltKeyCondition;
 pub use key_condition::KeyCondition;
 pub use key_condition::KeySchema;
+pub use key_condition::OrderedKeyCodec;
 pub use key_condition::PrefixCodec;
 pub use key_condition::PrimarySchema;
 pub use key_condition::SortComplete;
