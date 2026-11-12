@@ -736,6 +736,20 @@ condition. Variant payload handles are scoped through
 `DeliveryAttrs::STAGE.variant(DeliveryStageTags::SENT)`; their conditions
 include the tag guard. They cannot be used as unconditional update targets.
 
+**Breaking change:** `DeliveryStageTags::SENT` and peers now have distinct
+per-variant singleton types rather than the shared `DeliveryStageTag` type.
+`DeliveryStageTag::from(DeliveryStageTags::SENT)` and `.into()` convert to the
+shared enum for mixed collections and exhaustive matches; `.is(..)` and
+`transition(..)` accept either form directly. Scoped payload selection follows
+in the dependent implementation pull request.
+
+The runtime supplies read-only `ScopedAttr` predicates for generated/manual
+bindings. A leaf retains `payload AND tag = selected`; AND/OR combine branches
+as written, and scoped negation becomes `NOT(payload) AND tag = selected`.
+De Morgan applies only to scoped subtrees, leaving unscoped rendering unchanged.
+Payload descriptors use the flattened group's real schema position for query
+screening and cursor fingerprints; their wire names and codecs remain distinct.
+
 `update.transition(DeliveryAttrs::STAGE, new_stage, expected_tag)` adds a
 condition for the expected tag, SETs the new tag and payload, and REMOVEs the
 union of old-only payload attributes. It replaces the entire variant value, so

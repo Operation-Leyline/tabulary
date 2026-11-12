@@ -12,8 +12,8 @@ pub trait Variants: Document {
 
 impl<R: crate::Record, T: Value + 'static> crate::Attr<R, T, crate::Required, crate::DerivedOnly> {
     /// Compare a read-only discriminator with one of its typed tags.
-    pub fn is(self, tag: T) -> crate::Condition<R> {
-        self.eq(tag)
+    pub fn is(self, tag: impl Into<T>) -> crate::Condition<R> {
+        self.eq(tag.into())
     }
 }
 
