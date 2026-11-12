@@ -43,7 +43,24 @@ pub fn source(record: &Record, index: usize) -> bool {
     record
         .templates
         .iter()
-        .any(|(_, t)| components(&t.parts).any(|i| i == index))
+        .any(|(key, t)| primary(record, *key) && components(&t.parts).any(|i| i == index))
+}
+pub fn primary(record: &Record, index: usize) -> bool {
+    index == record.partition || Some(index) == record.sort
+}
+pub fn index_limit(record: &Record, index: usize) -> Option<usize> {
+    record
+        .indexes
+        .iter()
+        .flat_map(|i| [(i.partition, 2048), (i.sort.unwrap_or(usize::MAX), 1024)])
+        .filter_map(|(i, max)| (i == index).then_some(max))
+        .min()
+}
+pub fn index_source(record: &Record, index: usize) -> bool {
+    record
+        .templates
+        .iter()
+        .any(|(key, t)| !primary(record, *key) && components(&t.parts).any(|i| i == index))
 }
 pub fn access(record: &Record, index: usize) -> TokenStream {
     let path = &record.crate_path;
@@ -51,6 +68,8 @@ pub fn access(record: &Record, index: usize) -> TokenStream {
         quote!(#path::DerivedOnly)
     } else if record.fields[index].key_limit.is_some() || source(record, index) {
         quote!(#path::KeyOnly)
+    } else if index_source(record, index) {
+        quote!(#path::IndexSourceOnly)
     } else {
         quote!(#path::Mutable)
     }
@@ -211,9 +230,12 @@ pub fn decode(record: &Record, key: usize) -> TokenStream {
 }
 
 pub fn checks(record: &Record, field: usize) -> TokenStream {
+    checks_for(record, field, false)
+}
+fn checks_for(record: &Record, field: usize, primary_only: bool) -> TokenStream {
     let path = &record.crate_path;
     let local = local(field);
-    let checks = record.templates.iter().filter(|(_, t)| components(&t.parts).any(|i| i == field)).map(|(key, _)| {
+    let checks = record.templates.iter().filter(|(key, t)| (!primary_only || primary(record, *key)) && components(&t.parts).any(|i| i == field)).map(|(key, _)| {
         let parsed = parsed(*key, field); let cx = component_context(record, *key, Some(field));
         quote! { if #local != #parsed { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
     });
@@ -223,10 +245,10 @@ pub fn checks(record: &Record, field: usize) -> TokenStream {
 pub fn key_bindings(record: &Record) -> TokenStream {
     let path = &record.crate_path;
     let bindings = inputs(record).into_iter().map(|field| {
-        if record.fields[field].key_limit.is_some() { return checks(record, field); }
-        let key = record.templates.iter().find(|(_, t)| components(&t.parts).any(|i| i == field)).unwrap().0;
+        if primary(record, field) { return checks_for(record, field, true); }
+        let key = record.templates.iter().find(|(key, t)| primary(record, *key) && components(&t.parts).any(|i| i == field)).unwrap().0;
         let parsed = parsed(key, field); let local = local(field);
-        let checks = record.templates.iter().filter(|(i, t)| *i != key && components(&t.parts).any(|i| i == field)).map(|(other_key, _)| {
+        let checks = record.templates.iter().filter(|(i, t)| primary(record, *i) && *i != key && components(&t.parts).any(|i| i == field)).map(|(other_key, _)| {
             let other = self::parsed(*other_key, field); let cx = component_context(record, *other_key, Some(field));
             quote! { if #parsed != #other { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
         });
@@ -236,16 +258,28 @@ pub fn key_bindings(record: &Record) -> TokenStream {
 }
 
 pub fn helpers(record: &Record) -> TokenStream {
+    helpers_for(record, record.partition, record.sort, &record.prefix)
+}
+pub fn helpers_for(
+    record: &Record,
+    partition_key: usize,
+    sort_key: Option<usize>,
+    prefix: &syn::Ident,
+) -> TokenStream {
     let path = &record.crate_path;
     let context = format_ident!("cx", span = Span::mixed_site());
     let output = format_ident!("__tabulary_output", span = Span::mixed_site());
     let (ident, vis) = (&record.ident, &record.vis);
-    let primary = format_ident!("{}Primary", record.prefix);
+    let primary = if prefix == &record.prefix {
+        format_ident!("{}Primary", prefix)
+    } else {
+        prefix.clone()
+    };
     let generics = crate::document_validate::bounds(record);
     let (ig, tg, wc) = generics.split_for_impl();
-    let partition_value = format_ident!("{}Partition", record.prefix);
-    let sort_value = format_ident!("{}SortPrefix", record.prefix);
-    let prefix_parts = format_ident!("{}PrefixParts", record.prefix);
+    let partition_value = format_ident!("{}Partition", prefix);
+    let sort_value = format_ident!("{}SortPrefix", prefix);
+    let prefix_parts = format_ident!("{}PrefixParts", prefix);
     let carrier = |name| {
         quote! {
             #vis struct #name #generics #wc { value: ::std::string::String, marker: ::core::marker::PhantomData<fn() -> #ident #tg> }
@@ -255,11 +289,11 @@ pub fn helpers(record: &Record) -> TokenStream {
             }
         }
     };
-    let partition_carrier = template(record, record.partition).map(|_| carrier(&partition_value));
-    let partition = template(record, record.partition).map(|t| {
+    let partition_carrier = template(record, partition_key).map(|_| carrier(&partition_value));
+    let partition = template(record, partition_key).map(|t| {
         let args = components(&t.parts).map(|i| { let f = &record.fields[i]; let (id, ty) = (&f.ident, &f.ty); quote!(#id: #ty) });
-        let format = format(record, record.partition, &t.parts, false, &t.parts);
-        let name = &record.fields[record.partition].name;
+        let format = format(record, partition_key, &t.parts, false, &t.parts);
+        let name = &record.fields[partition_key].name;
         quote! { #vis fn partition(&self, #(#args),*) -> ::core::result::Result<#partition_value #tg, #path::EncodeError> {
             let #context = #path::EncodeContext::new(::core::stringify!(#ident)); #format
             #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), 2048)?;
@@ -267,10 +301,7 @@ pub fn helpers(record: &Record) -> TokenStream {
         } }
     });
     let mut implementations = Vec::new();
-    if let Some((key, t)) = record
-        .sort
-        .and_then(|i| template(record, i).map(|t| (i, t)))
-    {
+    if let Some((key, t)) = sort_key.and_then(|i| template(record, i).map(|t| (i, t))) {
         for (end, _) in t
             .parts
             .iter()
@@ -316,4 +347,46 @@ pub fn helpers(record: &Record) -> TokenStream {
         #vis fn sort_prefix<P: #prefix_parts #tg>(&self, parts: P) -> ::core::result::Result<#sort_value #tg, #path::EncodeError> { parts.format_prefix() }
     });
     quote! { #partition_carrier #sort_carrier impl #ig #primary #tg #wc { #partition #prefix } #(#implementations)* }
+}
+
+/// Logical tuple codec for an index template, using the same formatter/parser.
+pub fn template_codec(
+    record: &Record,
+    key: usize,
+    codec: &syn::Ident,
+) -> (TokenStream, TokenStream) {
+    let path = &record.crate_path;
+    let (owner, vis) = (&record.ident, &record.vis);
+    let generics = crate::document_validate::bounds(record);
+    let (ig, tg, wc) = generics.split_for_impl();
+    let parts = &template(record, key).unwrap().parts;
+    let fields: Vec<_> = components(parts).collect();
+    let ids = fields.iter().map(|i| &record.fields[*i].ident);
+    let types = fields.iter().map(|i| &record.fields[*i].ty);
+    let logical = quote!((#(#types,)*));
+    let parsed = fields.iter().map(|i| parsed(key, *i));
+    let format = format(record, key, parts, false, parts);
+    let decode = decode(record, key);
+    let (name, max) = (
+        &record.fields[key].name,
+        record.fields[key].key_limit.unwrap(),
+    );
+    let cx = format_ident!("cx", span = Span::mixed_site());
+    let item = format_ident!("item", span = Span::mixed_site());
+    let output = format_ident!("__tabulary_output", span = Span::mixed_site());
+    let declaration = quote! {
+        #vis struct #codec #generics (::core::marker::PhantomData<fn() -> #owner #tg>) #wc;
+        impl #ig #path::Converter<#logical> for #codec #tg #wc {
+            type Wire = #path::wire::String;
+            fn encode(value: &#logical, #cx: &mut #path::EncodeContext) -> ::core::result::Result<#path::__private::AttributeValue, #path::EncodeError> {
+                let (#(#ids,)*) = value; #format
+                #path::__private::encode_key(&#output, #cx, #max)
+            }
+            fn decode(value: &#path::__private::AttributeValue, #cx: &mut #path::DecodeContext) -> ::core::result::Result<#logical, #path::DecodeError> {
+                let #item = #path::Item::from([(#name.into(), value.clone())]); #decode
+                ::core::result::Result::Ok((#(#parsed,)*))
+            }
+        }
+    };
+    (logical, declaration)
 }

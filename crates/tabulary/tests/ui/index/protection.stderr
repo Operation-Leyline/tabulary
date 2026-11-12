@@ -1,0 +1,15 @@
+error[E0599]: no method named `set` found for struct `Attr<Order, std::string::String, tabulary::Required, tabulary::IndexSourceOnly>` in the current scope
+ --> tests/ui/index/protection.rs:8:31
+  |
+8 |     let _ = OrderAttrs::VALUE.set("other".into());
+  |                               ^^^ method not found in `Attr<Order, std::string::String, tabulary::Required, tabulary::IndexSourceOnly>`
+  |
+  = note: the method was found for `Attr<R, T, P, tabulary::Mutable, C>`
+
+error[E0599]: no method named `set` found for struct `Attr<Order, std::string::String, tabulary::Required, tabulary::DerivedOnly>` in the current scope
+ --> tests/ui/index/protection.rs:9:44
+  |
+9 |     let _ = OrderAttrs::BY_VALUE_PARTITION.set("raw".into());
+  |                                            ^^^ method not found in `Attr<Order, std::string::String, tabulary::Required, tabulary::DerivedOnly>`
+  |
+  = note: the method was found for `Attr<R, T, P, tabulary::Mutable, C>`

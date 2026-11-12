@@ -4,7 +4,7 @@ use crate::{
     validate::{Field, Record},
 };
 use std::collections::HashSet;
-use syn::{Ident, LitStr};
+use syn::{FieldsNamed, Ident, LitStr};
 
 pub struct Index {
     pub ident: Ident,
@@ -15,7 +15,11 @@ pub struct Index {
     pub include: Option<Vec<String>>,
     pub all: bool,
 }
-pub fn indexes(record: &mut Record, declarations: Vec<Declaration>) -> syn::Result<()> {
+pub fn indexes(
+    record: &mut Record,
+    declarations: Vec<Declaration>,
+    fields: &FieldsNamed,
+) -> syn::Result<()> {
     let (mut names, mut handles) = (HashSet::new(), HashSet::new());
     for declaration in declarations {
         let Declaration {
@@ -41,8 +45,10 @@ pub fn indexes(record: &mut Record, declarations: Vec<Declaration>) -> syn::Resu
                 "duplicate generated index handle",
             ));
         }
-        let partition = key(record, partition)?;
-        let sort = sort.map(|k| key(record, k)).transpose()?;
+        let partition = key(record, partition, fields, &ident, true)?;
+        let sort = sort
+            .map(|k| key(record, k, fields, &ident, false))
+            .transpose()?;
         if Some(partition) == sort {
             return Err(syn::Error::new_spanned(
                 &ident,
@@ -92,7 +98,6 @@ pub fn indexes(record: &mut Record, declarations: Vec<Declaration>) -> syn::Resu
     }
     Ok(())
 }
-
 fn field(record: &Record, ident: &Ident) -> syn::Result<usize> {
     record
         .fields
@@ -107,17 +112,78 @@ fn field(record: &Record, ident: &Ident) -> syn::Result<usize> {
         .map(|(i, _)| i)
         .ok_or_else(|| syn::Error::new_spanned(ident, "expected an ordinary Rust field"))
 }
-fn key(record: &Record, key: Key) -> syn::Result<usize> {
+fn key(
+    record: &mut Record,
+    key: Key,
+    fields: &FieldsNamed,
+    index: &Ident,
+    partition: bool,
+) -> syn::Result<usize> {
+    let max = if partition { 2048 } else { 1024 };
     match key {
         Key::Field(ident) => {
             let i = field(record, &ident)?;
             required(&record.fields[i])?;
             Ok(i)
         }
-        Key::Template(decl) => Err(syn::Error::new_spanned(
-            decl.name,
-            "composite index keys arrive with milestone 16b",
-        )),
+        Key::Template(decl) => {
+            // Use the primary grammar on inner types, then diagnose the staged
+            // optional-index gate at the referenced source field.
+            let mut inner = fields.clone();
+            for field in &mut inner.named {
+                if let Some(ty) = crate::validate::optional(&field.ty) {
+                    field.ty = ty;
+                }
+            }
+            let template = crate::template::parse(&decl.template, &inner)?;
+            for i in key_expand::components(&template.parts) {
+                required(&record.fields[i])?;
+            }
+            let name = decl.name.value();
+            if name.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    decl.name,
+                    "empty synthesized index key name",
+                ));
+            }
+            if let Some(i) = record.fields.iter().position(|f| f.name == name) {
+                if key_expand::template(record, i).is_some_and(|t| t.parts == template.parts) {
+                    record.fields[i].key_limit = Some(record.fields[i].key_limit.unwrap().min(max));
+                    return Ok(i);
+                }
+                return Err(syn::Error::new_spanned(
+                    decl.name,
+                    "physical index key name collides with a field or different template",
+                ));
+            }
+            let ident = quote::format_ident!(
+                "{}_{}",
+                parse::rename(&index.to_string(), "snake_case"),
+                if partition { "partition" } else { "sort" }
+            );
+            if record.fields.iter().any(|f| {
+                parse::rename(&f.ident.to_string(), "SCREAMING_SNAKE_CASE")
+                    == parse::rename(&ident.to_string(), "SCREAMING_SNAKE_CASE")
+            }) {
+                return Err(syn::Error::new_spanned(
+                    index,
+                    "duplicate generated attribute handle",
+                ));
+            }
+            let i = record.fields.len();
+            record.fields.push(Field {
+                ident,
+                vis: record.vis.clone(),
+                ty: syn::parse_quote!(::std::string::String),
+                name,
+                optional: false,
+                key_limit: Some(max),
+                default: None,
+                flatten: false,
+            });
+            record.templates.push((i, template));
+            Ok(i)
+        }
     }
 }
 fn required(field: &Field) -> syn::Result<()> {
