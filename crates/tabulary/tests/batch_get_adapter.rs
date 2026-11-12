@@ -262,9 +262,11 @@ fn decode_and_sdk_failures_keep_accumulated_progress_and_freeze() {
             ));
             assert!(error.partial.capacity[1].is_empty());
         } else {
-            let BatchGetFailure::Decode { position, source } = &error.kind else {
+            let BatchGetFailure::Decode { failures } = &error.kind else {
                 panic!("decode fault")
             };
+            assert_eq!(failures.len(), 1);
+            let (position, source) = &failures[0];
             assert_eq!(*position, 1);
             assert_eq!(source.attribute(), Some("quantity"));
             assert_eq!(source.record, "Order");
@@ -389,4 +391,158 @@ fn selecting_primary_keys_deduplicates_transport_attributes_and_decodes_them() {
 #[test]
 fn batch_consistency_budget_keys_and_projection_owner_are_compile_gates() {
     trybuild::TestCases::new().compile_fail("tests/ui/batch_get/*.rs");
+}
+
+#[test]
+fn every_malformed_position_is_identified_while_good_records_are_retained() {
+    let mut batch = batch(2);
+    let request = batch.next_request().unwrap().unwrap();
+    let mut missing = item(0);
+    missing.remove("quantity");
+    let mut mistyped = item(2);
+    mistyped.insert("quantity".into(), Av::Bool(false));
+    let error = batch
+        .accept(request.decode(Ok(output(vec![mistyped, item(1), missing], vec![]))))
+        .unwrap_err();
+    let BatchGetFailure::Decode { failures } = &error.kind else {
+        panic!("decode failure")
+    };
+    assert_eq!(
+        failures
+            .iter()
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>(),
+        vec![2, 0]
+    );
+    for (_, source) in failures {
+        assert_eq!(source.record, "Order");
+        assert_eq!(
+            source.path.segments(),
+            &[tabulary::PathSegment::Attribute("quantity".into())]
+        );
+    }
+    assert!(matches!(
+        failures[0].1.kind,
+        tabulary::DecodeFault::WrongType { .. }
+    ));
+    assert_eq!(failures[1].1.kind, tabulary::DecodeFault::Missing);
+    assert!(matches!(
+        error.partial.entries[0].state,
+        BatchGetState::Pending
+    ));
+    assert!(
+        matches!(&error.partial.entries[1].state, BatchGetState::Found(record) if record.quantity == 7)
+    );
+    assert!(matches!(
+        error.partial.entries[2].state,
+        BatchGetState::Pending
+    ));
+    assert_eq!(error.partial.calls_issued, 1);
+    assert_eq!(error.partial.capacity.len(), 1);
+    assert_eq!(batch.next_request().unwrap_err(), State::Frozen);
+}
+
+#[test]
+fn later_round_refuses_an_earlier_key_and_keeps_prior_progress() {
+    let mut batch = batch(3);
+    let first = batch.next_request().unwrap().unwrap();
+    let pending = first.input().request_items.as_ref().unwrap()["orders"].keys[2].clone();
+    batch
+        .accept(first.decode(Ok(output(vec![item(0)], vec![pending]))))
+        .unwrap();
+    let second = batch.next_request().unwrap().unwrap();
+    let error = batch
+        .accept(second.decode(Ok(output(vec![item(0)], vec![]))))
+        .unwrap_err();
+    assert!(matches!(
+        error.kind,
+        BatchGetFailure::State(State::InvalidResponse)
+    ));
+    assert!(
+        matches!(&error.partial.entries[0].state, BatchGetState::Found(record) if record.quantity == 7)
+    );
+    assert!(matches!(
+        error.partial.entries[1].state,
+        BatchGetState::Missing
+    ));
+    assert!(matches!(
+        error.partial.entries[2].state,
+        BatchGetState::Pending
+    ));
+    assert_eq!(error.partial.calls_issued, 2);
+    assert_eq!(error.partial.capacity.len(), 2);
+    assert_eq!(batch.next_request().unwrap_err(), State::Frozen);
+}
+
+#[test]
+fn unprocessed_numeric_keys_correlate_by_canonical_value() {
+    let mut batch = batch(2);
+    let first = batch.next_request().unwrap().unwrap();
+    let mut pending = first.input().request_items.as_ref().unwrap()["orders"].keys[2].clone();
+    pending.insert("line".into(), Av::N("2.0".into()));
+    batch
+        .accept(first.decode(Ok(output(vec![item(0)], vec![pending]))))
+        .unwrap();
+    let second = batch.next_request().unwrap().unwrap();
+    let keys = &second.input().request_items.as_ref().unwrap()["orders"].keys;
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0]["line"], Av::N("2".into()));
+    batch
+        .accept(second.decode(Ok(output(vec![item(2)], vec![]))))
+        .unwrap();
+    let records = batch.finish().unwrap().records;
+    assert!(records[0].is_some());
+    assert!(records[1].is_none());
+    assert!(records[2].is_some());
+}
+
+#[test]
+fn foreign_table_only_in_unprocessed_keys_is_a_protocol_fault() {
+    let mut batch = batch(2);
+    let request = batch.next_request().unwrap().unwrap();
+    let mut raw = output(vec![], vec![]);
+    let pending = request.input().request_items.as_ref().unwrap()["orders"].clone();
+    raw.unprocessed_keys
+        .as_mut()
+        .unwrap()
+        .insert("foreign".into(), pending);
+    let error = batch.accept(request.decode(Ok(raw))).unwrap_err();
+    assert!(matches!(
+        error.kind,
+        BatchGetFailure::State(State::InvalidResponse)
+    ));
+    assert!(
+        error
+            .partial
+            .entries
+            .iter()
+            .all(|entry| matches!(entry.state, BatchGetState::Pending))
+    );
+    assert_eq!(batch.next_request().unwrap_err(), State::Frozen);
+}
+
+#[test]
+fn eventual_consistency_is_explicit_on_each_round() {
+    let mut batch = Table::<Order>::new("orders")
+        .unwrap()
+        .batch_get(
+            vec![OrderKey::new("order-lime".into(), 0).unwrap()],
+            ReadConsistency::Eventual,
+            BatchBudget::new(2).unwrap(),
+        )
+        .unwrap();
+    for pending in [true, false] {
+        let request = batch.next_request().unwrap().unwrap();
+        let attributes = &request.input().request_items.as_ref().unwrap()["orders"];
+        assert_eq!(attributes.consistent_read, Some(false));
+        let keys = if pending {
+            attributes.keys.clone()
+        } else {
+            vec![]
+        };
+        batch
+            .accept(request.decode(Ok(output(vec![], keys))))
+            .unwrap();
+    }
+    assert!(batch.finish().unwrap().records[0].is_none());
 }
