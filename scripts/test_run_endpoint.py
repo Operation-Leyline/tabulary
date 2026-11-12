@@ -11,7 +11,7 @@ import run_endpoint
 
 
 class RunnerFailures(unittest.TestCase):
-    def run_ready(self, output, returncode=0):
+    def run_ready(self, output, returncode=0, listing_returncode=0):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "dynoxide.log"
             child = MagicMock()
@@ -25,7 +25,7 @@ class RunnerFailures(unittest.TestCase):
             with (patch("sys.argv", ["runner", "dynoxide", "--log", str(log)]),
                   patch.object(run_endpoint.subprocess, "Popen", side_effect=start),
                   patch.object(run_endpoint.subprocess, "run", side_effect=[
-                      subprocess.CompletedProcess([], 0, "a: test\nb: test\nc: test\n\n3 tests, 0 benchmarks\n"),
+                      subprocess.CompletedProcess([], listing_returncode, "a: test\nb: test\nc: test\n\n3 tests, 0 benchmarks\n"),
                       subprocess.CompletedProcess([], returncode, output),
                   ]) as cargo,
                   patch.object(run_endpoint.urllib.request, "build_opener") as opener,
@@ -50,6 +50,11 @@ class RunnerFailures(unittest.TestCase):
     def test_failed_cargo_cannot_supply_success_evidence(self):
         with self.assertRaises(subprocess.CalledProcessError):
             self.run_ready("test result: ok. 3 passed; 0 failed; 0 ignored;", returncode=101)
+
+    def test_failed_listing_prevents_endpoint_execution(self):
+        with self.assertRaises(subprocess.CalledProcessError) as raised:
+            self.run_ready("test result: ok. 3 passed; 0 failed; 0 ignored;", listing_returncode=101)
+        self.assertEqual(raised.exception.returncode, 101)
 
     def test_zero_tests_is_unexecuted_not_success(self):
         with self.assertRaises(RuntimeError):
