@@ -162,6 +162,7 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
                     .join(", "),
             );
         }
+        expressions.validate()?;
         let input = ScanInput::builder()
             .table_name(self.table.name())
             .set_index_name(self.index.map(|index| index.name.into()))

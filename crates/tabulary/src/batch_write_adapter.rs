@@ -189,12 +189,22 @@ fn same_value(a: &Av, b: &Av) -> bool {
         (Av::Ns(a), Av::Ns(b)) => {
             matches!((number_set(a), number_set(b)), (Some(a), Some(b)) if a == b)
         }
+        (Av::Ss(a), Av::Ss(b)) => same_set(a, b),
+        (Av::Bs(a), Av::Bs(b)) => same_set(a, b),
         (Av::M(a), Av::M(b)) => same_item(a, b),
         (Av::L(a), Av::L(b)) => {
             a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_value(a, b))
         }
         _ => a == b,
     }
+}
+
+fn same_set<T: PartialEq>(a: &[T], b: &[T]) -> bool {
+    !a.is_empty()
+        && a.len() == b.len()
+        && b.iter()
+            .enumerate()
+            .all(|(i, value)| !b[..i].contains(value) && a.contains(value))
 }
 
 /// Drives milestone 44's pure core. Arc errors retain owned progress both here and
@@ -216,7 +226,10 @@ impl<R: Record> Table<R> {
         budget: BatchBudget,
     ) -> Result<BatchWriteBatch<R>, BuildError> {
         let core = BatchWriteProgress::new(actions, budget)?;
-        crate::batch_write_size::check(&self.name, core.entries().iter().map(|e| &e.action))?;
+        crate::request_size::check_batch_write(
+            &self.name,
+            core.entries().iter().map(|e| &e.action),
+        )?;
         Ok(BatchWriteBatch {
             core: Some(core),
             table: self.name.clone(),

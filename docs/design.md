@@ -854,7 +854,7 @@ apply. No reordering into an imagined sequential execution takes place.
 aliases and only `condition()` populated. It traverses the validated tree
 left-to-right, encloses AND/OR groups in parentheses, and writes NOT as
 `NOT (child)`. Rendering does not re-encode constants. Request-wide size and
-substitution checks belong to operation builders and milestone 46.
+substitution checks run in operation builders after all fragments are rendered.
 
 `BuiltUpdate::render()` returns standalone update text and bindings.
 `render_with_condition(&BuiltCondition<R>)` allocates the update first and then
@@ -891,6 +891,22 @@ limits, expression text byte lengths, substitution limits, path depth, and
 operation-specific grammar. Free-form expression strings are deliberately
 excluded from the typed API. Users needing an unsupported AWS feature can use
 the AWS SDK directly and its raw `AttributeValue` types.
+
+Milestone 46 adds `RenderedExpressions::validate()`, called by every operation
+builder after rendering its complete expression set, including automatic guards
+and BatchGet transport-key projections. Each expression has a 4 KiB UTF-8 text
+cap and a 300-operator/function cap. Comparisons, logical operators, BETWEEN,
+IN, and functions count; SET assignment and the AND separator inside BETWEEN
+do not. Each path permits 32 dereferences after its root, on both update targets
+and operands. Literal punctuation in aliased names consumes no path depth.
+Placeholder identifiers have a 255-byte cap; this does not cap bound contents
+at 255 bytes. All shared names and values together have a conservative 2 MiB
+JSON bound, counting escaping, base64, tags and map punctuation through the same
+wire estimator used by BatchWrite. This choice may reject bindings near the
+service boundary; it avoids treating approximate billed number bytes as wire
+bytes. Transaction actions validate their own maps independently.
+These limits follow the [AWS expression constraints](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html#limits-expression-parameters)
+and [document path rules](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.Attributes.html#Expressions.Attributes.DocumentPaths).
 
 ## 8. Prepared operations and SDK integration
 
@@ -1398,6 +1414,7 @@ Milestone 45's adapter uses `Table::batch_write(actions, budget)` to construct
 `batch.accept(...)`, including on failure. It does not send anything. Returned
 unprocessed writes must match a complete issued put/delete payload, comparing
 numbers and number sets by parsed Decimal value, including inside maps/lists.
+String and binary sets compare by membership, independent of member order.
 Action kinds, attribute names and other values must match exactly; duplicates,
 changed payloads and
 foreign tables are protocol errors. Matching is independent of response order.
@@ -1433,9 +1450,10 @@ control characters use six-byte escapes. Capacity choice is included before
 it is selected;
 subsequent rounds are subsets and cannot exceed the original bound. This is
 a local upper bound for compact DynamoDB JSON, not a measured SDK body size or
-remote billing claim. The helper stays local to BatchWrite while milestone 43
-is built independently; sharing it and complete operation-limit work belong
-to milestone 46.
+remote billing claim. Milestone 46 shares this estimator with expression binding
+checks and transaction wire accounting. BatchGet retains its 100-key request
+cap; its 16 MiB response cap depends on unknown stored rows and is not a local
+request-size gate.
 
 Batch write accepts only `BatchAction::put(&record)?` and
 `BatchAction::delete(key)?`. No conditions, updates, version-controlled
@@ -1606,8 +1624,21 @@ Duplicate detection compares physical key names and scalar values, normalizing
 numeric spelling privately and treating a table name and its ARN as aliases.
 Explicit DynamoDB ARNs must agree on partition, region, and account. The known
 aggregate contribution checked here is the conservative size of put items;
-existing item sizes and complete wire-size accounting remain service checks
-and milestone 46 work, respectively. Decoding is added by milestone 40 below.
+existing item sizes remain service checks. Decoding is added by milestone 40 below.
+
+Milestone 46 adds `PreparedTransaction::size() -> TransactionSize`, reporting
+`known_put_item_bytes`, `unknown_item_count`, and `conservative_wire_bytes`.
+The first is the conservative put contribution checked against 4 MiB; the
+second counts updates, deletes and checks whose stored rows cannot be sized
+locally. The wire estimate counts all action payloads, tables, expressions,
+bindings, the optional caller token, and root/options reservations with checked
+arithmetic. It reuses BatchWrite's JSON value estimator, with 128 root/options
+bytes and 192 wrapper/options bytes per transaction action. There is no separate
+documented 4 MiB wire cap: base64-expanded JSON may exceed 4 MiB while known item
+bytes fit. Passing local checks does not certify the stored-row aggregate or an
+update's resulting 400 KiB item bound. Update builders never infer a resulting
+item size from just the key and expression values. Remote wire measurements
+and billing equivalence remain unverified.
 
 ### 11.3 Typed cancellation results without reflection
 

@@ -83,6 +83,8 @@ impl<R: Record + Document, K: RecordKey<R>> UpdateBuilder<R, K> {
         self.collection_metrics = choice;
         self
     }
+    /// Validate the expressions and key. The resulting stored item size remains
+    /// unknown locally; the service checks its 400 KiB cap against the actual row.
     pub fn build(self) -> Result<PreparedUpdate<R>, BuildError> {
         let key = self.key.encode_key()?;
         let mut changes = self.changes;
@@ -94,6 +96,7 @@ impl<R: Record + Document, K: RecordKey<R>> UpdateBuilder<R, K> {
             Some(condition) => changes.render_with_condition(&condition.build()?),
             None => changes.render(),
         };
+        expressions.validate()?;
         let input = UpdateItemInput::builder()
             .table_name(self.table)
             .set_key(Some(key))

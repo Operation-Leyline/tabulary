@@ -167,6 +167,7 @@ impl<R: Record, K, P> BatchGet<R, K, P> {
                 .collect::<Vec<_>>()
                 .join(", "),
         );
+        expressions.validate()?;
         let mut template = self.template;
         template.projection_expression = expressions.projection.clone();
         template.expression_attribute_names = Some(expressions.names().clone());

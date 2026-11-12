@@ -90,6 +90,52 @@ impl tabulary::Document for NumericOrder {
 }
 
 #[test]
+fn echoed_string_and_binary_sets_ignore_order_but_reject_changed_members() {
+    for changed in 0..3 {
+        let sets = vec![
+            Av::Ss(vec!["a".into(), "b".into()]),
+            Av::Bs(vec![vec![1].into(), vec![2].into()]),
+        ];
+        let row = NumericOrder(
+            [
+                ("id".into(), Av::S("order".into())),
+                ("sets".into(), Av::L(sets)),
+            ]
+            .into(),
+        );
+        let mut batch = Table::<NumericOrder>::new("orders")
+            .unwrap()
+            .batch_write(
+                vec![BatchAction::put(&row).unwrap()],
+                BatchBudget::new(2).unwrap(),
+            )
+            .unwrap();
+        let request = batch.next_request().unwrap().unwrap();
+        let mut write = request.input().request_items.as_ref().unwrap()["orders"][0].clone();
+        write.put_request.as_mut().unwrap().item.insert(
+            "sets".into(),
+            Av::L(vec![
+                Av::Ss(vec![
+                    "b".into(),
+                    if changed == 1 { "b" } else { "a" }.into(),
+                ]),
+                Av::Bs(vec![
+                    vec![2].into(),
+                    vec![if changed == 2 { 2 } else { 1 }].into(),
+                ]),
+            ]),
+        );
+        let result = batch.accept(request.decode(Ok(output(vec![write], None))));
+        if changed != 0 {
+            assert!(result.is_err());
+        } else {
+            result.unwrap();
+            assert_eq!(batch.next_request().unwrap().unwrap().positions(), &[0]);
+        }
+    }
+}
+
+#[test]
 fn echoed_numbers_match_by_decimal_value_including_nested_number_sets() {
     for echoed in ["1e0", "different", "malformed", "duplicate"] {
         let item = [

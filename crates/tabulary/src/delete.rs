@@ -85,6 +85,7 @@ impl<R: Record + Document, K: RecordKey<R>> DeleteBuilder<R, K> {
             Some(condition) => condition.build()?.render(),
             None => RenderedExpressions::default(),
         };
+        expressions.validate()?;
         let names = (!expressions.names().is_empty()).then(|| expressions.names().clone());
         let values = (!expressions.values().is_empty()).then(|| expressions.values().clone());
         let failure_return = match self.old_item_mode {

@@ -2,8 +2,9 @@
 use aws_sdk_dynamodb::types::AttributeValue as Av;
 
 use crate::{BatchAction, BuildError, Item};
+use std::collections::HashMap;
 
-pub(crate) fn check<'a, R: 'a>(
+pub(crate) fn check_batch_write<'a, R: 'a>(
     table: &str,
     actions: impl Iterator<Item = &'a BatchAction<R>>,
 ) -> Result<(), BuildError> {
@@ -13,13 +14,16 @@ pub(crate) fn check<'a, R: 'a>(
     for action in actions {
         size = add(size, add(32, map(action.item().unwrap_or(action.key()))?)?)?;
     }
-    let max = 16 * 1024 * 1024;
-    if size > max {
-        return Err(BuildError::RequestLimit { max, actual: size });
-    }
-    Ok(())
+    ensure(16 * 1024 * 1024, size)
 }
-fn add(a: usize, b: usize) -> Result<usize, BuildError> {
+pub(crate) fn ensure(max: usize, actual: usize) -> Result<(), BuildError> {
+    if actual > max {
+        Err(BuildError::RequestLimit { max, actual })
+    } else {
+        Ok(())
+    }
+}
+pub(crate) fn add(a: usize, b: usize) -> Result<usize, BuildError> {
     a.checked_add(b).ok_or(BuildError::SizeOverflow)
 }
 fn string(s: &str) -> Result<usize, BuildError> {
@@ -69,11 +73,66 @@ fn value(v: &Av) -> Result<usize, BuildError> {
             Av::M(v) => map(v)?,
             _ => {
                 return Err(BuildError::OperationConstraint {
-                    code: "unsupported_batch_wire_type",
+                    code: "unsupported_wire_type",
                 });
             }
         },
     )
+}
+
+pub(crate) fn bindings(
+    names: &HashMap<String, String>,
+    values: &Item,
+) -> Result<usize, BuildError> {
+    names
+        .iter()
+        .try_fold(add(2, map(values)?)?, |n, (alias, name)| {
+            add(n, add(2, add(string(alias)?, string(name)?)?)?)
+        })
+}
+
+pub(crate) fn transaction(
+    items: &[aws_sdk_dynamodb::types::TransactWriteItem],
+    token: Option<&str>,
+) -> Result<usize, BuildError> {
+    let mut size = add(128, token.map(string).transpose()?.unwrap_or(0))?;
+    // Reserve action wrappers, field names, separators and failure-return options.
+    // The 4 MiB transaction gate applies to item data, not this wire bound.
+    macro_rules! condition {
+        ($value:expr, optional) => {
+            $value.as_deref()
+        };
+        ($value:expr, required) => {
+            Some($value.as_str())
+        };
+    }
+    macro_rules! action {
+        ($action:expr, $payload:ident, $condition:ident $(, $update:ident)?) => {
+            if let Some(action) = $action {
+                size = add(size, add(192, string(&action.table_name)?)?)?;
+                size = add(size, map(&action.$payload)?)?;
+                if let Some(text) = condition!(&action.condition_expression, $condition) {
+                    size = add(size, string(text)?)?;
+                }
+                $(size = add(size, string(&action.$update)?)?;)?
+                if let Some(names) = &action.expression_attribute_names {
+                    for (alias, name) in names {
+                        size = add(size, add(2, add(string(alias)?, string(name)?)?)?)?;
+                    }
+                }
+                if let Some(values) = &action.expression_attribute_values {
+                    size = add(size, map(values)?)?;
+                }
+            }
+        };
+    }
+    for item in items {
+        action!(&item.put, item, optional);
+        action!(&item.delete, key, optional);
+        action!(&item.condition_check, key, required);
+        action!(&item.update, key, optional, update_expression);
+    }
+    Ok(size)
 }
 
 #[cfg(test)]
@@ -88,6 +147,10 @@ mod tests {
         assert!(value(&Av::Bool(false)).unwrap() >= r#"{"BOOL":false}"#.len());
         assert!(value(&Av::Null(true)).unwrap() >= r#"{"NULL":true}"#.len());
         assert!(matches!(binary(usize::MAX), Err(BuildError::SizeOverflow)));
+        assert!(matches!(
+            binary(usize::MAX - 2),
+            Err(BuildError::SizeOverflow)
+        ));
         assert!(matches!(add(usize::MAX, 1), Err(BuildError::SizeOverflow)));
         let nested = Av::M(
             [(

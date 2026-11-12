@@ -174,6 +174,7 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
                     .join(", "),
             );
         }
+        expressions.validate()?;
         let input = QueryInput::builder()
             .table_name(self.table.name())
             .set_index_name(self.index.map(|index| index.name.into()))
