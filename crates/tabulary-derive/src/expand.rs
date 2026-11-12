@@ -48,6 +48,7 @@ pub fn record(record: &Record) -> TokenStream {
     let mut key_reads = Vec::new();
     let mut source_checks = Vec::new();
     let mut common_reads = Vec::new();
+    let mut sparse_reads = Vec::new();
     let inputs = key_expand::inputs(record);
     for &i in &inputs {
         let f = &fields[i];
@@ -106,7 +107,11 @@ pub fn record(record: &Record) -> TokenStream {
             if key_expand::primary(record, i) {
                 key_writes.push(write);
             }
-            reads.push(read.clone());
+            if crate::sparse_expand::conditional(record, i) {
+                sparse_reads.push(crate::sparse_expand::decode(record, i));
+            } else {
+                reads.push(read.clone());
+            }
             if key_expand::primary(record, i) {
                 key_reads.push(read);
             }
@@ -128,10 +133,24 @@ pub fn record(record: &Record) -> TokenStream {
                 const _: () = ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
                     #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), #key_message);
             });
-            (
+            let (encode, decode) = (
                 quote!(::core::option::Option::Some(#path::__private::encode_key(&self.#id, &mut #cx, #max)?)),
                 quote!(#path::__private::decode_key(#item.get(#name), &mut #cx, #max)?),
-            )
+            );
+            if f.optional {
+                (
+                    quote!(match &self.#id {
+                        ::core::option::Option::Some(value) => ::core::option::Option::Some(#path::__private::encode_key(value, &mut #cx, #max)?),
+                        ::core::option::Option::None => ::core::option::Option::None,
+                    }),
+                    quote!(match #item.get(#name) {
+                        ::core::option::Option::Some(_) => ::core::option::Option::Some(#decode),
+                        ::core::option::Option::None => ::core::option::Option::None,
+                    }),
+                )
+            } else {
+                (encode, decode)
+            }
         } else if f.optional {
             (
                 quote!(#path::field::encode_optional::<#ty, #path::Native<#ty>>(&self.#id, &mut #cx)?),
@@ -176,6 +195,9 @@ pub fn record(record: &Record) -> TokenStream {
         }
     }
     reads.extend(common_reads);
+    writes.insert(0, crate::sparse_expand::validate_sources(record, true));
+    reads.push(crate::sparse_expand::validate_sources(record, false));
+    reads.extend(sparse_reads);
     reads.extend(source_checks);
     handles.sort_by_key(|(i, _)| *i);
     descriptors.sort_by_key(|(i, _)| *i);

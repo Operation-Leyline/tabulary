@@ -24,13 +24,20 @@ pub fn fields(s: &Record) -> TokenStream {
         if crate::key_expand::template(s, i).is_some() {
             let local = format_ident!("__tabulary_projection_key_{i}", span = Span::mixed_site());
             let encode = crate::key_expand::encode(s, i);
+            let result = if f.optional {
+                quote!(::core::option::Option::Some(value))
+            } else {
+                quote!(value)
+            };
+            let absent = f.optional.then(|| quote!(::core::option::Option::None => ::core::result::Result::Ok(::core::option::Option::None),));
             preparations.push(quote! {
                 let #local = ::core::option::Option::Some((|| {
                     let #cx = #path::EncodeContext::new(<Self as #path::Document>::NAME);
                     let mut #item = #path::Item::new();
                     #encode
                     match #item.remove(#name) {
-                        ::core::option::Option::Some(#path::__private::AttributeValue::S(value)) => ::core::result::Result::Ok(value),
+                        ::core::option::Option::Some(#path::__private::AttributeValue::S(value)) => ::core::result::Result::Ok(#result),
+                        #absent
                         _ => ::core::result::Result::Err(#cx.error(#path::EncodeFault::Custom { code: "invalid_projection_default" })),
                     }
                 })());
@@ -55,7 +62,12 @@ pub fn fields(s: &Record) -> TokenStream {
         let decode = if crate::key_expand::template(s, i).is_some() {
             let parse = crate::key_expand::decode(s, i);
             let text = format_ident!("__tabulary_text_{i}", span = Span::mixed_site());
-            quote!({ #parse ::core::result::Result::Ok(#text) })
+            if f.optional {
+                quote!({
+                    if !#item.contains_key(#name) { return ::core::result::Result::Ok(::core::option::Option::None); }
+                    #parse ::core::result::Result::Ok(::core::option::Option::Some(#text))
+                })
+            } else { quote!({ #parse ::core::result::Result::Ok(#text) }) }
         }
         else if f.flatten { quote!(<#ty as #path::Variants>::decode_flattened(#item, &mut #cx.clone())) }
         else if let Some(max) = f.key_limit { quote!(#path::__private::decode_key(#item.get(#name), &mut #child, #max)) }

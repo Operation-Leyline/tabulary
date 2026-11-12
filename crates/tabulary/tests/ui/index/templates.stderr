@@ -10,7 +10,7 @@ error: physical index key name collides with a field or different template
 9 |     index(ident = ByValue, name = "by_value", kind = global, partition(name = "pk", template = "{value:hex}"), project = all))]
   |                                                                               ^^^^
 
-error: optional index inputs arrive with sparse indexes in milestone 17
+error: non-sparse index inputs must be required
   --> tests/ui/index/templates.rs:18:5
    |
 18 |     value: Option<String>,
