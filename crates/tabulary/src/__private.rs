@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 
 pub use crate::record::{decode_key, encode_key};
 pub use crate::value::wrong_type;
+pub use crate::variants::assert_disjoint;
 pub use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::{

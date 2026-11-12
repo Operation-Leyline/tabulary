@@ -15,7 +15,12 @@ pub fn bounds(schema: &crate::validate::Record) -> Generics {
         let ty = &field.ty;
         // The implementation itself supplies recursive codecs. Requiring them in
         // its where clause would create a trait-solver cycle for Node<T>.
-        if !references_self(quote::quote!(#ty), &schema.ident) {
+        if field.flatten {
+            generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote_spanned!(field.ident.span()=> #ty: #path::Variants));
+        } else if !references_self(quote::quote!(#ty), &schema.ident) {
             generics
                 .make_where_clause()
                 .predicates

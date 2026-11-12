@@ -18,6 +18,7 @@ pub struct Field {
     pub optional: bool,
     pub key_limit: Option<usize>,
     pub default: Option<Path>,
+    pub flatten: bool,
 }
 
 pub struct Record {
@@ -102,18 +103,40 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
     let mut partition = None;
     let mut names = HashMap::new();
     let mut handles = HashSet::new();
+    let mut flattened = false;
     for (i, field) in fields.named.into_iter().enumerate() {
         let opts = options(&field.attrs, false)?;
         let ident = field
             .ident
             .ok_or_else(|| error(&field.ty, "expected a named field"))?;
         let rust_name = ident.to_string().trim_start_matches("r#").to_owned();
+        if opts.flatten {
+            if flattened {
+                return Err(error(
+                    &ident,
+                    "at most one flattened variants field is allowed",
+                ));
+            }
+            flattened = true;
+            if opts.partition_key
+                || opts.sort_key
+                || opts.default.is_some()
+                || opts.rename.is_some()
+                || optional(&field.ty).is_some()
+            {
+                return Err(error(
+                    &ident,
+                    "flatten cannot be optional, renamed, defaulted or a key",
+                ));
+            }
+        }
         let name_span = opts
             .rename
             .as_ref()
             .map_or(ident.span(), |name| name.span());
         let name = match opts.rename {
             Some(name) => name.value(),
+            None if opts.flatten => rust_name.clone(),
             None => parse::rename(
                 &rust_name,
                 rule.as_deref()
@@ -123,7 +146,9 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
         if name.is_empty() {
             return Err(syn::Error::new(name_span, "empty wire name"));
         }
-        if let Some(first_span) = names.insert(name.clone(), name_span) {
+        if !opts.flatten
+            && let Some(first_span) = names.insert(name.clone(), name_span)
+        {
             let mut duplicate = syn::Error::new(name_span, format!("duplicate wire name `{name}`"));
             duplicate.combine(syn::Error::new(first_span, "first declared here"));
             return Err(duplicate);
@@ -160,6 +185,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             name,
             key_limit,
             default: opts.default,
+            flatten: opts.flatten,
         });
     }
     if record {

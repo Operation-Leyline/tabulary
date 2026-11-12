@@ -25,6 +25,14 @@ pub fn document(schema: &Record) -> TokenStream {
             )
         );
         let child = quote!(#cx.at(#path::PathSegment::Attribute(#name.into())));
+        if field.flatten {
+            let (write, read, tag) = crate::variants_flatten::field(schema, i);
+            writes.push(write);
+            reads.push(read);
+            values.push(quote!(#id: #local));
+            handles.push(quote_spanned!(id.span()=> #fv const #handle: #path::Attr<#ident #tg, #tag, #path::Required, #path::DerivedOnly> = #path::__private::field(<#ty as #path::Variants>::TAG, #i);));
+            continue;
+        }
         let (presence, encode, decode) = if field.optional {
             (
                 quote!(#path::Optional),
@@ -57,6 +65,11 @@ pub fn document(schema: &Record) -> TokenStream {
         handles.push(quote_spanned!(id.span()=> #fv const #handle: #path::Attr<#ident #tg, #ty, #presence> = #path::__private::field(#name, #i);));
     }
     let unknown = unknown_check(schema);
+    // Common fields precede the discriminator even if flatten was declared first.
+    if let Some(i) = schema.fields.iter().position(|f| f.flatten) {
+        let read = reads.remove(i);
+        reads.push(read);
+    }
     let implementation = implementation(schema, &writes, &reads, &values, unknown);
     quote! {
         #[allow(dead_code)]
@@ -72,11 +85,21 @@ pub fn unknown_check(schema: &Record) -> TokenStream {
         return quote!();
     }
     let path = &schema.crate_path;
-    let names = schema.fields.iter().map(|field| &field.name);
+    let names = schema
+        .fields
+        .iter()
+        .filter(|f| !f.flatten)
+        .map(|field| &field.name);
+    let variants = crate::variants_flatten::known(schema);
+    let exclude = schema
+        .fields
+        .iter()
+        .any(|f| f.flatten)
+        .then(|| quote!(&& !(#variants)));
     let item = format_ident!("item", span = Span::mixed_site());
     let cx = format_ident!("cx", span = Span::mixed_site());
     quote! {
-        if let ::core::option::Option::Some(name) = #item.keys().filter(|name| ![#(#names,)*].contains(&name.as_str())).min() {
+        if let ::core::option::Option::Some(name) = #item.keys().filter(|name| ![#(#names,)*].contains(&name.as_str()) #exclude).min() {
             return ::core::result::Result::Err(#cx.at(#path::PathSegment::Attribute(name.clone())).error(#path::DecodeFault::UnknownAttribute));
         }
     }
@@ -94,17 +117,24 @@ pub fn implementation(
     let (ig, tg, wc) = generics.split_for_impl();
     let item = format_ident!("item", span = Span::mixed_site());
     let cx = format_ident!("cx", span = Span::mixed_site());
+    let validation = crate::variants_flatten::validation(schema);
+    let declaration = (schema.generics.params.is_empty()
+        && schema.fields.iter().any(|f| f.flatten))
+    .then(|| quote!(const _: () = { #validation };));
     quote! {
+        #declaration
         impl #ig #path::Document for #ident #tg #wc {
             const NAME: &'static str = ::core::stringify!(#ident);
             fn encode_map(&self, #cx: &mut #path::EncodeContext) -> ::core::result::Result<#path::Item, #path::EncodeError> {
                 let #cx = #cx.in_document(<Self as #path::Document>::NAME);
+                #validation
                 let mut #item = #path::Item::new();
                 #(#writes)*
                 ::core::result::Result::Ok(#item)
             }
             fn decode_map(#item: &#path::Item, #cx: &mut #path::DecodeContext) -> ::core::result::Result<Self, #path::DecodeError> {
                 let #cx = #cx.in_document(<Self as #path::Document>::NAME);
+                #validation
                 #(#reads)*
                 #unknown
                 ::core::result::Result::Ok(Self { #(#values,)* })

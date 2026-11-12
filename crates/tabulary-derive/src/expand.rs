@@ -13,7 +13,7 @@ pub fn record(record: &Record) -> TokenStream {
         fields,
         partition,
         sort,
-        allow_unknown,
+        allow_unknown: _,
     } = record;
     let generics = crate::document_validate::bounds(record);
     let (ig, tg, wc) = generics.split_for_impl();
@@ -36,6 +36,7 @@ pub fn record(record: &Record) -> TokenStream {
     let mut descriptors = Vec::new();
     let mut writes = Vec::new();
     let mut reads = Vec::new();
+    let mut flatten_read = None;
     let mut key_fields = Vec::new();
     let mut key_args = Vec::new();
     let mut key_names = Vec::new();
@@ -66,6 +67,14 @@ pub fn record(record: &Record) -> TokenStream {
         } else {
             quote!(#path::Required)
         };
+        if f.flatten {
+            let (write, read, tag) = crate::variants_flatten::field(record, i);
+            handles.push((i, quote_spanned!(id.span()=> #fv const #handle: #path::Attr<#ident #tg, #tag, #path::Required, #path::DerivedOnly> = #path::__private::field(<#ty as #path::Variants>::TAG, #i);)));
+            descriptors.push((i, quote!(<#attrs #tg>::#handle.descriptor())));
+            writes.push(write);
+            flatten_read = Some(read);
+            continue;
+        }
         let access = if f.key_limit.is_some() {
             quote!(#path::KeyOnly)
         } else {
@@ -130,16 +139,8 @@ pub fn record(record: &Record) -> TokenStream {
     descriptors.sort_by_key(|(i, _)| *i);
     let handles = handles.iter().map(|(_, tokens)| tokens);
     let descriptors = descriptors.iter().map(|(_, tokens)| tokens);
-    let wire_names = fields.iter().map(|f| &f.name);
-    let unknown_check = if *allow_unknown {
-        quote!()
-    } else {
-        quote! {
-            if let ::core::option::Option::Some(name) = #item.keys().filter(|name| ![#(#wire_names,)*].contains(&name.as_str())).min() {
-                return ::core::result::Result::Err(#context.at(#path::PathSegment::Attribute(name.clone())).error(#path::DecodeFault::UnknownAttribute));
-            }
-        }
-    };
+    reads.extend(flatten_read);
+    let unknown_check = crate::document_expand::unknown_check(record);
     let sort = match sort {
         ::core::option::Option::Some(i) => quote!(::core::option::Option::Some(#i)),
         ::core::option::Option::None => quote!(::core::option::Option::None),
