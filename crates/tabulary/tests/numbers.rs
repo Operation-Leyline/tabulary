@@ -252,3 +252,22 @@ fn numeric_wire_tags_and_fault_context_are_strict() {
         }
     }
 }
+
+#[test]
+fn decimal_parse_supports_boxed_question_mark_without_disclosing_input() {
+    fn parse(text: &str) -> Result<Decimal, Box<dyn std::error::Error>> {
+        Ok(text.parse::<Decimal>()?)
+    }
+    assert_eq!(parse("19.75").unwrap().to_string(), "19.75");
+    for (input, fault) in [
+        ("private decimal 2049", DecodeFault::InvalidNumber),
+        (
+            "123456789012345678901234567890123456789",
+            DecodeFault::NumberRange,
+        ),
+    ] {
+        let error = parse(input).err().unwrap();
+        assert_eq!(error.downcast_ref::<DecodeFault>(), Some(&fault));
+        assert!(!error.to_string().contains(input));
+    }
+}

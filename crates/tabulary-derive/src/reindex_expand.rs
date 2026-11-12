@@ -26,16 +26,17 @@ fn encode_source(record: &Record, i: usize, receiver: TokenStream) -> TokenStrea
     let cx = format_ident!("cx", span = Span::mixed_site());
     let item = format_ident!("item", span = Span::mixed_site());
     let f = &record.fields[i];
-    let (id, name) = (&f.ident, &f.name);
+    let (id, name, ty) = (&f.ident, &f.name, &f.ty);
+    let codec = f.codec(path);
     let encode = if let Some(max) = f
         .key_limit
         .into_iter()
         .chain(key::index_limit(record, i))
         .min()
     {
-        quote!(#path::__private::encode_key(value, &mut #cx.at(#path::PathSegment::Attribute(#name.into())), #max)?)
+        quote!(#path::__private::encode_key_with::<#ty, #codec>(value, &mut #cx.at(#path::PathSegment::Attribute(#name.into())), #max)?)
     } else {
-        quote!(#path::Value::encode_value(value, &mut #cx.at(#path::PathSegment::Attribute(#name.into())))?)
+        quote!(<#codec as #path::Converter<#ty>>::encode(value, &mut #cx.at(#path::PathSegment::Attribute(#name.into())))?)
     };
     let write = quote!(#item.insert(#name.into(), #encode););
     if f.optional {

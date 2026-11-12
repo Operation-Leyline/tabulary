@@ -1,0 +1,35 @@
+error: version fields require the native u64 codec; converters are forbidden
+ --> tests/ui/converters/declarations.rs:5:65
+  |
+5 |     #[tabulary(version, with = tabulary::convert::u128_string)] revision: u64,
+  |                                                                 ^^^^^^^^
+
+error: TTL fields require the native TtlSeconds codec; converters are forbidden
+  --> tests/ui/converters/declarations.rs:11:61
+   |
+11 |     #[tabulary(ttl, with = tabulary::convert::u128_string)] expires: tabulary::TtlSeconds,
+   |                                                             ^^^^^^^
+
+error: flattened variants use their payload converters; a group converter is forbidden
+  --> tests/ui/converters/declarations.rs:16:65
+   |
+16 |     #[tabulary(flatten, with = tabulary::convert::u128_string)] state: bool,
+   |                                                                 ^^^^^
+
+error: flattened variants use their payload converters; a group converter is forbidden
+  --> tests/ui/converters/declarations.rs:22:65
+   |
+22 |     #[tabulary(flatten, with = tabulary::convert::u128_string)] state: bool,
+   |                                                                 ^^^^^
+
+error: duplicate with option
+  --> tests/ui/converters/declarations.rs:27:55
+   |
+27 |     #[tabulary(with = tabulary::convert::u128_string, with = tabulary::convert::u128_string)] value: u128,
+   |                                                       ^^^^
+
+error[E0080]: evaluation panicked: primary keys require S, N or B codecs
+  --> tests/ui/converters/declarations.rs:40:48
+   |
+40 |     #[tabulary(partition_key, with = boolean)] id: String,
+   |                                                ^^ evaluation of `_` failed here

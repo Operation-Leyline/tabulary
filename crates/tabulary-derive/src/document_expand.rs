@@ -16,6 +16,7 @@ pub fn document(schema: &Record) -> TokenStream {
     let cx = format_ident!("cx", span = Span::mixed_site());
     for (i, field) in schema.fields.iter().enumerate() {
         let (id, ty, name, fv) = (&field.ident, &field.ty, &field.name, &field.vis);
+        let codec = field.codec(path);
         let local = format_ident!("__tabulary_field_{i}", span = Span::mixed_site());
         let handle = format_ident!(
             "{}",
@@ -36,14 +37,14 @@ pub fn document(schema: &Record) -> TokenStream {
         let (presence, encode, decode) = if field.optional {
             (
                 quote!(#path::Optional),
-                quote!(#path::field::encode_optional::<#ty, #path::Native<#ty>>(&self.#id, &mut #child)?),
-                quote!(#path::field::decode_optional::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #child)?),
+                quote!(#path::field::encode_optional::<#ty, #codec>(&self.#id, &mut #child)?),
+                quote!(#path::field::decode_optional::<#ty, #codec>(#item.get(#name), &mut #child)?),
             )
         } else {
             (
                 quote!(#path::Required),
-                quote!(::core::option::Option::Some(<#ty as #path::Value>::encode_value(&self.#id, &mut #child)?)),
-                quote!(#path::field::decode_required::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #child)?),
+                quote!(::core::option::Option::Some(<#codec as #path::Converter<#ty>>::encode(&self.#id, &mut #child)?)),
+                quote!(#path::field::decode_required::<#ty, #codec>(#item.get(#name), &mut #child)?),
             )
         };
         let decode = if let Some(default) = &field.default {
@@ -62,7 +63,7 @@ pub fn document(schema: &Record) -> TokenStream {
         writes.push(quote_spanned!(id.span()=> if let ::core::option::Option::Some(value) = #encode { #item.insert(#name.into(), value); }));
         reads.push(quote_spanned!(id.span()=> let #local = #decode;));
         values.push(quote!(#id: #local));
-        handles.push(quote_spanned!(id.span()=> #fv const #handle: #path::Attr<#ident #tg, #ty, #presence> = #path::__private::field(#name, #i);));
+        handles.push(quote_spanned!(id.span()=> #fv const #handle: #path::Attr<#ident #tg, #ty, #presence, #path::Mutable, #codec> = #path::__private::field(#name, #i);));
     }
     let unknown = unknown_check(schema);
     // Common fields precede the discriminator even if flatten was declared first.
@@ -125,9 +126,10 @@ pub fn implementation(
     let descriptors = schema.fields.iter().enumerate().map(|(i, field)| {
         if field.flatten { return crate::variants_flatten::descriptor(schema, i); }
         let (ty, name) = (&field.ty, &field.name);
+        let codec = field.codec(path);
         let presence = if field.optional { quote!(#path::Optional) } else { quote!(#path::Required) };
         let access = crate::key_expand::access(schema, i);
-        quote!(#path::__private::field::<Self, #ty, #presence, #access, #path::Native<#ty>>(#name, #i).descriptor())
+        quote!(#path::__private::field::<Self, #ty, #presence, #access, #codec>(#name, #i).descriptor())
     });
     quote! {
         #projection_fields

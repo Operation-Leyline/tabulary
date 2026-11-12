@@ -54,7 +54,7 @@ pub fn expand(record: &Record) -> TokenStream {
                 (logical, quote!(#codec #tg))
             } else {
                 let ty = &record.fields[i].ty;
-                (quote!(#ty), quote!(#path::Native<#ty>))
+                (quote!(#ty), record.fields[i].codec(path))
             }
         };
         let (partition, partition_codec) = key_type(index.partition, "Partition");
