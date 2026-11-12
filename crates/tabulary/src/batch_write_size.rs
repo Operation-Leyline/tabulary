@@ -27,6 +27,7 @@ fn string(s: &str) -> Result<usize, BuildError> {
         add(
             n,
             match b {
+                b'\n' | b'\r' | b'\t' | 8 | 12 => 2,
                 0..=31 => 6,
                 b'"' | b'\\' => 2,
                 _ => 1,
@@ -81,6 +82,7 @@ mod tests {
     #[test]
     fn wire_expansion_and_arithmetic_are_separate_from_item_bytes() {
         assert_eq!(string("é\0\"\\").unwrap(), 14);
+        assert_eq!(string("\n\r\t\u{8}\u{c}").unwrap(), 12);
         assert_eq!(binary(3).unwrap(), 6);
         assert_eq!(binary(4).unwrap(), 10);
         assert!(value(&Av::Bool(false)).unwrap() >= r#"{"BOOL":false}"#.len());

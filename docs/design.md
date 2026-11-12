@@ -1357,9 +1357,11 @@ gate at batch construction, separate from the core's 1..=25 action gate and
 400 KiB put-item gate. It counts UTF-8 names/strings with JSON escaping,
 base64 expansion for binary values/sets, tags, containers, separators and
 request options using checked arithmetic. A fixed 128-byte root/options
-reservation, 32 bytes per action, eight bytes per value tag (nine for BOOL
-and NULL), and conservative control-character escaping may refuse requests
-near the service boundary. Capacity choice is included before it is selected;
+reservation, 32 bytes per action, and eight bytes per value tag (nine for BOOL
+and NULL) may refuse requests near the service boundary. Newline, carriage
+return, tab, backspace and form feed use their two-byte JSON escapes; other
+control characters use six-byte escapes. Capacity choice is included before
+it is selected;
 subsequent rounds are subsets and cannot exceed the original bound. This is
 a local upper bound for compact DynamoDB JSON, not a measured SDK body size or
 remote billing claim. The helper stays local to BatchWrite while milestone 43

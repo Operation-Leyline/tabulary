@@ -418,7 +418,8 @@ fn request_and_action_caps_are_checked_before_issuing_a_round() {
 
 #[test]
 fn wire_cap_counts_escaped_payloads_independently_of_item_size() {
-    for payload in ["a".repeat(300_000), "\0".repeat(300_000)] {
+    for text in ["a", "\0", "\n", "\r", "\t", "\u{8}", "\u{c}"] {
+        let payload = text.repeat(300_000);
         let actions = (0..25)
             .map(|i| {
                 BatchAction::put(&Order {
@@ -436,6 +437,37 @@ fn wire_cap_counts_escaped_payloads_independently_of_item_size() {
             );
         } else {
             assert!(result.is_ok());
+        }
+    }
+}
+
+#[test]
+fn wire_request_boundary_pins_root_action_and_value_allowances() {
+    // For these 25 two-string items, the documented allowances contribute
+    // 1,951 bytes plus 6 per NUL and 1 per trailing ASCII character.
+    // 25 * 111,835 NULs plus two more leave three bytes below 16 MiB.
+    for (tail, expected) in [(2, 16_777_215), (3, 16_777_216), (4, 16_777_217)] {
+        let actions = (0..25)
+            .map(|i| {
+                let mut payload = "\0".repeat(111_835);
+                if i == 24 {
+                    payload.push_str("\0\0");
+                    payload.push_str(&"a".repeat(tail));
+                }
+                BatchAction::put(&Order {
+                    id: i.to_string(),
+                    payload,
+                })
+                .unwrap()
+            })
+            .collect();
+        let result = table().batch_write(actions, BatchBudget::new(1).unwrap());
+        if expected <= 16_777_216 {
+            assert!(result.is_ok(), "bound {expected} must fit");
+        } else {
+            assert!(
+                matches!(result, Err(BuildError::RequestLimit { max: 16_777_216, actual }) if actual == expected)
+            );
         }
     }
 }
