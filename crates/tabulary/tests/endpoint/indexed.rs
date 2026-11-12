@@ -12,14 +12,27 @@ use tokio::time::{sleep, timeout};
 #[allow(dead_code)]
 #[path = "../../../../docs/examples/02_composite_sparse.rs"]
 mod composite_example;
+#[allow(dead_code)]
+#[path = "../../../../docs/examples/07_values_projection_scan.rs"]
+mod values_example;
 
 fn limit(value: u32) -> NonZeroU32 {
     NonZeroU32::new(value).unwrap()
 }
 
 #[test]
-fn composite_design_example_compiles_and_maps_real_records() {
+fn design_examples_compile_and_map_real_records() {
     composite_example::mapping_and_definition().unwrap();
+    let item = values_example::envelope().unwrap().to_item().unwrap();
+    assert_eq!(item["full_width_number"], Av::S(u128::MAX.to_string()));
+    assert_eq!(
+        values_example::InvoiceEnvelope::from_item(&item)
+            .unwrap()
+            .to_item()
+            .unwrap(),
+        item
+    );
+    values_example::nested_changes().build().unwrap();
 }
 
 #[derive(Debug, PartialEq, tabulary::Record)]
