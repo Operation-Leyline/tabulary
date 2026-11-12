@@ -114,6 +114,7 @@ fn target_key<R: Record>(item: &Item) -> Result<Item, BuildError> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BatchWriteState {
     Processed,
+    /// With zero issued calls this was never sent; after acceptance it was returned unprocessed.
     Pending,
     Indeterminate,
 }

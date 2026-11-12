@@ -110,6 +110,74 @@ fn empty_and_over_cap_inputs_are_refused_without_splitting() {
     );
 }
 
+// Deliberately bypass derive validation to exercise BatchAction::put's own gates.
+struct RawOrder(Item);
+impl tabulary::Record for RawOrder {
+    const SCHEMA: tabulary::RecordSchema = <Order as tabulary::Record>::SCHEMA;
+}
+impl tabulary::Document for RawOrder {
+    const NAME: &'static str = "Order";
+    fn encode_map(&self, _: &mut tabulary::EncodeContext) -> Result<Item, tabulary::EncodeError> {
+        Ok(self.0.clone())
+    }
+    fn decode_map(
+        item: &Item,
+        _: &mut tabulary::DecodeContext,
+    ) -> Result<Self, tabulary::DecodeError> {
+        Ok(Self(item.clone()))
+    }
+}
+
+#[test]
+fn put_rejects_an_item_above_the_400_kib_bound() {
+    let mut item = delete("order", "1").key().clone();
+    item.insert("payload".into(), Av::B(vec![0; 400 * 1024].into()));
+    assert!(matches!(BatchAction::put(&RawOrder(item)),
+        Err(BuildError::RequestLimit { max, actual }) if max == 400 * 1024 && actual > max));
+}
+
+#[test]
+fn put_rejects_missing_and_mistyped_physical_keys() {
+    for (value, code) in [
+        (None, "missing_batch_key"),
+        (Some(Av::N("1".into())), "batch_key_wire_type"),
+    ] {
+        let mut item = delete("order", "1").key().clone();
+        item.remove("id");
+        if let Some(value) = value {
+            item.insert("id".into(), value);
+        }
+        assert!(matches!(BatchAction::put(&RawOrder(item)),
+            Err(BuildError::Encode(e)) if e.record == "Order" && e.attribute() == Some("id")
+                && e.kind == tabulary::EncodeFault::Custom { code }));
+    }
+}
+
+#[test]
+fn a_wholly_unprocessed_round_consumes_a_call_and_reissues_every_entry() {
+    let mut progress = batch(3, 2);
+    assert_eq!(progress.calls_issued(), 0);
+    let first = progress.next_round().unwrap().unwrap();
+    progress
+        .accept_round(&first, first.positions().to_vec())
+        .unwrap();
+    assert_eq!(progress.calls_issued(), 1);
+    assert!(progress.entries().iter().all(|e| e.state == Pending));
+    let second = progress.next_round().unwrap().unwrap();
+    assert_eq!(second.positions(), first.positions());
+    assert_eq!(second.positions(), &[0, 1, 2]);
+    assert_eq!(progress.calls_issued(), 2);
+    progress
+        .accept_round(&second, second.positions().to_vec())
+        .unwrap();
+    assert!(progress.entries().iter().all(|e| e.state == Pending));
+    assert!(progress.next_round().unwrap().is_none());
+    assert_eq!(
+        progress.finish().unwrap_err().kind,
+        BatchStateError::BudgetExhausted
+    );
+}
+
 #[test]
 fn only_unprocessed_actions_are_issued_in_original_order_with_fixed_budget() {
     let mut progress = batch(3, 2);
@@ -219,8 +287,14 @@ fn invalid_pending_subsets_do_not_mutate_or_settle_the_round() {
 
 #[test]
 fn ambiguous_failures_freeze_the_batch_and_preserve_successes() {
-    let mut progress = batch(3, 3);
+    let secret = "redaction-canary-order-6d81";
+    let mut progress = BatchWriteProgress::new(
+        (0..3).map(|i| delete(secret, &i.to_string())).collect(),
+        BatchBudget::new(3).unwrap(),
+    )
+    .unwrap();
     let first = progress.next_round().unwrap().unwrap();
+    assert!(!format!("{progress:?} {first:?}").contains(secret));
     progress.accept_round(&first, vec![0, 2]).unwrap();
     let second = progress.next_round().unwrap().unwrap();
     progress.fail_round(&second).unwrap();
@@ -253,7 +327,7 @@ fn ambiguous_failures_freeze_the_batch_and_preserve_successes() {
     assert!(!format!("{progress:?} {chunk:?}").contains("order"));
     assert_eq!(progress.into_partial().entries[0].state, Indeterminate);
     assert_eq!(batch(1, 1).into_partial().entries[0].state, Pending);
-    assert!(!format!("{error:?} {error} {:?}", error.partial.entries).contains("order"));
+    assert!(!format!("{error:?} {error} {:?}", error.partial.entries).contains(secret));
 }
 
 #[derive(tabulary::Record)]
