@@ -85,6 +85,8 @@ macro_rules! diagnostics {
             pub document: &'static str,
             pub path: AttributePath,
             pub kind: $fault,
+            /// Other physical paths implicated by a validation fault.
+            pub additional_paths: Vec<AttributePath>,
         }
         impl $error {
             pub fn attribute(&self) -> Option<&str> {
@@ -102,12 +104,16 @@ macro_rules! diagnostics {
         }
         impl fmt::Debug for $error {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct(stringify!($error))
+                let mut debug = f.debug_struct(stringify!($error));
+                debug
                     .field("record", &self.record)
                     .field("document", &self.document)
                     .field("path", &self.path)
-                    .field("kind", &self.kind)
-                    .finish()
+                    .field("kind", &self.kind);
+                if !self.additional_paths.is_empty() {
+                    debug.field("additional_paths", &self.additional_paths);
+                }
+                debug.finish()
             }
         }
         impl Error for $error {}
@@ -158,6 +164,7 @@ macro_rules! diagnostics {
                     document: self.document,
                     path: self.path.clone(),
                     kind,
+                    additional_paths: Vec::new(),
                 }
             }
         }

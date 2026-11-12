@@ -1,0 +1,23 @@
+error: duplicate validate option
+ --> tests/ui/validation/declarations.rs:2:57
+  |
+2 | #[tabulary(rename_all = "snake_case", validate = check, validate = check)]
+  |                                                         ^^^^^^^^
+
+error: duplicate validate option
+ --> tests/ui/validation/declarations.rs:7:12
+  |
+7 | #[tabulary(validate = check)]
+  |            ^^^^^^^^
+
+error: expected identifier
+  --> tests/ui/validation/declarations.rs:11:50
+   |
+11 | #[tabulary(rename_all = "snake_case", validate = "check")]
+   |                                                  ^^^^^^^
+
+error: expected identifier
+  --> tests/ui/validation/declarations.rs:15:50
+   |
+15 | #[tabulary(rename_all = "snake_case", validate = || Ok(()))]
+   |                                                  ^
