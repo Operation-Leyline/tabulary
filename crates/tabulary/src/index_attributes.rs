@@ -1,6 +1,6 @@
 //! Physical key definitions derived from static schema metadata.
-use aws_sdk_dynamodb::types::{AttributeDefinition, ScalarAttributeType};
 use crate::{BuildError, DynamoType, RecordSchema};
+use aws_sdk_dynamodb::types::{AttributeDefinition, ScalarAttributeType};
 impl RecordSchema {
     /// Only physical primary/index keys are DynamoDB AttributeDefinitions.
     /// Included and ordinary attributes are deliberately excluded.

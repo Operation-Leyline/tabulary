@@ -294,9 +294,10 @@ pub fn helpers_for(
         let args = components(&t.parts).map(|i| { let f = &record.fields[i]; let (id, ty) = (&f.ident, &f.ty); quote!(#id: #ty) });
         let format = format(record, partition_key, &t.parts, false, &t.parts);
         let name = &record.fields[partition_key].name;
+        let max = record.fields[partition_key].key_limit.unwrap();
         quote! { #vis fn partition(&self, #(#args),*) -> ::core::result::Result<#partition_value #tg, #path::EncodeError> {
             let #context = #path::EncodeContext::new(::core::stringify!(#ident)); #format
-            #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), 2048)?;
+            #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), #max)?;
             ::core::result::Result::Ok(#partition_value { value: #output, marker: ::core::marker::PhantomData })
         } }
     });

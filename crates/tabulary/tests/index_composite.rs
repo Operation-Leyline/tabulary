@@ -148,3 +148,32 @@ fn generic_fixed_width_and_text_components_preserve_types_and_boundaries() {
         tabulary::EncodeFault::KeyFormat(tabulary::KeyFormatFault::InvalidSeparator)
     );
 }
+
+#[derive(tabulary::Record)]
+#[tabulary(rename_all = "snake_case",
+    index(ident = First, name = "first_index", kind = global, partition(name = "shared", template = "{value:text}"), project = all),
+    index(ident = Second, name = "second_index", kind = global, partition = other, sort(name = "shared", template = "{value:text}"), project = all))]
+struct Shared {
+    #[tabulary(partition_key)]
+    id: String,
+    value: String,
+    other: String,
+}
+#[test]
+fn shared_partition_and_sort_keys_use_the_stricter_limit_in_every_formatter() {
+    let value = "x".repeat(1500);
+    let record = Shared {
+        id: "o".into(),
+        value: value.clone(),
+        other: "c".into(),
+    };
+    assert!(matches!(
+        record.to_item().unwrap_err().kind,
+        tabulary::EncodeFault::KeySize { max: 1024, .. }
+    ));
+    let result = SharedIndexes::FIRST.partition(value);
+    assert!(
+        matches!(result, Err(e) if matches!(e.kind, tabulary::EncodeFault::KeySize { max: 1024, .. }))
+    );
+    assert!(SharedIndexes::FIRST.partition("x".repeat(1024)).is_ok());
+}

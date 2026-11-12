@@ -60,8 +60,14 @@ fn definitions_include_only_physical_keys_in_declaration_order() {
             .collect::<Vec<_>>(),
         [&Scalar::S, &Scalar::N, &Scalar::S, &Scalar::N]
     );
-    assert_eq!(Generic::<Vec<u8>>::SCHEMA.attribute_definitions().unwrap()[1].attribute_type(), &Scalar::B);
+    assert_eq!(
+        Generic::<Vec<u8>>::SCHEMA.attribute_definitions().unwrap()[1].attribute_type(),
+        &Scalar::B
+    );
     let mut invalid = Generic::<Vec<u8>>::SCHEMA;
     invalid.primary.partition = 99;
-    assert_eq!(invalid.attribute_definitions(), Err(tabulary::BuildError::IncompatibleIndex));
+    assert_eq!(
+        invalid.attribute_definitions(),
+        Err(tabulary::BuildError::IncompatibleIndex)
+    );
 }
