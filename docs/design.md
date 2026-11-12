@@ -1357,6 +1357,16 @@ Standalone ReturnValues and per-action capacity options are rejected; the
 transaction owns capacity selection. Conditions can join optimistic guards;
 they are never relocated to a separate same-item check.
 
+Milestone 39 is split at the action/request boundary. Its first part adds
+`TxAction<R>` and `CheckBuilder<R, K>`, with `into_tx()` on both single-write
+builders and their prepared requests. Conversion moves the existing encoded
+item/key and rendered expressions without running codecs again, retaining the
+record decoder for milestone 40. Non-`None` success returns, capacity, and
+collection-metrics selections are refused rather than silently dropped;
+transaction-wide accounting belongs to the request builder in the second part.
+Default/explicit `None` selections remain valid. `check` reuses the delete
+key/condition preparation path and becomes only a `ConditionCheck` action.
+
 ```rust,ignore
 let request = tabulary::transaction((
     invoices.put(&invoice).expect_new()
