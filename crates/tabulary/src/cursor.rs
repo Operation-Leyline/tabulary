@@ -42,11 +42,6 @@ impl<R, I> fmt::Debug for Cursor<R, I> {
     }
 }
 
-// Internal constructors are exercised here until the page adapters consume them.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Consumed by milestone 34/35 page adapters")
-)]
 #[derive(Clone, PartialEq)]
 enum Operation {
     Query(CanonicalNode, QueryOrder),
@@ -91,10 +86,6 @@ fn projection(names: Option<Vec<&'static str>>) -> Option<Vec<&'static str>> {
         names
     })
 }
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Consumed by milestone 34/35 page adapters")
-)]
 impl<R: Record, I> CursorBinding<R, I> {
     pub(crate) fn query(
         table: &Table<R>,
