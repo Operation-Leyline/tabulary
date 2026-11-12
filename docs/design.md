@@ -1470,7 +1470,7 @@ numeric spelling privately and treating a table name and its ARN as aliases.
 Explicit DynamoDB ARNs must agree on partition, region, and account. The known
 aggregate contribution checked here is the conservative size of put items;
 existing item sizes and complete wire-size accounting remain service checks
-and milestone 46 work, respectively. No decoder is provided before milestone 40.
+and milestone 46 work, respectively. Decoding is added by milestone 40 below.
 
 ### 11.3 Typed cancellation results without reflection
 
@@ -1509,6 +1509,24 @@ retain the raw vector, and mark completeness malformed. Do not parse the message
 to reconstruct missing reasons. The entire transaction failed, but its detailed
 cause may be unknowable. Non-cancellation SDK failures are `TxError::Sdk`.
 Transport failures can have an indeterminate commit outcome.
+
+Milestone 40 supplies `PreparedTransaction::decode` for single actions and flat
+tuples of arity one through twelve. Nested tuples and vectors remain milestone
+41. `ReasonCompleteness` names the three completeness states above. An absent
+SDK vector is `Missing`; a present empty vector is `MalformedLength` for a
+nonempty request. Missing or misaligned vectors supply no old items to any
+decoder. Each action independently honors its frozen failure-return option:
+unrequested old data stays `NotRequested`, even when detailed reasons are
+unavailable, and requested but absent old data is `Unavailable`.
+
+`Cancellation<C>` exposes `source: Box<SdkError<TransactWriteItemsError>>` and
+`raw_reasons()` preserves absent versus present vectors. `TxError::sdk_error()`
+and standard error sources retain the original SDK error. Wrapper formatting
+redacts reasons, items, messages, and SDK sources without requiring record
+`Debug` implementations. `TxResult` preserves the SDK's optional capacity vector
+as `capacity` and optional per-table `item_collection_metrics` unchanged. The
+decoder uses each frozen action's stored full-record decoder, with no reflection
+or type bounds on the record beyond those already checked during preparation.
 
 The application decides what conflicts, throttles, and failed conditions mean
 to its business operation. There is no prioritized summary that discards other
