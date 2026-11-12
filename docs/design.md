@@ -1242,10 +1242,16 @@ The key map contains exactly the union of base-table and selected-index key
 attributes (at most four distinct names); additional attributes are refused.
 Both parsing and in-memory construction enforce this rule. String/binary
 partition values have a 2048-byte cap and sort values a 1024-byte cap. Numeric
-key text has a 45-byte cap before Decimal parsing: 38 significant digits plus a
-minus sign, decimal point, exponent marker, exponent sign, and three exponent
-digits. Longer spellings, including redundant zeros, are refused even when they
-would normalize into the numeric domain. Bounded original spellings are retained.
+key text has a 192-byte cap before Decimal parsing in both construction and
+untrusted-byte parsing. This bounds work on untrusted text, rather than predicting
+the endpoint's formatting. With 38 significant digits and adjusted exponents
+from -130 to +125, the longest nonredundant negative positional fraction needs
+170 bytes: one sign, `0.`, 129 leading fractional zeros, and 38 digits. The
+largest negative integer needs 127 bytes (one sign plus 126 integer digits).
+The cap adds 22 bytes of spelling margin to the 170-byte worst case and also
+covers compact exponent notation, including uppercase `E` and explicit `+`.
+Longer spellings, including redundant zeros, are refused even when they would
+normalize into the numeric domain. Bounded original spellings are retained.
 The parser extracts required key descriptors into four borrowed slots, then
 validates every key exactly once before constructing owned data.
 

@@ -800,12 +800,56 @@ fn parser_requires_exact_sorted_unique_keys_and_utf8_string_values() {
 }
 
 #[test]
+fn numeric_cursor_keys_preserve_compact_and_expanded_extremes() {
+    let maximum = format!("{}{}", "9".repeat(38), "0".repeat(88));
+    let smallest_precision = format!("0.{}{}", "0".repeat(129), "9".repeat(38));
+    assert_eq!(maximum.len(), 126);
+    assert_eq!(smallest_precision.len(), 169);
+    for unsigned in [
+        maximum,
+        smallest_precision,
+        format!("0.{}1", "0".repeat(129)),
+        format!("9.{}e125", "9".repeat(37)),
+        format!("9.{}e-130", "9".repeat(37)),
+        "1E+88".into(),
+        "1E-130".into(),
+    ] {
+        for sign in ["", "-"] {
+            let number = format!("{sign}{unsigned}");
+            let mut expected = key();
+            expected.insert("sk".into(), AttributeValue::N(number.clone()));
+            let binding = query();
+            let cursor = binding.cursor(Some(expected.clone())).unwrap().unwrap();
+            let encoded = cursor.to_bytes().unwrap();
+            let decoded = parse(&encoded).unwrap();
+            assert_eq!(decoded.last_evaluated_key(), &expected);
+            assert_eq!(decoded.to_bytes().unwrap(), encoded);
+            assert_eq!(binding.resume(&decoded).unwrap(), &expected);
+            let untrusted = raw_keys(&[("pk", 0, b"private-key"), ("sk", 1, number.as_bytes())]);
+            assert_eq!(parse(&untrusted).unwrap().last_evaluated_key(), &expected);
+        }
+    }
+}
+
+#[test]
 fn numeric_key_text_is_bounded_before_decimal_parsing() {
     let maximum = format!("-9.{}e-130", "9".repeat(37));
     assert_eq!(maximum.len(), 45);
     assert!(parse(&raw_keys(&[("pk", 0, b"a"), ("sk", 1, maximum.as_bytes())])).is_ok());
-    // Decimal accepts these redundant zeros; the cursor must reject the spelling.
-    for length in [46, 2049] {
+    let limit = super::bytes::MAX_NUMBER_KEY_BYTES;
+    let at_limit = "0".repeat(limit);
+    let mut expected = key();
+    expected.insert("sk".into(), AttributeValue::N(at_limit.clone()));
+    assert!(query().cursor(Some(expected)).is_ok());
+    assert!(
+        parse(&raw_keys(&[
+            ("pk", 0, b"a"),
+            ("sk", 1, at_limit.as_bytes())
+        ]))
+        .is_ok()
+    );
+    // Decimal accepts these redundant zeros; the cap must still reject the spelling.
+    for length in [limit + 1, 2049] {
         let number = "0".repeat(length);
         assert!(number.parse::<Decimal>().is_ok());
         assert!(matches!(
