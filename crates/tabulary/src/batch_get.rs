@@ -25,17 +25,22 @@ pub struct BatchGetEntry<K, P> {
 pub struct BatchGetPartial<K, P> {
     pub entries: Vec<BatchGetEntry<K, P>>,
     pub calls_issued: u32,
+    /// Unmodified SDK capacity vectors, in accepted round order; empty for the pure core.
+    pub capacity: Vec<Vec<aws_sdk_dynamodb::types::ConsumedCapacity>>,
 }
 
 /// Every position was processed; None represents a missing item.
 pub struct BatchGetComplete<P> {
     pub records: Vec<Option<P>>,
+    pub capacity: Vec<Vec<aws_sdk_dynamodb::types::ConsumedCapacity>>,
 }
 
 /// Local round lifecycle and correlation faults, without any payload values.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BatchStateError {
+    AlreadyStarted,
+    Frozen,
     OutstandingRound,
     WrongRound,
     InvalidResponse,
@@ -143,6 +148,10 @@ impl<R, K, P> BatchGetProgress<R, K, P> {
         self.calls_issued
     }
 
+    pub(crate) fn has_outstanding(&self) -> bool {
+        self.outstanding.is_some()
+    }
+
     /// Reserve one explicit call; even an abandoned round consumes its slot.
     /// Only keys still Pending are issued, with no splitting or reordering.
     pub fn next_round(&mut self) -> Result<Option<BatchGetChunk>, BatchStateError> {
@@ -178,9 +187,7 @@ impl<R, K, P> BatchGetProgress<R, K, P> {
         found: Vec<(usize, P)>,
         pending: Vec<usize>,
     ) -> Result<(), BatchStateError> {
-        if !Arc::ptr_eq(&self.identity, &chunk.identity) || self.outstanding != Some(chunk.call) {
-            return Err(BatchStateError::WrongRound);
-        }
+        self.validate_round(chunk)?;
         let mut seen = vec![false; self.entries.len()];
         for position in found.iter().map(|(i, _)| i).chain(pending.iter()) {
             if !chunk.positions.contains(position) || seen[*position] {
@@ -201,12 +208,42 @@ impl<R, K, P> BatchGetProgress<R, K, P> {
         Ok(())
     }
 
+    pub(crate) fn validate_round(&self, chunk: &BatchGetChunk) -> Result<(), BatchStateError> {
+        if !Arc::ptr_eq(&self.identity, &chunk.identity) || self.outstanding != Some(chunk.call) {
+            return Err(BatchStateError::WrongRound);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn select<Q>(self) -> Result<BatchGetProgress<R, K, Q>, BatchStateError> {
+        if self.calls_issued != 0 {
+            return Err(BatchStateError::AlreadyStarted);
+        }
+        Ok(BatchGetProgress {
+            entries: self
+                .entries
+                .into_iter()
+                .map(|entry| BatchGetEntry {
+                    key: entry.key,
+                    state: BatchGetState::Pending,
+                })
+                .collect(),
+            keys: self.keys,
+            identity: self.identity,
+            outstanding: self.outstanding,
+            budget: self.budget,
+            calls_issued: self.calls_issued,
+            marker: PhantomData,
+        })
+    }
+
     /// Move all accumulated records and original keys without cloning them.
     /// An adapter can use this when attaching progress to a terminal failure.
     pub fn into_partial(self) -> BatchGetPartial<K, P> {
         BatchGetPartial {
             entries: self.entries,
             calls_issued: self.calls_issued,
+            capacity: Vec::new(),
         }
     }
 
@@ -233,6 +270,7 @@ impl<R, K, P> BatchGetProgress<R, K, P> {
             });
         }
         Ok(BatchGetComplete {
+            capacity: Vec::new(),
             records: self
                 .entries
                 .into_iter()
@@ -246,7 +284,7 @@ impl<R, K, P> BatchGetProgress<R, K, P> {
     }
 }
 
-fn canonical_key<R: Record>(mut key: Item) -> Result<Item, BuildError> {
+pub(crate) fn canonical_key<R: Record>(mut key: Item) -> Result<Item, BuildError> {
     for (position, max) in [
         (Some(R::SCHEMA.primary.partition), 2048),
         (R::SCHEMA.primary.sort, 1024),

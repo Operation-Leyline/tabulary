@@ -1,4 +1,4 @@
-//! In-memory continuation identity. Byte encoding belongs to milestone 36.
+//! Continuation identity and versioned, bounded byte encoding.
 use std::{collections::BTreeMap, fmt, marker::PhantomData};
 
 use aws_sdk_dynamodb::types::AttributeValue;
@@ -20,7 +20,11 @@ pub enum QueryOrder {
 /// Matching a cursor does not authenticate or authorize its use.
 pub struct Cursor<R, I> {
     key: Item,
-    binding: CursorBinding<R, I>,
+    binding: Identity<R, I>,
+}
+enum Identity<R, I> {
+    Memory(Box<CursorBinding<R, I>>),
+    Encoded(Vec<u8>),
 }
 impl<R, I> Cursor<R, I> {
     /// Explicit raw access; keys can contain sensitive values.
@@ -32,7 +36,10 @@ impl<R, I> Clone for Cursor<R, I> {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
-            binding: self.binding.clone(),
+            binding: match &self.binding {
+                Identity::Memory(binding) => Identity::Memory(binding.clone()),
+                Identity::Encoded(bytes) => Identity::Encoded(bytes.clone()),
+            },
         }
     }
 }
@@ -133,7 +140,7 @@ impl<R: Record, I> CursorBinding<R, I> {
         if index.is_some_and(|index| !R::SCHEMA.indexes.contains(&index)) {
             return Err(BuildError::IncompatibleIndex);
         }
-        Ok(Self {
+        let binding = Self {
             table: table.name().into(),
             schema: R::SCHEMA,
             index,
@@ -142,7 +149,10 @@ impl<R: Record, I> CursorBinding<R, I> {
             projection: projection(selection),
             consistency,
             marker: PhantomData,
-        })
+        };
+        // Count without allocating the output; reserve room for version and key count.
+        bytes::binding_size(&binding)?;
+        Ok(binding)
     }
     /// Only absence or an empty map means end; no record decoder is involved.
     pub(crate) fn cursor(&self, key: Option<Item>) -> Result<Option<Cursor<R, I>>, BuildError> {
@@ -150,7 +160,19 @@ impl<R: Record, I> CursorBinding<R, I> {
             return Ok(None);
         };
         for (name, value) in &key {
-            if name.is_empty() || crate::record::validate_key(value, 2048).is_err() {
+            if name.is_empty()
+                || matches!(value, AttributeValue::N(n) if n.len() > bytes::MAX_NUMBER_KEY_BYTES)
+                || ![
+                    Some(self.schema.primary.partition),
+                    self.schema.primary.sort,
+                    self.index.map(|i| i.keys.partition),
+                    self.index.and_then(|i| i.keys.sort),
+                ]
+                .into_iter()
+                .flatten()
+                .any(|p| self.schema.fields.get(p).is_some_and(|f| f.name == name))
+                || crate::record::validate_key(value, 2048).is_err()
+            {
                 return Err(BuildError::InvalidCursor);
             }
         }
@@ -178,11 +200,19 @@ impl<R: Record, I> CursorBinding<R, I> {
         }
         Ok(Some(Cursor {
             key,
-            binding: self.clone(),
+            binding: Identity::Memory(Box::new(self.clone())),
         }))
     }
     pub(crate) fn resume<'a>(&self, cursor: &'a Cursor<R, I>) -> Result<&'a Item, BuildError> {
-        let other = &cursor.binding;
+        let other = match &cursor.binding {
+            Identity::Memory(other) => other,
+            Identity::Encoded(encoded) => {
+                if bytes::binding_bytes(self)? != *encoded {
+                    return Err(BuildError::CursorMismatch);
+                }
+                return Ok(&cursor.key);
+            }
+        };
         if self.table != other.table
             || self.schema != other.schema
             || self.index != other.index
@@ -213,6 +243,12 @@ enum CanonicalOperand {
 }
 impl CanonicalNode {
     fn new(node: &ConditionNode) -> Result<Self, BuildError> {
+        Self::at_depth(node, 0)
+    }
+    fn at_depth(node: &ConditionNode, depth: usize) -> Result<Self, BuildError> {
+        if depth > 32 {
+            return Err(BuildError::InvalidCursor);
+        }
         Ok(match node {
             ConditionNode::Predicate { operator, operands } => Self::Predicate(
                 *operator,
@@ -229,9 +265,15 @@ impl CanonicalNode {
                     })
                     .collect::<Result<_, BuildError>>()?,
             ),
-            ConditionNode::And(a, b) => Self::And(Box::new(Self::new(a)?), Box::new(Self::new(b)?)),
-            ConditionNode::Or(a, b) => Self::Or(Box::new(Self::new(a)?), Box::new(Self::new(b)?)),
-            ConditionNode::Not(a) => Self::Not(Box::new(Self::new(a)?)),
+            ConditionNode::And(a, b) => Self::And(
+                Box::new(Self::at_depth(a, depth + 1)?),
+                Box::new(Self::at_depth(b, depth + 1)?),
+            ),
+            ConditionNode::Or(a, b) => Self::Or(
+                Box::new(Self::at_depth(a, depth + 1)?),
+                Box::new(Self::at_depth(b, depth + 1)?),
+            ),
+            ConditionNode::Not(a) => Self::Not(Box::new(Self::at_depth(a, depth + 1)?)),
         })
     }
 }
@@ -286,5 +328,7 @@ impl CanonicalValue {
     }
 }
 
+mod bytes;
 #[cfg(test)]
 mod tests;
+pub use bytes::CursorError;

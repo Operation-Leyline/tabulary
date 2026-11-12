@@ -1169,8 +1169,9 @@ consistency, direction, and scan segment. It validates scalar key types but
 does not decode the map as a record. Index cursors retain both base and index
 keys exactly as received.
 
-Milestone 33 implements the in-memory binding, leaving its byte representation,
-encoded-size cap, and parser to milestone 36. The schema signature compares the
+Milestone 33 implements the in-memory binding. Milestone 36 is split at its byte
+boundary: 36a adds encoding and size checks; 36b adds the untrusted-byte parser.
+The schema signature compares the
 complete physical `RecordSchema` metadata (name, field descriptors, primary keys,
 and index definitions), by value without hashing or Rust type identity. Codec
 implementation bodies and nested document decode rules are not represented by
@@ -1199,6 +1200,38 @@ sorted. There is no schema hash collision dependency.
 V1 rejects unknown format versions; it does not promise cross-major-version
 resumption. Reject invalid keys and trailing bytes. Empty key maps cannot
 construct a resumable cursor.
+
+`to_bytes()` returns `Result<Vec<u8>, BuildError>`. V1 starts with the byte `1`,
+followed by the canonical binding and the complete key map sorted by name.
+Lengths and collection counts are big-endian `u32`; schema positions are
+big-endian `u64`. Tagged schema, expression, and value fields retain the existing
+structural identity, including declaration order in schema metadata. Key number
+spellings remain unchanged; only binding constants normalize through `Decimal`.
+The size check at request build counts the binding and the minimum envelope
+without allocating an output buffer. Encoding also checks the complete cursor,
+including service keys, against the 4 MiB cap. Expression trees, as well as nested
+document constants, have a maximum depth of 32; excessive depth is `InvalidCursor`
+at request build.
+
+`Cursor::from_bytes(&bytes)` returns `Result<Cursor<R, I>, CursorError>`.
+It checks the outer cap, lengths, counts, tags, UTF-8, numeric domains, depth,
+canonical map/set ordering, and required scalar keys before copying keys and
+binding data into owned storage. Cursor errors distinguish oversized, truncated,
+trailing, unknown-version, invalid-format, invalid-key, and excessive-depth input
+without retaining token contents. Parsed schema/request bytes stay private and
+are compared with the request's complete canonical binding at `resume`, so
+parsing under a different record marker does not erase a schema mismatch.
+
+The key map contains exactly the union of base-table and selected-index key
+attributes (at most four distinct names); additional attributes are refused.
+Both parsing and in-memory construction enforce this rule. String/binary
+partition values have a 2048-byte cap and sort values a 1024-byte cap. Numeric
+key text has a 45-byte cap before Decimal parsing: 38 significant digits plus a
+minus sign, decimal point, exponent marker, exponent sign, and three exponent
+digits. Longer spellings, including redundant zeros, are refused even when they
+would normalize into the numeric domain. Bounded original spellings are retained.
+The parser extracts required key descriptors into four borrowed slots, then
+validates every key exactly once before constructing owned data.
 
 Opaque does not mean encrypted or authenticated. Tokens contain key and filter
 values. Applications exposing them outside a trusted boundary must authenticate
@@ -1248,6 +1281,42 @@ capacity vectors, response-key correlation, and terminal SDK/protocol/decode
 error wrapping and freezing belong to milestone 43's adapter below. The adapter
 must consume the core into a partial result on terminal failure; the low-level
 core's nonmutating rejection is not permission to retry a failed SDK call.
+
+Milestone 43 stages the SDK adapter and projection selection in two PRs.
+`Table::batch_get(keys, consistency, budget)` validates immediately and returns
+`BatchGet<R, K>`. `next_request()` prepares an immutable `PreparedBatchGet<P>`
+using the shared prepared-request storage; `input()`, `expressions()` and `apply`
+expose/copy the complete SDK input. `decode` returns an opaque `BatchGetRound<P>`
+containing its issued identity and either decoded values or a typed fault.
+`accept` validates that identity before accounting or changing progress.
+`BatchGetError<K, P> { kind, partial }` boxes its owned partial; the kind is
+`BatchGetFailure::{State, Sdk, Decode, Aborted}`. Budget exhaustion is
+`State(BatchStateError::BudgetExhausted)`, rather than a separate batch enum.
+The complete and partial core result types now have `capacity` vectors; pure
+core operations leave them empty. The SDK adapter preserves one complete vector
+per accepted round, including an empty vector when the SDK supplies no accounting.
+A malformed or unexpected physical key, wrong table, duplicate or overlapping
+response is `State(InvalidResponse)`: none of that round's item states is trusted.
+Once all keys correlate, decoding retains every valid record from that round;
+failed positions remain Pending and `Decode { failures }` lists every malformed
+item as its original input position paired with its structured decode error,
+including the attribute path. The vector follows response order; it distinguishes
+these corrupt items from the service's unprocessed keys in the partial, and
+`source()` exposes its first error. Prior progress and all received capacities
+survive both paths. A terminal error transfers ownership to its partial and
+subsequent operations return Frozen (their partial is empty, already transferred).
+`abort_round(Cancelled | Deadline)` freezes an outstanding round; `finish` returns
+the abort cause and all owned progress. Aborting with no outstanding round is
+WrongRound. An aborted round adds no capacity vector, since no result was accepted.
+Before the first issued round, consuming `.select::<V>()?` changes the output
+type using milestone 24's projection checks and the shared read-selection gate.
+It rejects empty selections and configuration after issuing a round. Its SDK
+projection lists the selected attributes followed by any missing physical primary
+key attributes, deduplicating keys already selected. Correlation validates those
+full physical keys even when the view omits them; the view then decodes only its
+selected fields with the source codecs. Each later request retains that projection
+and explicit consistency rather than trusting options echoed in UnprocessedKeys.
+The unchanged `06_query_batch.rs` example is registered as a real compile test.
 
 The design resolves two requirements together: unprocessed items cannot
 disappear, and tabulary cannot retry or hide calls. Batch state prepares the
