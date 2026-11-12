@@ -13,6 +13,7 @@ pub struct Options {
     pub flatten: bool,
     pub partition: Option<crate::template::Declaration>,
     pub sort: Option<crate::template::Declaration>,
+    pub indexes: Vec<crate::index_parse::Declaration>,
 }
 
 pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
@@ -25,6 +26,10 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                 .ok_or_else(|| meta.error("expected an option name"))?
                 .to_string();
             let slot = match (container, option.as_str()) {
+                (true, "index") => {
+                    result.indexes.push(crate::index_parse::declaration(&meta)?);
+                    return Ok(());
+                }
                 (true, "rename_all") => &mut result.rename_all,
                 (true, "generated_prefix") => &mut result.generated_prefix,
                 (true, "unknown") => &mut result.unknown,

@@ -32,6 +32,7 @@ pub struct Record {
     pub sort: Option<usize>,
     pub allow_unknown: bool,
     pub templates: Vec<(usize, crate::template::Template)>,
+    pub indexes: Vec<crate::index_validate::Index>,
 }
 
 pub fn record(input: DeriveInput) -> syn::Result<Record> {
@@ -101,6 +102,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
         sort: None,
         allow_unknown,
         templates: Vec::new(),
+        indexes: Vec::new(),
     };
     let mut partition = None;
     let mut names = HashMap::new();
@@ -223,6 +225,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
     if record {
         result.partition = partition
             .ok_or_else(|| error(&result.ident, "exactly one partition key is required"))?;
+        crate::index_validate::indexes(&mut result, opts.indexes)?;
     }
     Ok(result)
 }

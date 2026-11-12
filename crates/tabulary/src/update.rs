@@ -302,10 +302,9 @@ impl<R: Record, T: 'static, P: PresenceMarker, C: Converter<T> + 'static>
         let target = self.validate_mutation();
         let SetOperand { field, build, .. } = expression.into().0;
         Action::new(move || {
-            Ok(ActionNode::Set {
-                target: target?,
-                value: build(field?)?,
-            })
+            let (target, value) = (target?, build(field?)?);
+            crate::index::validate_set::<R>(target, &value)?;
+            Ok(ActionNode::Set { target, value })
         })
     }
     pub fn increment(self, delta: T) -> Action<R>

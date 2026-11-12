@@ -324,6 +324,19 @@ use `partition = field` / `sort = field` or the same nested
 `partition(name = ..., template = ...)` / `sort(...)` syntax as primary keys.
 Index names and identifiers are declared here only.
 
+Milestone 16 is split at the field/template boundary to keep each pull request
+within the milestone size limit. Milestone 16a provides field-keyed index metadata,
+typed `IndexSchema<R>` peers, and literal index-key update validation.
+It rejects composite index declarations until 16b. Milestone 16b reuses the primary
+template formatter and inverse parser for required composite index inputs, and
+adds physical-key `AttributeDefinition` extraction.
+Both stages reject `sparse` and optional index inputs explicitly until milestone
+17 supplies sparse encode/decode invariants. Key-condition builders arrive in
+milestone 23; index markers in milestone 16 do not perform queries.
+Literal SET values and literal `if_not_exists` defaults targeting simple index
+keys use the same key-value checks as record encoding. Results computed from
+stored values cannot be validated locally and remain subject to service checks.
+
 Non-sparse index inputs must be required. Sparse indexes require at least one
 optional input. If any input is absent, omit all synthesized index attributes;
 ordinary source fields are preserved. Reused physical fields may therefore be
@@ -336,6 +349,8 @@ read. Sparse membership is computed on encode and checked on full decode.
 `project = include(field_a, field_b)` describe index storage. Include entries
 refer to Rust fields; the derive resolves their wire names. A sparse record
 can still have required common fields when it is read from its base table.
+Include lists reject primary and index keys, which DynamoDB projects automatically
+([Projection API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Projection.html)).
 
 Index reads have a separate `IndexTable<R, I>` type:
 

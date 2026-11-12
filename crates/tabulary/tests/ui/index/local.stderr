@@ -1,0 +1,23 @@
+error: local index requires the base partition and a distinct sort on a table with a sort key
+ --> tests/ui/index/local.rs:2:53
+  |
+2 | #[tabulary(rename_all = "snake_case", index(ident = ByLine, name = "by_line", kind = local, partition = other, sort = line, project =...
+  |                                                     ^^^^^^
+
+error: local index requires the base partition and a distinct sort on a table with a sort key
+  --> tests/ui/index/local.rs:10:53
+   |
+10 | #[tabulary(rename_all = "snake_case", index(ident = ByLine, name = "by_line", kind = local, partition = id, sort = time, project = a...
+   |                                                     ^^^^^^
+
+error: local index requires the base partition and a distinct sort on a table with a sort key
+  --> tests/ui/index/local.rs:16:53
+   |
+16 | #[tabulary(rename_all = "snake_case", index(ident = ByLine, name = "by_line", kind = local, partition = id, sort = line, project = a...
+   |                                                     ^^^^^^
+
+error: local index requires the base partition and a distinct sort on a table with a sort key
+  --> tests/ui/index/local.rs:22:53
+   |
+22 | #[tabulary(rename_all = "snake_case", index(ident = ByLine, name = "by_line", kind = local, partition = id, project = all))]
+   |                                                     ^^^^^^

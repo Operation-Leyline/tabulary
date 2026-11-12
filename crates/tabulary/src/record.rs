@@ -14,7 +14,7 @@ pub trait RecordKey<R: Record>: Sized {
     fn decode_key(item: &Item) -> Result<Self, DecodeError>;
 }
 
-fn validate_key(value: &AttributeValue, max: usize) -> Result<(), EncodeFault> {
+pub(crate) fn validate_key(value: &AttributeValue, max: usize) -> Result<(), EncodeFault> {
     let size = match value {
         AttributeValue::S(value) => value.len(),
         AttributeValue::B(value) => value.as_ref().len(),

@@ -41,6 +41,7 @@ pub struct RecordSchema {
     pub name: &'static str,
     pub fields: &'static [FieldDescriptor],
     pub primary: KeyDefinition,
+    pub indexes: &'static [crate::IndexDefinition],
 }
 
 /// A record owns one static schema. Manual implementations are supported.

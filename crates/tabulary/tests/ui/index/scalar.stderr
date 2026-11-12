@@ -1,0 +1,11 @@
+error[E0080]: evaluation panicked: index keys require S, N or B codecs
+ --> tests/ui/index/scalar.rs:5:5
+  |
+5 |     flag: bool,
+  |     ^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: index keys require S, N or B codecs
+  --> tests/ui/index/scalar.rs:11:5
+   |
+11 |     items: tabulary::List<String>,
+   |     ^^^^^ evaluation of `_` failed here

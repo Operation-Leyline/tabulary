@@ -49,6 +49,19 @@ pub fn record(record: &Record) -> TokenStream {
     let mut source_checks = Vec::new();
     let mut common_reads = Vec::new();
     let inputs = key_expand::inputs(record);
+    let index_limit = |i| {
+        record
+            .indexes
+            .iter()
+            .flat_map(|index| {
+                [
+                    (index.partition, 2048),
+                    (index.sort.unwrap_or(usize::MAX), 1024),
+                ]
+            })
+            .filter_map(|(key, max)| (key == i).then_some(max))
+            .min()
+    };
     for &i in &inputs {
         let f = &fields[i];
         let (id, ty, fv) = (&f.ident, &f.ty, &f.vis);
@@ -109,10 +122,17 @@ pub fn record(record: &Record) -> TokenStream {
             continue;
         }
         let cx = quote!(#context.at(#path::PathSegment::Attribute(#name.into())));
-        let (encode, decode) = if let ::core::option::Option::Some(max) = f.key_limit {
+        let (encode, decode) = if let ::core::option::Option::Some(max) =
+            f.key_limit.into_iter().chain(index_limit(i)).min()
+        {
+            let key_message = if f.key_limit.is_some() {
+                "primary keys require S, N or B codecs"
+            } else {
+                "index keys require S, N or B codecs"
+            };
             checks.push(quote_spanned! {id.span()=>
                 const _: () = ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
-                    #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), "primary keys require S, N or B codecs");
+                    #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), #key_message);
             });
             (
                 quote!(::core::option::Option::Some(#path::__private::encode_key(&self.#id, &mut #cx, #max)?)),
@@ -175,10 +195,11 @@ pub fn record(record: &Record) -> TokenStream {
     };
     let (checks, key_check) = if generic {
         // Associated constants may refer to generic field types; evaluate before key use.
-        let assertions = fields.iter().filter(|f| f.key_limit.is_some()).map(|f| {
+        let assertions = fields.iter().enumerate().filter(|(i, f)| f.key_limit.is_some() || index_limit(*i).is_some()).map(|(_, f)| {
+            let key_message = if f.key_limit.is_some() { "primary keys require S, N or B codecs" } else { "index keys require S, N or B codecs" };
             let ty = &f.ty;
             quote_spanned!(f.ident.span()=> ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
-                #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), "primary keys require S, N or B codecs");)
+                #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), #key_message);)
         });
         (
             quote!(),
@@ -220,6 +241,14 @@ pub fn record(record: &Record) -> TokenStream {
     };
     let clone_derive = (!generic).then(|| quote!(#[derive(::core::clone::Clone)]));
     let key_bindings = key_expand::key_bindings(record);
+    let index_peers = crate::index_expand::expand(record);
+    let index_schema = (!record.indexes.is_empty()).then(|| {
+        let definitions = record
+            .indexes
+            .iter()
+            .map(|i| crate::index_expand::definition(record, i));
+        quote!(.with_indexes(&[#(#definitions),*]))
+    });
     let helpers = if record.templates.is_empty() {
         quote!()
     } else {
@@ -229,6 +258,7 @@ pub fn record(record: &Record) -> TokenStream {
         #checks
         #peers
         #helpers
+        #index_peers
         impl #ig #attrs #tg #wc { #(#handles)* }
         #clone_derive
         #vis struct #key #generics #wc { #(#key_fields,)* #marker_decl }
@@ -258,7 +288,7 @@ pub fn record(record: &Record) -> TokenStream {
         }
         impl #ig #path::Record for #ident #tg #wc {
             const SCHEMA: #path::RecordSchema = #path::__private::schema(
-                ::core::stringify!(#ident), &[#(#descriptors,)*], #path::__private::keys(#partition, #sort));
+                ::core::stringify!(#ident), &[#(#descriptors,)*], #path::__private::keys(#partition, #sort)) #index_schema;
         }
         impl #ig #ident #tg #wc {
             #key_check
