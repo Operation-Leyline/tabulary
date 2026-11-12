@@ -1,10 +1,10 @@
-//! Owned update actions and typed SET operands, before textual rendering.
+//! Owned update actions and typed SET operands.
 use std::{fmt, marker::PhantomData};
 
 use crate::{
     AccessMarker, Attr, BuildError, Converter, EncodeContext, FieldDescriptor, List, Mutable,
-    Native, Optional, PathSegment, PresenceMarker, Record, Value, WireType, condition::Operand,
-    wire,
+    Native, Optional, PresenceMarker, Record, Value, WireType, condition::Operand,
+    update_path::UpdatePath, wire,
 };
 
 /// Wire categories supporting numeric SET arithmetic. Custom codecs opt in explicitly.
@@ -35,6 +35,11 @@ impl<T: Value> Append<List<T>> for Native<List<T>> {
 #[derive(Debug, PartialEq)]
 pub enum SetNode {
     Operand(Operand),
+    Path(crate::AttributePath),
+    IfPathNotExists {
+        path: crate::AttributePath,
+        default: Operand,
+    },
     IfNotExists {
         path: FieldDescriptor,
         default: Operand,
@@ -46,6 +51,13 @@ pub enum SetNode {
 /// Read-only action tree; constructing nodes cannot bypass the typed builders.
 #[derive(Debug, PartialEq)]
 pub enum ActionNode {
+    NestedSet {
+        target: crate::AttributePath,
+        value: SetNode,
+    },
+    NestedRemove {
+        target: crate::AttributePath,
+    },
     Set {
         target: FieldDescriptor,
         value: SetNode,
@@ -63,7 +75,7 @@ pub enum ActionNode {
     },
 }
 
-/// A validated, record-owned sequence. Rendering and target overlap checks are later stages.
+/// A validated, record-owned sequence with nonoverlapping targets.
 pub struct BuiltUpdate<R> {
     actions: Vec<ActionNode>,
     owner: PhantomData<fn(R) -> R>,
@@ -162,12 +174,14 @@ impl<R> Update<R> {
         if self.actions.is_empty() {
             return Err(BuildError::EmptyOperation);
         }
+        let actions: Vec<_> = self
+            .actions
+            .into_iter()
+            .map(|action| (action.build)())
+            .collect::<Result<_, _>>()?;
+        crate::update_renderer::validate_targets(&actions)?;
         Ok(BuiltUpdate {
-            actions: self
-                .actions
-                .into_iter()
-                .map(|action| (action.build)())
-                .collect::<Result<_, _>>()?,
+            actions,
             owner: PhantomData,
         })
     }
@@ -178,7 +192,7 @@ pub struct Action<R> {
     owner: PhantomData<fn(R) -> R>,
 }
 impl<R> Action<R> {
-    fn new(build: impl FnOnce() -> Result<ActionNode, BuildError> + 'static) -> Self {
+    pub(crate) fn new(build: impl FnOnce() -> Result<ActionNode, BuildError> + 'static) -> Self {
         Self {
             build: Box::new(build),
             owner: PhantomData,
@@ -198,12 +212,12 @@ unbuilt_debug!(Update);
 type Invariant<T> = PhantomData<fn(T) -> T>;
 /// A path or if_not_exists operand, preserving its record, logical type, and codec.
 pub struct SetOperand<R, T, C = Native<T>> {
-    field: Result<FieldDescriptor, BuildError>,
-    build: Box<dyn FnOnce(FieldDescriptor) -> Result<SetNode, BuildError>>,
+    pub(crate) field: Result<UpdatePath, BuildError>,
+    pub(crate) build: Box<dyn FnOnce(UpdatePath) -> Result<SetNode, BuildError>>,
     types: Invariant<(R, T, C)>,
 }
 /// A complete SET right-hand side; arithmetic cannot be recursively chained.
-pub struct SetExpression<R, T, C = Native<T>>(SetOperand<R, T, C>);
+pub struct SetExpression<R, T, C = Native<T>>(pub(crate) SetOperand<R, T, C>);
 unbuilt_debug!(SetOperand, T, C);
 unbuilt_debug!(SetExpression, T, C);
 impl<R, T, C> From<SetOperand<R, T, C>> for SetExpression<R, T, C> {
@@ -212,9 +226,9 @@ impl<R, T, C> From<SetOperand<R, T, C>> for SetExpression<R, T, C> {
     }
 }
 impl<R, T, C> SetOperand<R, T, C> {
-    fn new(
-        field: Result<FieldDescriptor, BuildError>,
-        build: impl FnOnce(FieldDescriptor) -> Result<SetNode, BuildError> + 'static,
+    pub(crate) fn new(
+        field: Result<UpdatePath, BuildError>,
+        build: impl FnOnce(UpdatePath) -> Result<SetNode, BuildError> + 'static,
     ) -> Self {
         Self {
             field,
@@ -223,23 +237,26 @@ impl<R, T, C> SetOperand<R, T, C> {
         }
     }
 }
-fn constant<R: Record, T, C: Converter<T>>(
-    field: FieldDescriptor,
+pub(crate) fn constant<R: Record, T, C: Converter<T>>(
+    field: &UpdatePath,
     value: &T,
 ) -> Result<Operand, BuildError> {
-    let mut cx = EncodeContext::new(R::SCHEMA.name).at(PathSegment::Attribute(field.name.into()));
+    let mut cx = EncodeContext::new(R::SCHEMA.name).in_document(field.document);
+    for segment in field.path.segments() {
+        cx = cx.at(segment.clone());
+    }
     Ok(Operand::Value(C::encode(value, &mut cx)?))
 }
 impl<R: Record, T: 'static, C: Converter<T> + 'static> SetOperand<R, T, C> {
-    fn combine(
+    pub(crate) fn combine(
         self,
         value: T,
         node: fn(Box<SetNode>, Operand) -> SetNode,
     ) -> SetExpression<R, T, C> {
         SetExpression(Self::new(self.field, move |field| {
             Ok(node(
-                Box::new((self.build)(field)?),
-                constant::<R, T, C>(field, &value)?,
+                Box::new((self.build)(field.clone())?),
+                constant::<R, T, C>(&field, &value)?,
             ))
         }))
     }
@@ -261,16 +278,14 @@ impl<R: Record, T: 'static, P: PresenceMarker, A: AccessMarker, C: Converter<T> 
 {
     /// Read a path on the SET right-hand side, including a protected attribute.
     pub fn operand(self) -> SetOperand<R, T, C> {
-        SetOperand::new(self.validate(), |field| {
-            Ok(SetNode::Operand(Operand::Attribute(field)))
+        SetOperand::new(self.validate().map(UpdatePath::root::<R>), |field| {
+            Ok(field.operand())
         })
     }
     pub fn if_not_exists(self, value: T) -> SetOperand<R, T, C> {
-        SetOperand::new(self.validate(), move |field| {
-            Ok(SetNode::IfNotExists {
-                path: field,
-                default: constant::<R, T, C>(field, &value)?,
-            })
+        SetOperand::new(self.validate().map(UpdatePath::root::<R>), move |field| {
+            let default = constant::<R, T, C>(&field, &value)?;
+            Ok(field.if_not_exists(default))
         })
     }
 }
@@ -278,9 +293,10 @@ impl<R: Record, T: 'static, P: PresenceMarker, C: Converter<T> + 'static>
     Attr<R, T, P, Mutable, C>
 {
     pub fn set(self, value: T) -> Action<R> {
-        self.set_expr(SetOperand::new(self.validate(), move |field| {
-            Ok(SetNode::Operand(constant::<R, T, C>(field, &value)?))
-        }))
+        self.set_expr(SetOperand::new(
+            self.validate().map(UpdatePath::root::<R>),
+            move |field| Ok(SetNode::Operand(constant::<R, T, C>(&field, &value)?)),
+        ))
     }
     pub fn set_expr(self, expression: impl Into<SetExpression<R, T, C>>) -> Action<R> {
         let target = self.validate_mutation();
@@ -335,7 +351,10 @@ impl<R: Record, T: Value + 'static, P: PresenceMarker> Attr<R, T, P, Mutable, Na
         let target = self.validate_mutation();
         Action::new(move || {
             let target = target?;
-            Ok(node(target, constant::<R, T, Native<T>>(target, &value)?))
+            Ok(node(
+                target,
+                constant::<R, T, Native<T>>(&UpdatePath::root::<R>(target), &value)?,
+            ))
         })
     }
     #[allow(clippy::should_implement_trait)] // DynamoDB ADD, not Rust arithmetic.

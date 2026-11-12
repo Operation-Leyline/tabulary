@@ -94,9 +94,16 @@ pub fn implementation(
     let (ig, tg, wc) = generics.split_for_impl();
     let item = format_ident!("item", span = Span::mixed_site());
     let cx = format_ident!("cx", span = Span::mixed_site());
+    let descriptors = schema.fields.iter().enumerate().map(|(i, field)| {
+        let (ty, name) = (&field.ty, &field.name);
+        let presence = if field.optional { quote!(#path::Optional) } else { quote!(#path::Required) };
+        let access = if field.key_limit.is_some() { quote!(#path::KeyOnly) } else { quote!(#path::Mutable) };
+        quote!(#path::__private::field::<Self, #ty, #presence, #access, #path::Native<#ty>>(#name, #i).descriptor())
+    });
     quote! {
         impl #ig #path::Document for #ident #tg #wc {
             const NAME: &'static str = ::core::stringify!(#ident);
+            const FIELDS: &'static [#path::FieldDescriptor] = &[#(#descriptors,)*];
             fn encode_map(&self, #cx: &mut #path::EncodeContext) -> ::core::result::Result<#path::Item, #path::EncodeError> {
                 let #cx = #cx.in_document(<Self as #path::Document>::NAME);
                 let mut #item = #path::Item::new();
