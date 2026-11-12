@@ -11,6 +11,7 @@ pub mod field;
 mod floats;
 mod nullable;
 mod numbers;
+mod record;
 mod scalar;
 mod schema;
 mod value;
@@ -31,6 +32,9 @@ pub use convert::{Converter, Native};
 pub use decimal::Decimal;
 pub use errors::*;
 pub use nullable::{Nullable, NullableWire};
+pub use record::{Item, RecordKey};
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
+#[cfg(feature = "derive")]
+pub use tabulary_derive::Record;
 pub use value::Value;
 pub use wire::WireType;
