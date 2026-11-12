@@ -332,3 +332,40 @@ fn nested_operands_accept_protected_handles_and_reject_forged_metadata() {
         }
     );
 }
+
+#[derive(Debug, PartialEq, tabulary::Variants)]
+#[tabulary(tag = "stage", rename_all = "snake_case")]
+enum Stage {
+    Waiting,
+    Sent { tracking: String },
+}
+
+#[derive(Debug, PartialEq, tabulary::Record)]
+#[tabulary(
+    rename_all = "snake_case",
+    partition(name = "pk", template = "{id:hex}")
+)]
+struct FlatParcel {
+    #[tabulary(flatten)]
+    stage: Stage,
+    id: String,
+}
+
+#[test]
+fn flattened_variants_preserve_composite_keys_and_source_validation() {
+    let record = FlatParcel {
+        stage: Stage::Sent {
+            tracking: "parcel".into(),
+        },
+        id: "a".into(),
+    };
+    let mut item = record.to_item().unwrap();
+    assert_eq!(FlatParcel::from_item(&item).unwrap(), record);
+    key_round_trip(record.key().unwrap());
+    assert_eq!(item["pk"], Av::S("61".into()));
+    item.insert("id".into(), Av::S("b".into()));
+    assert_eq!(
+        FlatParcel::from_item(&item).unwrap_err().kind,
+        DecodeFault::KeyMismatch
+    );
+}

@@ -1,0 +1,35 @@
+error: at most one flattened variants field is allowed
+  --> tests/ui/variants/flatten.rs:16:5
+   |
+16 |     second: Stage,
+   |     ^^^^^^
+
+error: flatten cannot be optional, renamed, defaulted or a key
+  --> tests/ui/variants/flatten.rs:39:5
+   |
+39 |     stage: Option<Stage>,
+   |     ^^^^^
+
+error[E0080]: evaluation panicked: flattened variant attribute overlaps a common field
+  --> tests/ui/variants/flatten.rs:24:5
+   |
+24 |     stage: Stage,
+   |     ^^^^^ evaluation of `_::{constant#0}` failed here
+
+note: erroneous constant encountered
+  --> tests/ui/variants/flatten.rs:24:5
+   |
+24 |     stage: Stage,
+   |     ^^^^^
+
+error[E0080]: evaluation panicked: flattened variant attribute overlaps a common field
+  --> tests/ui/variants/flatten.rs:33:5
+   |
+33 |     stage: Stage,
+   |     ^^^^^ evaluation of `_::{constant#0}` failed here
+
+note: erroneous constant encountered
+  --> tests/ui/variants/flatten.rs:33:5
+   |
+33 |     stage: Stage,
+   |     ^^^^^

@@ -605,7 +605,10 @@ rules. Unknown tag, wrong tag type, and missing tag are separate faults.
 Shared-field compatibility uses the same written Rust type, converter path, and
 explicit default path in each variant. The derive does not resolve type aliases
 or prove that two converter paths name the same implementation. An omitted
-converter means `Native<T>`.
+converter means `Native<T>`. For a flattened group, the containing record or
+document owns the unknown-attribute policy; for a nested `M`, the enum owns it.
+Neither policy permits inactive payload attributes. Flattening adds no map
+level to the depth count or field path. Nested storage adds one map level.
 
 `DeliveryStageTags::WAITING` and peers are typed tags.
 `DeliveryAttrs::STAGE.is(DeliveryStageTags::WAITING)` builds a discriminator
