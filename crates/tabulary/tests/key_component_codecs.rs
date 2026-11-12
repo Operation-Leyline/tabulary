@@ -37,8 +37,4 @@ fn component_extraction_checks_utf8_boundaries_and_fixed_tails() {
         assert_eq!(take(&mut rest, width, tail, None), Err(K::InvalidLength));
         assert_eq!(rest, "é");
     }
-    struct Order;
-    let prefix = KeyPrefix::<Order>::from_components("sensitive".into());
-    assert_eq!(prefix.as_str(), "sensitive");
-    assert_eq!(format!("{prefix:?}"), "KeyPrefix");
 }

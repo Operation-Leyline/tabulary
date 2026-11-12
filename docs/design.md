@@ -247,10 +247,10 @@ and `{field:codec}` components. Built-in component codecs are:
 Milestone 15a supplies these runtime codecs in `key_component`, implementing
 `KeyComponentCodec<T>` with `format(&T) -> Result<String, KeyFormatFault>` and
 `parse(&str) -> Result<T, KeyFormatFault>`. Invalid spellings are structured
-faults, without retaining input values. The runtime also defines record-owned
-`KeyPrefix<R>` and the `PrefixParts<R>` integration trait; milestone 15b
-generates their complete-component implementations and validates reserved text
-separators. Generated key expansion and source comparison remain in 15b.
+faults, without retaining input values. Milestone 15b generates typed partition
+and sort-prefix carriers with private payload fields, complete-component tuple
+implementations, and reserved text separator validation. Generated key expansion
+and source comparison remain in 15b.
 Custom template declaration syntax and delimiter metadata are unspecified and
 deferred; the parser continues to recognize only the four built-in names.
 

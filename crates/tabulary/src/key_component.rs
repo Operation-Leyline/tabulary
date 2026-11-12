@@ -118,31 +118,3 @@ pub fn take<'a>(
     *input = input.get(size..).ok_or(Fault::InvalidLength)?;
     Ok(value)
 }
-
-/// Formatted key material tied to its record. Debug deliberately omits values.
-pub struct KeyPrefix<R> {
-    value: String,
-    owner: std::marker::PhantomData<fn(R) -> R>,
-}
-impl<R> KeyPrefix<R> {
-    #[doc(hidden)]
-    pub fn from_components(value: String) -> Self {
-        Self {
-            value,
-            owner: std::marker::PhantomData,
-        }
-    }
-    pub fn as_str(&self) -> &str {
-        &self.value
-    }
-}
-impl<R> std::fmt::Debug for KeyPrefix<R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("KeyPrefix")
-    }
-}
-/// Generated implementations accept only tuples of complete leading sort components.
-pub trait PrefixParts<R> {
-    #[doc(hidden)]
-    fn format_prefix(self) -> Result<KeyPrefix<R>, crate::EncodeError>;
-}
