@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `Dec20: KeyComponentCodec<std::string::String>` is not satisfied
- --> tests/ui/record/template_codec_type.rs:1:10
+ --> tests/ui/record/template_codec_type.rs:3:16
   |
-1 | #[derive(tabulary::Record)]
-  |          ^^^^^^^^^^^^^^^^ the trait `KeyComponentCodec<std::string::String>` is not implemented for `Dec20`
+3 | struct Order { id: String }
+  |                ^^ the trait `KeyComponentCodec<std::string::String>` is not implemented for `Dec20`
   |
 help: the trait `KeyComponentCodec<std::string::String>` is not implemented for `Dec20`
       but trait `KeyComponentCodec<u64>` is implemented for it

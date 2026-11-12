@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// Generated binding between an index, its complete inputs, and dependency metadata.
-/// Manual implementations must describe every index in record schema order.
+/// Derives describe every index in record schema order. Construction hooks are reserved.
 pub trait ReindexSchema<R: Record>: IndexSchema<R> {
     type Inputs;
     const INPUTS: &'static [usize];

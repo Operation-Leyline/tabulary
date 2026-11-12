@@ -3,6 +3,23 @@ use quote::{format_ident, quote, quote_spanned};
 
 use crate::{key_expand, parse, validate::Record};
 
+/// Relocate generated type references to the user's field.
+pub fn at(tokens: TokenStream, span: Span) -> TokenStream {
+    tokens
+        .into_iter()
+        .map(|mut token| {
+            if let proc_macro2::TokenTree::Group(group) = &token {
+                token = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
+                    group.delimiter(),
+                    at(group.stream(), span),
+                ));
+            }
+            token.set_span(span);
+            token
+        })
+        .collect()
+}
+
 pub fn record(record: &Record) -> TokenStream {
     let Record {
         ident,
