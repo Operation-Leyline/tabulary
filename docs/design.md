@@ -1300,6 +1300,28 @@ in original input order. A malformed returned item causes a typed decode error
 with input position and path; accumulated successes and unprocessed keys remain
 available in the error's partial result.
 
+Milestone 44 adds the table-independent `BatchWriteProgress<R>` core alongside
+BatchGet. `BatchAction::put(&record)?` freezes the same encoded item and item-size
+gate as prepared put; `BatchAction::delete(key)?` freezes the prepared-delete key
+encoding. Target identity is extracted from these payloads without running a
+second codec, validates both physical key fields, and normalizes numeric spelling.
+`new(actions, budget)` requires 1..=25 actions and rejects duplicate targets.
+The later adapter binds this homogeneous action list to one table.
+`next_round()` reserves a call and returns an immutable `BatchWriteChunk` of
+original positions. The corresponding actions remain available through
+`entries()`. `accept_round(&chunk, pending)` validates identity, round and the
+entire unprocessed subset before marking all other issued positions `Processed`.
+Only `Pending` actions can appear in another round; budget and lifecycle errors
+reuse `BatchStateError`. `finish()` returns ordered actions on completion, or
+ordered action/state entries and issued-call count on incomplete work.
+`fail_round(&chunk)` marks outstanding actions `Indeterminate` and freezes the
+core: further rounds and completion return `BatchStateError::Indeterminate`.
+Consuming an outstanding core through `into_partial()` or incomplete `finish()`
+also conservatively marks its pending writes indeterminate. Already processed
+actions retain their state. The adapter in milestone 45 retains SDK and abort
+causes, validates raw unprocessed responses, and records capacity vectors; none
+of those SDK/error-wrapper surfaces are introduced by this pure core.
+
 Batch write accepts only `BatchAction::put(&record)?` and
 `BatchAction::delete(key)?`. No conditions, updates, version-controlled
 records, or return-old-item options are allowed: the AWS batch API cannot enforce
