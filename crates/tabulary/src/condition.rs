@@ -154,7 +154,9 @@ impl<R> fmt::Debug for BuiltCondition<R> {
 /// fn absent<R: Record>(a: Attr<R, u64, Optional>) { a.eq(None); }
 /// ```
 pub struct Condition<R> {
-    build: Box<dyn FnOnce() -> Result<ConditionNode, BuildError>>,
+    build: Box<dyn FnOnce(bool) -> Result<ConditionNode, BuildError>>,
+    scoped: bool,
+    negated: bool,
     owner: PhantomData<fn(R) -> R>,
 }
 impl<R> fmt::Debug for Condition<R> {
@@ -162,41 +164,80 @@ impl<R> fmt::Debug for Condition<R> {
         f.write_str("Condition([unbuilt])")
     }
 }
+fn negate(node: ConditionNode, negated: bool) -> ConditionNode {
+    if negated {
+        ConditionNode::Not(Box::new(node))
+    } else {
+        node
+    }
+}
 impl<R> Condition<R> {
     pub(crate) fn new(build: impl FnOnce() -> Result<ConditionNode, BuildError> + 'static) -> Self {
         Self {
-            build: Box::new(build),
+            build: Box::new(move |negated| Ok(negate(build()?, negated))),
+            scoped: false,
+            negated: false,
             owner: PhantomData,
         }
     }
     pub fn build(self) -> Result<BuiltCondition<R>, BuildError> {
         Ok(BuiltCondition {
-            root: (self.build)()?,
+            root: (self.build)(self.negated)?,
             owner: PhantomData,
         })
     }
+    pub(crate) fn guarded(self, guard: Self) -> Self {
+        let (build_guard, guard_negated) = (guard.build, guard.negated);
+        Self {
+            build: Box::new(move |negated| {
+                Ok(ConditionNode::And(
+                    Box::new((self.build)(self.negated ^ negated)?),
+                    Box::new(build_guard(guard_negated)?),
+                ))
+            }),
+            scoped: true,
+            negated: false,
+            owner: PhantomData,
+        }
+    }
     pub fn and(self, other: Self) -> Self {
-        self.join(other, ConditionNode::And)
+        self.join(other, true)
     }
     pub fn or(self, other: Self) -> Self {
-        self.join(other, ConditionNode::Or)
+        self.join(other, false)
     }
-    fn join(
-        self,
-        other: Self,
-        join: fn(Box<ConditionNode>, Box<ConditionNode>) -> ConditionNode,
-    ) -> Self {
-        let (left, right) = (self.build, other.build);
-        Self::new(move || Ok(join(Box::new(left()?), Box::new(right()?))))
+    fn join(self, other: Self, and: bool) -> Self {
+        let scoped = self.scoped || other.scoped;
+        Self {
+            build: Box::new(move |negated| {
+                // De Morgan applies only across a subtree containing scoped leaves.
+                let distribute = scoped && negated;
+                let left = Box::new((self.build)(self.negated ^ distribute)?);
+                let right = Box::new((other.build)(other.negated ^ distribute)?);
+                let node = if and ^ distribute {
+                    ConditionNode::And(left, right)
+                } else {
+                    ConditionNode::Or(left, right)
+                };
+                Ok(negate(node, negated && !distribute))
+            }),
+            scoped,
+            negated: false,
+            owner: PhantomData,
+        }
     }
     #[allow(clippy::should_implement_trait)]
-    pub fn not(self) -> Self {
-        let build = self.build;
-        Self::new(move || Ok(ConditionNode::Not(Box::new(build()?))))
+    pub fn not(mut self) -> Self {
+        if self.scoped {
+            self.negated = !self.negated;
+            self
+        } else {
+            Self::new(move || Ok(ConditionNode::Not(Box::new((self.build)(self.negated)?))))
+        }
     }
 }
 
-fn predicate<R: Record, T: 'static, C: Converter<T> + 'static>(
+pub(crate) fn predicate<R: Record, T: 'static, C: Converter<T> + 'static>(
     field: Result<FieldDescriptor, BuildError>,
     size: bool,
     operator: Operator,
@@ -240,6 +281,8 @@ macro_rules! ordered_comparisons {
         pub fn between(self, lo: $t, hi: $t) -> Condition<R> { self.predicate(Operator::Between, vec![lo, hi]) }
     };
 }
+pub(crate) use {comparisons, ordered_comparisons};
+
 impl<R: Record, T: 'static, P: PresenceMarker, A: AccessMarker, C: Converter<T> + 'static>
     Attr<R, T, P, A, C>
 {
@@ -280,6 +323,7 @@ impl<R: Record, T: 'static, P: PresenceMarker, A: AccessMarker, C: Converter<T> 
     {
         Size {
             field: self.validate(),
+            guard: None,
             owner: PhantomData,
         }
     }
@@ -305,12 +349,17 @@ where
 
 /// A numeric size operand. It retains its source's record and validated descriptor.
 pub struct Size<R> {
-    field: Result<FieldDescriptor, BuildError>,
-    owner: PhantomData<fn(R) -> R>,
+    pub(crate) guard: Option<Condition<R>>,
+    pub(crate) field: Result<FieldDescriptor, BuildError>,
+    pub(crate) owner: PhantomData<fn(R) -> R>,
 }
 impl<R: Record> Size<R> {
     fn predicate(self, operator: Operator, values: Vec<u64>) -> Condition<R> {
-        predicate::<R, u64, Native<u64>>(self.field, true, operator, values)
+        let condition = predicate::<R, u64, Native<u64>>(self.field, true, operator, values);
+        match self.guard {
+            Some(guard) => condition.guarded(guard),
+            None => condition,
+        }
     }
     pub fn in_values(self, values: Vec<u64>) -> Condition<R> {
         self.predicate(Operator::In, values)

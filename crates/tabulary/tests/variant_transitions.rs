@@ -174,10 +174,10 @@ fn every_shape_pair_replaces_the_group_including_omitted_shared_fields() {
         }
     }
     for tag in [
-        StageTags::WAITING,
-        StageTags::SENT,
-        StageTags::FAILED,
-        StageTags::EMPTY,
+        StageTag::Waiting,
+        StageTag::Sent,
+        StageTag::Failed,
+        StageTag::Empty,
     ] {
         let expected =
             tabulary::Value::encode_value(&tag, &mut tabulary::EncodeContext::new("Delivery"))

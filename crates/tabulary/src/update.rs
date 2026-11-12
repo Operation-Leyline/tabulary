@@ -220,7 +220,7 @@ impl<R: Record> Update<R> {
         mut self,
         field: Attr<R, V::Tag, crate::Required, crate::DerivedOnly>,
         value: V,
-        expected_tag: V::Tag,
+        expected_tag: impl Into<V::Tag>,
     ) -> Self
     where
         R: crate::FlattenedVariants<V>,

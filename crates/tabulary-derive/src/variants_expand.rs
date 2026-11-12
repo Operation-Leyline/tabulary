@@ -89,6 +89,7 @@ pub fn variants(s: &Variants) -> TokenStream {
     let tag_id = format_ident!("{}Tag", s.prefix);
     let tags = format_ident!("{}Tags", s.prefix);
     let tag_variants = s.variants.iter().map(|v| &v.id);
+    let mut singleton_types = Vec::new();
     let constants = s.variants.iter().map(|v| {
         let name = format_ident!(
             "{}",
@@ -98,8 +99,21 @@ pub fn variants(s: &Variants) -> TokenStream {
             )
         );
         let variant = &v.id;
-        quote!(#vis const #name: #tag_id = #tag_id::#variant;)
-    });
+        let singleton = format_ident!("{}{}Tag", s.prefix, variant.to_string().trim_start_matches("r#"));
+        let codec = crate::string_enum_expand::string_enum(&crate::string_enum_validate::StringEnum {
+            ident: singleton.clone(), generics: syn::Generics::default(), crate_path: path.clone(),
+            variants: vec![(variant.clone(), v.name.clone())],
+        });
+        singleton_types.push(quote! {
+            #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug, ::core::cmp::PartialEq, ::core::cmp::Eq)]
+            #vis enum #singleton { #variant }
+            #codec
+            impl ::core::convert::From<#singleton> for #tag_id {
+                fn from(_: #singleton) -> Self { Self::#variant }
+            }
+        });
+        quote!(#vis const #name: #singleton = #singleton::#variant;)
+    }).collect::<Vec<_>>();
     let tag_codec =
         crate::string_enum_expand::string_enum(&crate::string_enum_validate::StringEnum {
             ident: tag_id.clone(),
@@ -128,6 +142,7 @@ pub fn variants(s: &Variants) -> TokenStream {
         #[allow(dead_code)]
         impl #tags { #(#constants)* }
         #tag_codec
+        #(#singleton_types)*
         impl #ig #path::Variants for #id #tg #wc {
             type Tag = #tag_id;
             const TAG: &'static str = #tag;
