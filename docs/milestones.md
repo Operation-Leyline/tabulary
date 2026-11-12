@@ -4,13 +4,20 @@ Status: **design**. Only the workspace skeleton exists. The proposed API contrac
 is [design.md](design.md); the [examples](examples/README.md) are syntax-checked
 source until the owning milestone makes them compile against the real crates.
 
-Each row is one pull request, targeting **150–400 changed implementation and test
-lines**, excluding generated diagnostic snapshots. Split a row further if it
-exceeds that range. The exception is a piece that cannot be cut smaller and stay
+Each row is planned as one pull request, targeting **150–400 changed implementation and test
+lines**, excluding generated diagnostic snapshots. A row that exceeds that range
+lands as stacked pull requests, each coherent and green on its own, named after
+the row with a letter suffix (`45a`, `45b`). The first targets `main`; each later
+part is based on the one before and is retargeted to `main` when the preceding
+part merges. The exception is a piece that cannot be cut smaller and stay
 coherent, such as a derive's parsing, validation and expansion with its
 round-trip tests: it may run to about 700 lines, and its description states the
-size and why it was not split. Avoid bundling adjacent rows merely because they touch the
-same file. No milestone implements application schemas or business policies.
+size and why it was not split. About 700 changed implementation and test lines is
+the ceiling for any single pull request, including this exception. A split row is
+complete when its last part merges. Splitting a row this way conforms to the plan
+and is not a reason to merge the parts into one change. Avoid bundling adjacent
+rows merely because they touch the same file. No milestone implements application
+schemas or business policies.
 
 Dependencies name earlier PRs, so the table is in dependency order. “Parallel”
 means the work may start after its dependencies land, alongside other ready
