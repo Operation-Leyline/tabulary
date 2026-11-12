@@ -1213,6 +1213,15 @@ including service keys, against the 4 MiB cap. Expression trees, as well as nest
 document constants, have a maximum depth of 32; excessive depth is `InvalidCursor`
 at request build.
 
+`Cursor::from_bytes(&bytes)` returns `Result<Cursor<R, I>, CursorError>`.
+It checks the outer cap, lengths, counts, tags, UTF-8, numeric domains, depth,
+canonical map/set ordering, and required scalar keys before copying keys and
+binding data into owned storage. Cursor errors distinguish oversized, truncated,
+trailing, unknown-version, invalid-format, invalid-key, and excessive-depth input
+without retaining token contents. Parsed schema/request bytes stay private and
+are compared with the request's complete canonical binding at `resume`, so
+parsing under a different record marker does not erase a schema mismatch.
+
 Opaque does not mean encrypted or authenticated. Tokens contain key and filter
 values. Applications exposing them outside a trusted boundary must authenticate
 and authorize them, or store them server-side. Matching a cursor is never access

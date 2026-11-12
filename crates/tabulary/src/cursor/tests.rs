@@ -109,6 +109,7 @@ fn absent_and_empty_keys_are_end_markers_and_invalid_keys_are_refused() {
 #[test]
 fn every_request_component_is_bound_and_page_limit_is_excluded() {
     let cursor = cursor();
+    let decoded = Cursor::<Row, Primary>::from_bytes(&cursor.to_bytes().unwrap()).unwrap();
     type Change = fn(&mut CursorBinding<Row, Primary>);
     let changes: Vec<Change> = vec![
         (|b| b.table = "other_orders".into()),
@@ -141,10 +142,15 @@ fn every_request_component_is_bound_and_page_limit_is_excluded() {
             binding.resume(&cursor),
             Err(BuildError::CursorMismatch)
         ));
+        assert!(matches!(
+            binding.resume(&decoded),
+            Err(BuildError::CursorMismatch)
+        ));
     }
     // Adapters vary their evaluated-item limit independently; binding takes no limit.
     for _page_limit in [1, 50, 1000] {
         assert_eq!(query().resume(&cursor).unwrap(), &key());
+        assert_eq!(query().resume(&decoded).unwrap(), &key());
     }
 }
 
@@ -393,6 +399,8 @@ fn canonical_encoding_covers_every_value_tag_and_sorts_maps_and_sets() {
     let a = with_constant(values(false));
     let b = with_constant(values(true));
     assert_eq!(a.to_bytes().unwrap(), b.to_bytes().unwrap());
+    let decoded = Cursor::<Row, Primary>::from_bytes(&a.to_bytes().unwrap()).unwrap();
+    assert_eq!(decoded.to_bytes().unwrap(), a.to_bytes().unwrap());
     assert!(
         a.to_bytes()
             .unwrap()
@@ -461,6 +469,8 @@ fn total_encoded_size_accepts_exact_cap_and_refuses_one_more_byte() {
         .key
         .insert(name.clone(), AttributeValue::S("a".into()));
     assert_eq!(cursor.to_bytes().unwrap().len(), 4 * 1024 * 1024);
+    let decoded = Cursor::<Row, Primary>::from_bytes(&cursor.to_bytes().unwrap()).unwrap();
+    assert_eq!(decoded.last_evaluated_key(), cursor.last_evaluated_key());
     cursor.key.remove(&name);
     cursor
         .key
@@ -494,5 +504,215 @@ fn request_build_bounds_expression_depth() {
         } else {
             assert!(matches!(result, Err(BuildError::InvalidCursor)));
         }
+    }
+}
+
+fn parse(bytes: &[u8]) -> Result<Cursor<Row, Primary>, CursorError> {
+    Cursor::from_bytes(bytes)
+}
+
+#[test]
+fn bytes_round_trip_full_key_and_private_filter_and_keep_resume_binding() {
+    let mut b = query();
+    b.index = Some(INDEX);
+    b.filter = Some(CanonicalNode::Predicate(
+        Operator::Eq,
+        vec![CanonicalOperand::Value(canonical(AttributeValue::M(
+            Item::from([
+                (
+                    "list".into(),
+                    AttributeValue::L(vec![AttributeValue::Null(true)]),
+                ),
+                (
+                    "strings".into(),
+                    AttributeValue::Ss(vec!["z".into(), "a".into()]),
+                ),
+                (
+                    "numbers".into(),
+                    AttributeValue::Ns(vec!["-2".into(), "1.0".into()]),
+                ),
+                (
+                    "binaries".into(),
+                    AttributeValue::Bs(vec![Blob::new([2]), Blob::new([1])]),
+                ),
+                ("secret".into(), AttributeValue::S("private-filter".into())),
+            ]),
+        )))],
+    ));
+    b.projection = Some(vec!["pk", "sk"]);
+    let bytes = b.cursor(Some(key())).unwrap().unwrap().to_bytes().unwrap();
+    let decoded = parse(&bytes).unwrap();
+    assert_eq!(decoded.last_evaluated_key(), &key());
+    assert_eq!(decoded.clone().to_bytes().unwrap(), bytes);
+    assert_eq!(b.resume(&decoded).unwrap(), &key());
+    assert_eq!(format!("{decoded:?}"), "Cursor([redacted])");
+    assert!(matches!(
+        query().resume(&decoded),
+        Err(BuildError::CursorMismatch)
+    ));
+    b.filter = None;
+    assert!(matches!(
+        b.resume(&decoded),
+        Err(BuildError::CursorMismatch)
+    ));
+}
+
+#[test]
+fn parsed_schema_mismatch_is_reported_at_resume_not_lost_during_parse() {
+    let mut b = query();
+    b.schema.name = "OtherRow";
+    let bytes = b.cursor(Some(key())).unwrap().unwrap().to_bytes().unwrap();
+    let cursor = parse(&bytes).unwrap();
+    assert!(matches!(
+        query().resume(&cursor),
+        Err(BuildError::CursorMismatch)
+    ));
+}
+
+#[test]
+fn parser_refuses_every_truncation_trailing_bytes_and_unknown_versions() {
+    let bytes = cursor().to_bytes().unwrap();
+    for end in 0..bytes.len() {
+        assert!(
+            matches!(parse(&bytes[..end]), Err(CursorError::Truncated)),
+            "prefix {end}"
+        );
+    }
+    let mut trailing = bytes.clone();
+    trailing.push(0);
+    assert!(matches!(parse(&trailing), Err(CursorError::TrailingBytes)));
+    for version in [0, 2, 255] {
+        let mut bytes = bytes.clone();
+        bytes[0] = version;
+        assert!(
+            matches!(parse(&bytes), Err(CursorError::UnknownVersion { version: v }) if v == version)
+        );
+    }
+}
+
+#[test]
+fn parser_checks_outer_size_blob_lengths_and_counts_before_copying() {
+    assert!(matches!(
+        parse(&vec![0; 4 * 1024 * 1024 + 1]),
+        Err(CursorError::TooLarge)
+    ));
+    let mut bytes = cursor().to_bytes().unwrap();
+    // Table-name byte length is the first length in V1.
+    bytes[1..5].copy_from_slice(&u32::MAX.to_be_bytes());
+    assert!(matches!(parse(&bytes), Err(CursorError::TooLarge)));
+    bytes[1..5].copy_from_slice(&1_000_000_u32.to_be_bytes());
+    assert!(matches!(parse(&bytes), Err(CursorError::Truncated)));
+    let mut bytes = cursor().to_bytes().unwrap();
+    let count = 1 + 4 + "orders".len() + 4 + "Row".len();
+    bytes[count..count + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+    assert!(matches!(parse(&bytes), Err(CursorError::TooLarge)));
+    let mut bytes = cursor().to_bytes().unwrap();
+    bytes[5] = 255;
+    assert!(matches!(parse(&bytes), Err(CursorError::InvalidFormat)));
+}
+
+#[test]
+fn parser_refuses_invalid_empty_and_missing_keys_and_sort_key_overflow() {
+    for value in [
+        AttributeValue::S(String::new()),
+        AttributeValue::N("bad".into()),
+        AttributeValue::B(Blob::new([])),
+        AttributeValue::S("x".repeat(2049)),
+    ] {
+        let mut c = cursor();
+        c.key.insert("pk".into(), value);
+        assert!(matches!(
+            parse(&c.to_bytes().unwrap()),
+            Err(CursorError::InvalidKey)
+        ));
+    }
+    let mut c = cursor();
+    c.key.clear();
+    assert!(matches!(
+        parse(&c.to_bytes().unwrap()),
+        Err(CursorError::InvalidKey)
+    ));
+    let mut c = cursor();
+    c.key.remove("sk");
+    assert!(matches!(
+        parse(&c.to_bytes().unwrap()),
+        Err(CursorError::InvalidKey)
+    ));
+    let mut b = query();
+    const FIELDS: &[FieldDescriptor] = &[
+        p::field::<Row, String, Required, KeyOnly, Native<String>>("pk", 0).descriptor(),
+        p::field::<Row, String, Required, KeyOnly, Native<String>>("sk", 1).descriptor(),
+    ];
+    b.schema.fields = FIELDS;
+    let mut c = Cursor {
+        key: key(),
+        binding: Identity::Memory(Box::new(b)),
+    };
+    c.key
+        .insert("sk".into(), AttributeValue::S("x".repeat(1025)));
+    assert!(matches!(
+        parse(&c.to_bytes().unwrap()),
+        Err(CursorError::InvalidKey)
+    ));
+}
+
+fn scan_with_filter(filter: &[u8]) -> Vec<u8> {
+    let mut b = query();
+    b.operation = Operation::Scan(None);
+    let binding_len = super::bytes::binding_bytes(&b).unwrap().len();
+    let mut bytes = b.cursor(Some(key())).unwrap().unwrap().to_bytes().unwrap();
+    // Replace absent filter, immediately before projection and consistency.
+    bytes.splice(
+        1 + binding_len - 3..1 + binding_len - 2,
+        filter.iter().copied(),
+    );
+    bytes
+}
+
+#[test]
+fn parser_bounds_ast_and_document_depth_and_rejects_untrusted_inner_counts() {
+    for depth in [32, 33] {
+        // Present filter, predicate Eq, one value operand, nested lists, null.
+        let mut filter = vec![1, 0, 2, 0, 0, 0, 1, 2];
+        for _ in 0..depth {
+            filter.extend([5, 0, 0, 0, 1]);
+        }
+        filter.push(4);
+        let result = parse(&scan_with_filter(&filter));
+        if depth == 32 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(CursorError::DepthLimit)));
+        }
+        let mut filter = vec![1];
+        filter.extend(std::iter::repeat_n(3, depth));
+        filter.extend([0, 0, 0, 0, 0, 0]); // Exists with zero operands.
+        let result = parse(&scan_with_filter(&filter));
+        if depth == 32 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(CursorError::DepthLimit)));
+        }
+    }
+    for tag in [5, 6, 7, 8, 9] {
+        let filter = [1, 0, 2, 0, 0, 0, 1, 2, tag, 255, 255, 255, 255];
+        assert!(matches!(
+            parse(&scan_with_filter(&filter)),
+            Err(CursorError::TooLarge)
+        ));
+    }
+    // Unsorted/duplicate map names and set members are not canonical V1 data.
+    for tag in [6, 7, 9] {
+        let mut filter = vec![1, 0, 2, 0, 0, 0, 1, 2, tag, 0, 0, 0, 2];
+        for name in *b"za" {
+            filter.extend([0, 0, 0, 1, name]);
+            if tag == 6 {
+                filter.push(4);
+            }
+        }
+        assert!(matches!(
+            parse(&scan_with_filter(&filter)),
+            Err(CursorError::InvalidFormat)
+        ));
     }
 }

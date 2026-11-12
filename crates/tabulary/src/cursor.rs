@@ -1,4 +1,4 @@
-//! Continuation identity and versioned byte encoding.
+//! Continuation identity and versioned, bounded byte encoding.
 use std::{collections::BTreeMap, fmt, marker::PhantomData};
 
 use aws_sdk_dynamodb::types::AttributeValue;
@@ -20,7 +20,11 @@ pub enum QueryOrder {
 /// Matching a cursor does not authenticate or authorize its use.
 pub struct Cursor<R, I> {
     key: Item,
-    binding: CursorBinding<R, I>,
+    binding: Identity<R, I>,
+}
+enum Identity<R, I> {
+    Memory(Box<CursorBinding<R, I>>),
+    Encoded(Vec<u8>),
 }
 impl<R, I> Cursor<R, I> {
     /// Explicit raw access; keys can contain sensitive values.
@@ -32,7 +36,10 @@ impl<R, I> Clone for Cursor<R, I> {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
-            binding: self.binding.clone(),
+            binding: match &self.binding {
+                Identity::Memory(binding) => Identity::Memory(binding.clone()),
+                Identity::Encoded(bytes) => Identity::Encoded(bytes.clone()),
+            },
         }
     }
 }
@@ -143,6 +150,7 @@ impl<R: Record, I> CursorBinding<R, I> {
             consistency,
             marker: PhantomData,
         };
+        // Count without allocating the output; reserve room for version and key count.
         bytes::binding_size(&binding)?;
         Ok(binding)
     }
@@ -180,11 +188,19 @@ impl<R: Record, I> CursorBinding<R, I> {
         }
         Ok(Some(Cursor {
             key,
-            binding: self.clone(),
+            binding: Identity::Memory(Box::new(self.clone())),
         }))
     }
     pub(crate) fn resume<'a>(&self, cursor: &'a Cursor<R, I>) -> Result<&'a Item, BuildError> {
-        let other = &cursor.binding;
+        let other = match &cursor.binding {
+            Identity::Memory(other) => other,
+            Identity::Encoded(encoded) => {
+                if bytes::binding_bytes(self)? != *encoded {
+                    return Err(BuildError::CursorMismatch);
+                }
+                return Ok(&cursor.key);
+            }
+        };
         if self.table != other.table
             || self.schema != other.schema
             || self.index != other.index
@@ -289,6 +305,6 @@ impl CanonicalValue {
 }
 
 mod bytes;
-
 #[cfg(test)]
 mod tests;
+pub use bytes::CursorError;
