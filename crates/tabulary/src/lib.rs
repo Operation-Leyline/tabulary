@@ -2,10 +2,12 @@
 
 #[doc(hidden)]
 pub mod __private;
+mod aliases;
 mod attr;
 mod billed_size;
 mod collections;
 pub mod condition;
+mod condition_renderer;
 pub mod convert;
 mod decimal;
 mod errors;
@@ -14,6 +16,7 @@ mod floats;
 mod nullable;
 mod numbers;
 mod record;
+mod rendered_expressions;
 mod scalar;
 mod schema;
 mod secret;
@@ -40,6 +43,7 @@ pub use decimal::Decimal;
 pub use errors::*;
 pub use nullable::{Nullable, NullableWire};
 pub use record::{Item, RecordKey};
+pub use rendered_expressions::RenderedExpressions;
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
 pub use secret::Secret;
 #[cfg(feature = "derive")]

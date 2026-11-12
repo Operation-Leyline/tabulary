@@ -691,6 +691,12 @@ apply. No reordering into an imagined sequential execution takes place.
 
 ### 7.1 Rendering and review
 
+`BuiltCondition::render()` returns a standalone `RenderedExpressions` with fresh
+aliases and only `condition()` populated. It traverses the validated tree
+left-to-right, encloses AND/OR groups in parentheses, and writes NOT as
+`NOT (child)`. Rendering does not re-encode constants. Request-wide size and
+substitution checks belong to operation builders and milestone 46.
+
 `plan.expressions()` returns `RenderedExpressions`, with
 `condition()`, `update()`, `key_condition()`, `filter()`,
 `projection()`, `names()`, and `values()`. The first five are optional
