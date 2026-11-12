@@ -8,6 +8,12 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<crate::parse
             "Document cannot declare TTL",
         ));
     }
+    if opts.version {
+        return Err(syn::Error::new_spanned(
+            &attrs[0],
+            "Document fields cannot declare versions",
+        ));
+    }
     if !opts.indexes.is_empty() {
         return Err(syn::Error::new_spanned(
             &attrs[0],

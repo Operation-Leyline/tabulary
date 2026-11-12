@@ -66,6 +66,8 @@ pub fn access(record: &Record, index: usize) -> TokenStream {
     let path = &record.crate_path;
     if template(record, index).is_some() {
         quote!(#path::DerivedOnly)
+    } else if record.version == Some(index) {
+        quote!(#path::VersionOnly)
     } else if record.fields[index].key_limit.is_some() || source(record, index) {
         quote!(#path::KeyOnly)
     } else if index_source(record, index) {

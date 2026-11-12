@@ -12,6 +12,7 @@ pub struct Options {
     pub sort_key: bool,
     pub flatten: bool,
     pub ttl: bool,
+    pub version: bool,
     pub partition: Option<crate::template::Declaration>,
     pub sort: Option<crate::template::Declaration>,
     pub indexes: Vec<crate::index_parse::Declaration>,
@@ -53,6 +54,13 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                         return Err(meta.error("duplicate ttl option"));
                     }
                     result.ttl = true;
+                    return Ok(());
+                }
+                (false, "version") => {
+                    if result.version {
+                        return Err(meta.error("duplicate version option"));
+                    }
+                    result.version = true;
                     return Ok(());
                 }
                 (false, "flatten") => {

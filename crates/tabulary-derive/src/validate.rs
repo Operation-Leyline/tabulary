@@ -34,6 +34,7 @@ pub struct Record {
     pub templates: Vec<(usize, crate::template::Template)>,
     pub indexes: Vec<crate::index_validate::Index>,
     pub ttl: Option<usize>,
+    pub version: Option<usize>,
 }
 
 pub fn record(input: DeriveInput) -> syn::Result<Record> {
@@ -105,6 +106,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
         templates: Vec::new(),
         indexes: Vec::new(),
         ttl: None,
+        version: None,
     };
     let mut partition = None;
     let mut names = HashMap::new();
@@ -116,6 +118,37 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             .ident
             .ok_or_else(|| error(&field.ty, "expected a named field"))?;
         let rust_name = ident.to_string().trim_start_matches("r#").to_owned();
+        if opts.version {
+            if result.version.replace(i).is_some() {
+                return Err(error(&ident, "at most one version field is allowed"));
+            }
+            // Validate the written primitive type; aliases cannot declare a version.
+            let native = match &field.ty {
+                Type::Path(p) if p.qself.is_none() => {
+                    let name = quote::quote!(#p).to_string().replace(' ', "");
+                    matches!(
+                        name.as_str(),
+                        "u64"
+                            | "core::primitive::u64"
+                            | "::core::primitive::u64"
+                            | "std::primitive::u64"
+                            | "::std::primitive::u64"
+                    )
+                }
+                _ => false,
+            };
+            if !native
+                || opts.default.is_some()
+                || opts.partition_key
+                || opts.sort_key
+                || opts.flatten
+            {
+                return Err(error(
+                    &ident,
+                    "version must be a required native u64 without a default, key or flatten",
+                ));
+            }
+        }
         if opts.flatten {
             if flattened {
                 return Err(error(
@@ -231,6 +264,15 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
         result.partition = partition
             .ok_or_else(|| error(&result.ident, "exactly one partition key is required"))?;
         crate::index_validate::indexes(&mut result, opts.indexes, &fields)?;
+        if let Some(i) = result.version
+            && (crate::key_expand::source(&result, i)
+                || crate::key_expand::index_source(&result, i))
+        {
+            return Err(error(
+                &result.fields[i].ident,
+                "version cannot be a composite key source",
+            ));
+        }
     }
     Ok(result)
 }
