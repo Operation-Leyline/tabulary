@@ -41,6 +41,7 @@ mod secret;
 mod table;
 mod table_definition;
 mod time;
+mod transaction;
 mod transition;
 mod tx_action;
 pub mod update;
@@ -130,6 +131,10 @@ pub use tabulary_derive::StringEnum;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Variants;
 pub use time::{TimeError, TimestampMicros, TimestampMillis, TimestampSeconds, TtlSeconds};
+pub use transaction::PreparedTransaction;
+pub use transaction::TransactionBuilder;
+pub use transaction::TxActions;
+pub use transaction::transaction;
 pub use transition::FlattenedVariants;
 pub use tx_action::CheckBuilder;
 pub use tx_action::TxAction;
