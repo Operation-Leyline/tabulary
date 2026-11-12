@@ -91,6 +91,7 @@ impl<R: Record + Document> PutBuilder<'_, R> {
             Some(condition) => condition.build()?.render(),
             None => RenderedExpressions::default(),
         };
+        expressions.validate()?;
         let names = (!expressions.names().is_empty()).then(|| expressions.names().clone());
         let values = (!expressions.values().is_empty()).then(|| expressions.values().clone());
         let input = PutItemInput::builder()

@@ -129,7 +129,9 @@ impl<A: TxActions> TransactionBuilder<A> {
         }
         let (mut items, mut targets) = (Vec::new(), Vec::new());
         self.actions.append(&mut items, &mut targets);
-        validate(&items, &targets)?;
+        let mut size = validate(&items, &targets)?;
+        size.conservative_wire_bytes =
+            crate::request_size::transaction(&items, self.token.as_deref())?;
         let input = TransactWriteItemsInput::builder()
             .set_transact_items(Some(items))
             .set_client_request_token(self.token)
@@ -140,6 +142,7 @@ impl<A: TxActions> TransactionBuilder<A> {
         Ok(PreparedTransaction {
             input,
             actions: self.actions,
+            size,
         })
     }
 }
@@ -148,8 +151,23 @@ impl<A: TxActions> TransactionBuilder<A> {
 pub struct PreparedTransaction<A> {
     input: TransactWriteItemsInput,
     actions: A,
+    size: TransactionSize,
+}
+/// Local size evidence; unknown stored rows are never estimated from their keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TransactionSize {
+    /// Conservative put-item contribution toward the 4 MiB aggregate item cap.
+    pub known_put_item_bytes: usize,
+    /// Delete, update and condition-check rows whose stored sizes are unknown.
+    pub unknown_item_count: usize,
+    /// Conservative JSON request bytes, including bindings and base64 expansion.
+    /// This is separate from the aggregate item cap and has no local 4 MiB gate.
+    pub conservative_wire_bytes: usize,
 }
 impl<A> PreparedTransaction<A> {
+    pub fn size(&self) -> TransactionSize {
+        self.size
+    }
     pub fn input(&self) -> &TransactWriteItemsInput {
         &self.input
     }
@@ -183,7 +201,10 @@ fn table_identity(table: &str) -> (Option<(&str, &str, &str)>, &str) {
     }
     (None, table)
 }
-fn validate(items: &[TransactWriteItem], targets: &[(String, Item)]) -> Result<(), BuildError> {
+fn validate(
+    items: &[TransactWriteItem],
+    targets: &[(String, Item)],
+) -> Result<TransactionSize, BuildError> {
     if items.is_empty() {
         return Err(BuildError::EmptyOperation);
     }
@@ -223,7 +244,11 @@ fn validate(items: &[TransactWriteItem], targets: &[(String, Item)]) -> Result<(
             actual: known,
         });
     }
-    Ok(())
+    Ok(TransactionSize {
+        known_put_item_bytes: known,
+        unknown_item_count: items.iter().filter(|item| item.put.is_none()).count(),
+        conservative_wire_bytes: 0,
+    })
 }
 
 #[cfg(test)]
@@ -233,8 +258,7 @@ mod tests {
 
     #[test]
     fn final_count_is_nonempty_and_capped_without_splitting() {
-        // Flat public tuples cannot exceed twelve until milestone 41 adds composition.
-        // Exercise the final flattened gate directly, including future over-cap input.
+        // Exercise the final flattened gate directly, without splitting actions.
         for count in [0, 1, 100, 101] {
             let items = vec![TransactWriteItem::builder().build(); count];
             let expected = match count {
@@ -245,7 +269,7 @@ mod tests {
                 }),
                 _ => Ok(()),
             };
-            assert_eq!(validate(&items, &[]), expected);
+            assert_eq!(validate(&items, &[]).map(|_| ()), expected);
             assert_eq!(items.len(), count);
         }
     }
@@ -273,5 +297,19 @@ mod tests {
             validate(&[put(400 * 1024)], &[]),
             Err(BuildError::RequestLimit { max: 409_600, .. })
         ));
+        let mut boundary = vec![put(400 * 1024 - 7); 10];
+        boundary.push(put(4 * 1024 * 1024 - 10 * 400 * 1024 - 7));
+        assert_eq!(
+            validate(&boundary, &[]).unwrap().known_put_item_bytes,
+            4_194_304
+        );
+        boundary[10] = put(4 * 1024 * 1024 - 10 * 400 * 1024 - 6);
+        assert_eq!(
+            validate(&boundary, &[]),
+            Err(BuildError::RequestLimit {
+                max: 4_194_304,
+                actual: 4_194_305
+            })
+        );
     }
 }

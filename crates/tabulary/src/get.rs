@@ -72,6 +72,7 @@ impl<R: Record, K: RecordKey<R>, P> GetBuilder<R, K, P> {
                     .join(", "),
             );
         }
+        expressions.validate()?;
         let names = (!expressions.names().is_empty()).then(|| expressions.names().clone());
         let input = GetItemInput::builder()
             .table_name(self.table)
