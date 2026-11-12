@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+ --> tests/ui/ttl/types.rs:7:5
+  |
+7 |     expires: u64,
+  |     ^^^^^^^ expected `Option<TtlSeconds>`, found `Option<u64>`
+  |
+  = note: expected enum `Option<TtlSeconds>`
+             found enum `Option<u64>`

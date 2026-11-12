@@ -264,6 +264,14 @@ pub fn record(record: &Record) -> TokenStream {
         quote!(.with_indexes(&[#(#definitions),*]))
     });
     let helpers = key_expand::helpers(record);
+    let ttl_schema = record.ttl.map(|i| {
+        let field = &fields[i];
+        let ty = &field.ty;
+        quote_spanned!(field.ident.span()=> .with_ttl({
+            let _: ::core::option::Option<#path::TtlSeconds> = ::core::option::Option::<#ty>::None;
+            #i
+        }))
+    });
     let primary_schema = crate::query_expand::primary(record);
     let transition = crate::variants_flatten::transition(record);
     quote! {
@@ -302,7 +310,7 @@ pub fn record(record: &Record) -> TokenStream {
         }
         impl #ig #path::Record for #ident #tg #wc {
             const SCHEMA: #path::RecordSchema = #path::__private::schema(
-                ::core::stringify!(#ident), &[#(#descriptors,)*], #path::__private::keys(#partition, #sort)) #index_schema;
+                ::core::stringify!(#ident), &[#(#descriptors,)*], #path::__private::keys(#partition, #sort)) #index_schema #ttl_schema;
         }
         impl #ig #ident #tg #wc {
             #key_check

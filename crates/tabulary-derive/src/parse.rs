@@ -11,6 +11,7 @@ pub struct Options {
     pub partition_key: bool,
     pub sort_key: bool,
     pub flatten: bool,
+    pub ttl: bool,
     pub version: bool,
     pub partition: Option<crate::template::Declaration>,
     pub sort: Option<crate::template::Declaration>,
@@ -48,6 +49,13 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                     return Ok(());
                 }
                 (false, "rename") => &mut result.rename,
+                (false, "ttl") => {
+                    if result.ttl {
+                        return Err(meta.error("duplicate ttl option"));
+                    }
+                    result.ttl = true;
+                    return Ok(());
+                }
                 (false, "version") => {
                     if result.version {
                         return Err(meta.error("duplicate version option"));

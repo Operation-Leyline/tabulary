@@ -1,0 +1,23 @@
+error: one non-flattened TTL field is allowed
+  --> tests/ui/ttl/declarations.rs:11:5
+   |
+11 |     second: Option<TtlSeconds>,
+   |     ^^^^^^
+
+error: duplicate ttl option
+  --> tests/ui/ttl/declarations.rs:19:21
+   |
+19 |     #[tabulary(ttl, ttl)]
+   |                     ^^^
+
+error: Document cannot declare TTL
+  --> tests/ui/ttl/declarations.rs:26:5
+   |
+26 |     #[tabulary(ttl)]
+   |     ^^^^^^^^^^^^^^^^
+
+error: one non-flattened TTL field is allowed
+  --> tests/ui/ttl/declarations.rs:36:5
+   |
+36 |     expires: TtlSeconds,
+   |     ^^^^^^^

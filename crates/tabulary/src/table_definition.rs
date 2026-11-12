@@ -1,4 +1,4 @@
-//! Inspectable table inputs. No client, activation polling, or migrations.
+//! Inspectable table/TTL inputs. No client, activation polling, or migrations.
 use std::{collections::BTreeMap, marker::PhantomData};
 
 use crate::{
@@ -6,11 +6,11 @@ use crate::{
     RecordSchema,
 };
 use aws_sdk_dynamodb::{
-    operation::create_table::CreateTableInput,
+    operation::{create_table::CreateTableInput, update_time_to_live::UpdateTimeToLiveInput},
     types::{
         AttributeDefinition, BillingMode, GlobalSecondaryIndex, KeySchemaElement, KeyType,
         LocalSecondaryIndex, Projection, ProjectionType, ProvisionedThroughput,
-        ScalarAttributeType,
+        ScalarAttributeType, TimeToLiveSpecification,
     },
 };
 
@@ -45,15 +45,22 @@ pub enum Billing {
 
 /// Static record schemas combined into one physical table definition.
 pub struct TableDefinition<R: Record> {
-    schema: RecordSchema,
+    schemas: Vec<RecordSchema>,
     marker: PhantomData<fn() -> R>,
 }
 impl<R: Record> TableDefinition<R> {
     pub(crate) fn new(schema: RecordSchema) -> Self {
         Self {
-            schema,
+            schemas: vec![schema],
             marker: PhantomData,
         }
+    }
+    /// Union disjoint indexes; overlapping definitions must agree physically.
+    /// The result retains the left record marker, without binding a client.
+    pub fn merge<S: Record>(mut self, other: TableDefinition<S>) -> Result<Self, BuildError> {
+        self.schemas.extend(other.schemas);
+        self.shape()?;
+        Ok(self)
     }
     /// Construct a complete SDK input. Only primary/index keys define attributes.
     pub fn create_input(
@@ -135,8 +142,69 @@ impl<R: Record> TableDefinition<R> {
             .build()
             .map_err(|_| incompatible())
     }
+    /// Return the separate enable-TTL request, to send after table activation.
+    /// An undeclared TTL produces no request, never a disable request.
+    pub fn ttl_input(
+        &self,
+        table: impl Into<String>,
+    ) -> Result<Option<UpdateTimeToLiveInput>, BuildError> {
+        let table = table.into();
+        if table.is_empty() {
+            return Err(constraint("empty_table_name"));
+        }
+        self.shape()?
+            .ttl
+            .map(|name| {
+                let spec = TimeToLiveSpecification::builder()
+                    .attribute_name(name)
+                    .enabled(true)
+                    .build()
+                    .map_err(|_| incompatible())?;
+                UpdateTimeToLiveInput::builder()
+                    .table_name(table)
+                    .time_to_live_specification(spec)
+                    .build()
+                    .map_err(|_| incompatible())
+            })
+            .transpose()
+    }
     fn shape(&self) -> Result<Shape, BuildError> {
-        let shape = Shape::from_schema(self.schema)?;
+        let mut shape = Shape::from_schema(self.schemas[0])?;
+        for schema in &self.schemas[1..] {
+            let other = Shape::from_schema(*schema)?;
+            if shape.primary != other.primary
+                || (shape.ttl.is_some() && other.ttl.is_some() && shape.ttl != other.ttl)
+            {
+                return Err(incompatible());
+            }
+            shape.ttl = shape.ttl.or(other.ttl);
+            for (name, wire) in other.attributes {
+                if shape
+                    .attributes
+                    .insert(name, wire.clone())
+                    .is_some_and(|old| old != wire)
+                {
+                    return Err(incompatible());
+                }
+            }
+            for (name, index) in other.indexes {
+                if shape.indexes.get(name).is_some_and(|old| old != &index) {
+                    return Err(incompatible());
+                }
+                shape.indexes.insert(name, index);
+            }
+        }
+        // A field declared by another record cannot contradict a physical key or TTL type.
+        for field in self.schemas.iter().flat_map(|s| s.fields) {
+            if shape
+                .attributes
+                .get(field.name)
+                .is_some_and(|wire| scalar(field.wire).as_ref() != Some(wire))
+                || (shape.ttl == Some(field.name) && field.wire != DynamoType::N)
+            {
+                return Err(incompatible());
+            }
+        }
         let globals = shape
             .indexes
             .values()
@@ -164,6 +232,7 @@ struct Shape {
     attributes: BTreeMap<&'static str, ScalarAttributeType>,
     primary: Vec<KeySchemaElement>,
     indexes: BTreeMap<&'static str, PhysicalIndex>,
+    ttl: Option<&'static str>,
 }
 impl Shape {
     fn from_schema(schema: RecordSchema) -> Result<Self, BuildError> {
@@ -186,6 +255,7 @@ impl Shape {
             attributes: BTreeMap::new(),
             primary,
             indexes: BTreeMap::new(),
+            ttl: None,
         };
         for attr in schema.attribute_definitions()? {
             result.attributes.insert(
@@ -197,6 +267,13 @@ impl Shape {
                     .name,
                 attr.attribute_type().clone(),
             );
+        }
+        if let Some(i) = schema.ttl {
+            let field = schema.fields.get(i).ok_or_else(incompatible)?;
+            if field.wire != DynamoType::N || !attribute_name(field.name) {
+                return Err(incompatible());
+            }
+            result.ttl = Some(field.name);
         }
         for index in schema.indexes {
             let index_keys = keys(schema, index.keys)?;
