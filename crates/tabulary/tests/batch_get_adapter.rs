@@ -19,6 +19,20 @@ struct Order {
     line: u64,
     quantity: u64,
 }
+#[derive(Debug, PartialEq, tabulary::Projection)]
+#[tabulary(record = Order)]
+struct Quantity {
+    #[tabulary(attribute = OrderAttrs::QUANTITY)]
+    quantity: u64,
+}
+#[derive(tabulary::Projection)]
+#[tabulary(record = Order)]
+struct Identity {
+    #[tabulary(attribute = OrderAttrs::ID)]
+    id: String,
+    #[tabulary(attribute = OrderAttrs::LINE)]
+    line: u64,
+}
 fn batch(calls: u32) -> BatchGet<Order, OrderKey> {
     Table::<Order>::new("orders")
         .unwrap()
@@ -60,13 +74,29 @@ fn output(items: Vec<Item>, pending: Vec<Item>) -> BatchGetItemOutput {
 }
 
 #[test]
-fn reordered_rounds_correlate_full_keys_and_preserve_capacity() {
-    let mut batch = batch(2);
+fn reordered_projection_rounds_correlate_full_keys_and_preserve_capacity() {
+    let mut batch = batch(2).select::<Quantity>().unwrap();
     batch.set_capacity(Capacity::Indexes).unwrap();
     let first = batch.next_request().unwrap().unwrap();
     let table = &first.input().request_items.as_ref().unwrap()["orders"];
     assert_eq!(table.consistent_read, Some(true));
-    assert!(table.projection_expression.is_none());
+    assert_eq!(
+        table.projection_expression.as_deref(),
+        Some("#n0, #n1, #n2")
+    );
+    assert_eq!(table.expression_attribute_names.as_ref().unwrap().len(), 3);
+    assert_eq!(
+        table.expression_attribute_names.as_ref().unwrap()["#n0"],
+        "quantity"
+    );
+    assert_eq!(
+        table.expression_attribute_names.as_ref().unwrap()["#n1"],
+        "id"
+    );
+    assert_eq!(
+        table.expression_attribute_names.as_ref().unwrap()["#n2"],
+        "line"
+    );
     assert_eq!(
         batch.set_capacity(Capacity::None).unwrap_err(),
         State::AlreadyStarted
@@ -75,10 +105,25 @@ fn reordered_rounds_correlate_full_keys_and_preserve_capacity() {
     let mut returned = item(2);
     returned.insert("line".into(), Av::N("2.0".into()));
     let pending = first.input().request_items.as_ref().unwrap()["orders"].keys[0].clone();
-    batch
-        .accept(first.decode(Ok(output(vec![returned], vec![pending.clone()]))))
+    let mut raw = output(vec![returned], vec![pending.clone()]);
+    let expected_capacity = raw.consumed_capacity.clone().unwrap();
+    let echoed = raw
+        .unprocessed_keys
+        .as_mut()
+        .unwrap()
+        .get_mut("orders")
         .unwrap();
+    echoed.consistent_read = Some(false);
+    echoed.projection_expression = Some("stale".into());
+    batch.accept(first.decode(Ok(raw))).unwrap();
     let second = batch.next_request().unwrap().unwrap();
+    let next = &second.input().request_items.as_ref().unwrap()["orders"];
+    assert_eq!(next.consistent_read, table.consistent_read);
+    assert_eq!(next.projection_expression, table.projection_expression);
+    assert_eq!(
+        next.expression_attribute_names,
+        table.expression_attribute_names
+    );
     assert_eq!(
         second.input().request_items.as_ref().unwrap()["orders"].keys,
         vec![pending]
@@ -89,14 +134,15 @@ fn reordered_rounds_correlate_full_keys_and_preserve_capacity() {
     assert!(batch.next_request().unwrap().is_none());
     let complete = batch.finish().unwrap();
     assert_eq!(
-        complete
-            .records
-            .into_iter()
-            .map(|record| record.map(|r| r.quantity))
-            .collect::<Vec<_>>(),
-        vec![Some(7), None, Some(7)]
+        complete.records,
+        vec![
+            Some(Quantity { quantity: 7 }),
+            None,
+            Some(Quantity { quantity: 7 })
+        ]
     );
     assert_eq!(complete.capacity.len(), 2);
+    assert_eq!(complete.capacity[0], expected_capacity);
     assert_eq!(complete.capacity[0][0].capacity_units, Some(1.5));
 }
 
@@ -309,4 +355,38 @@ fn abort_freezes_the_outstanding_round_and_finish_retains_its_cause() {
                 .all(|entry| matches!(entry.state, BatchGetState::Pending))
         );
     }
+}
+
+#[path = "../../../docs/examples/06_query_batch.rs"]
+mod query_batch;
+#[test]
+fn query_batch_example_compiles() {
+    let _ = query_batch::read_lines;
+    let _ = query_batch::read_selected;
+}
+
+#[test]
+fn selecting_primary_keys_deduplicates_transport_attributes_and_decodes_them() {
+    let mut selected = batch(1).select::<Identity>().unwrap();
+    let request = selected.next_request().unwrap().unwrap();
+    assert_eq!(request.expressions().names().len(), 2);
+    selected
+        .accept(request.decode(Ok(output(vec![item(1)], vec![]))))
+        .unwrap();
+    let complete = selected.finish().unwrap();
+    let identity = complete.records[1].as_ref().unwrap();
+    assert_eq!(identity.id, "order-lime");
+    assert_eq!(identity.line, 1);
+    let mut started = batch(1);
+    let _ = started.next_request().unwrap();
+    assert!(matches!(
+        started.select::<Identity>(),
+        Err(tabulary::BuildError::OperationConstraint {
+            code: "batch_already_started"
+        })
+    ));
+}
+#[test]
+fn batch_consistency_budget_keys_and_projection_owner_are_compile_gates() {
+    trybuild::TestCases::new().compile_fail("tests/ui/batch_get/*.rs");
 }

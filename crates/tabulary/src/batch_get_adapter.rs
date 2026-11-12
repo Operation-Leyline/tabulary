@@ -2,7 +2,7 @@
 use crate::{
     BatchBudget, BatchGetChunk, BatchGetComplete, BatchGetPartial, BatchGetProgress,
     BatchStateError, BuildError, Capacity, DecodeContext, DecodeError, Document, Item,
-    PreparedRequest, ReadConsistency, Record, RecordKey, RenderedExpressions, Table,
+    PreparedRequest, Projection, ReadConsistency, Record, RecordKey, RenderedExpressions, Table,
 };
 use aws_sdk_dynamodb::{
     error::SdkError,
@@ -131,6 +131,57 @@ impl<R: Record + Document> Table<R> {
                 }
                 crate::batch_get::canonical_key::<R>(key)
             },
+        })
+    }
+}
+impl<R: Record, K, P> BatchGet<R, K, P> {
+    pub fn select<V: Projection<Source = R>>(self) -> Result<BatchGet<R, K, V>, BuildError> {
+        let names = V::attributes()?;
+        crate::read_selection::validate_selection::<R>(None, Some(&names), None)?;
+        let mut names = names;
+        for position in [Some(R::SCHEMA.primary.partition), R::SCHEMA.primary.sort]
+            .into_iter()
+            .flatten()
+        {
+            let name = R::SCHEMA
+                .fields
+                .get(position)
+                .ok_or(BuildError::EmptyOperation)?
+                .name;
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        let mut expressions = RenderedExpressions::default();
+        expressions.projection = Some(
+            names
+                .iter()
+                .map(|name| expressions.aliases.name(name))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        let mut template = self.template;
+        template.projection_expression = expressions.projection.clone();
+        template.expression_attribute_names = Some(expressions.names().clone());
+        let progress = self
+            .progress
+            .ok_or(BuildError::OperationConstraint {
+                code: "frozen_batch",
+            })?
+            .select()
+            .map_err(|_| BuildError::OperationConstraint {
+                code: "batch_already_started",
+            })?;
+        Ok(BatchGet {
+            progress: Some(progress),
+            abort: None,
+            table: self.table,
+            template,
+            capacity: self.capacity,
+            capacities: self.capacities,
+            expressions,
+            decode_item: V::from_item,
+            key: self.key,
         })
     }
 }

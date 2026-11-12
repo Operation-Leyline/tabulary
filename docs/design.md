@@ -1249,7 +1249,7 @@ error wrapping and freezing belong to milestone 43's adapter below. The adapter
 must consume the core into a partial result on terminal failure; the low-level
 core's nonmutating rejection is not permission to retry a failed SDK call.
 
-Milestone 43 stages the SDK adapter separately from projection selection.
+Milestone 43 stages the SDK adapter and projection selection in two PRs.
 `Table::batch_get(keys, consistency, budget)` validates immediately and returns
 `BatchGet<R, K>`. `next_request()` prepares an immutable `PreparedBatchGet<P>`
 using the shared prepared-request storage; `input()`, `expressions()` and `apply`
@@ -1272,6 +1272,15 @@ subsequent operations return Frozen (their partial is empty, already transferred
 `abort_round(Cancelled | Deadline)` freezes an outstanding round; `finish` returns
 the abort cause and all owned progress. Aborting with no outstanding round is
 WrongRound. An aborted round adds no capacity vector, since no result was accepted.
+Before the first issued round, consuming `.select::<V>()?` changes the output
+type using milestone 24's projection checks and the shared read-selection gate.
+It rejects empty selections and configuration after issuing a round. Its SDK
+projection lists the selected attributes followed by any missing physical primary
+key attributes, deduplicating keys already selected. Correlation validates those
+full physical keys even when the view omits them; the view then decodes only its
+selected fields with the source codecs. Each later request retains that projection
+and explicit consistency rather than trusting options echoed in UnprocessedKeys.
+The unchanged `06_query_batch.rs` example is registered as a real compile test.
 
 The design resolves two requirements together: unprocessed items cannot
 disappear, and tabulary cannot retry or hide calls. Batch state prepares the

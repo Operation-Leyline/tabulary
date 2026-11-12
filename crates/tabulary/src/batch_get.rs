@@ -214,6 +214,28 @@ impl<R, K, P> BatchGetProgress<R, K, P> {
         Ok(())
     }
 
+    pub(crate) fn select<Q>(self) -> Result<BatchGetProgress<R, K, Q>, BatchStateError> {
+        if self.calls_issued != 0 {
+            return Err(BatchStateError::AlreadyStarted);
+        }
+        Ok(BatchGetProgress {
+            entries: self
+                .entries
+                .into_iter()
+                .map(|entry| BatchGetEntry {
+                    key: entry.key,
+                    state: BatchGetState::Pending,
+                })
+                .collect(),
+            keys: self.keys,
+            identity: self.identity,
+            outstanding: self.outstanding,
+            budget: self.budget,
+            calls_issued: self.calls_issued,
+            marker: PhantomData,
+        })
+    }
+
     /// Move all accumulated records and original keys without cloning them.
     /// An adapter can use this when attaching progress to a terminal failure.
     pub fn into_partial(self) -> BatchGetPartial<K, P> {
