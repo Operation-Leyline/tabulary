@@ -1,0 +1,236 @@
+//! One inspectable transaction request; execution belongs to the caller.
+use std::fmt;
+
+use crate::{BilledSize, BuildError, Capacity, CollectionMetrics, Item, TxAction};
+use aws_sdk_dynamodb::{
+    operation::transact_write_items::{
+        TransactWriteItemsInput, builders::TransactWriteItemsFluentBuilder,
+    },
+    types::TransactWriteItem,
+};
+
+fn constraint(code: &'static str) -> BuildError {
+    BuildError::OperationConstraint { code }
+}
+
+mod sealed {
+    use super::*;
+    pub trait Actions {
+        fn append(&self, items: &mut Vec<TransactWriteItem>, targets: &mut Vec<(String, Item)>);
+    }
+}
+/// Frozen flat action tuples (arity 1..=12). Nested/vector composition comes later.
+pub trait TxActions: sealed::Actions {}
+impl<R> sealed::Actions for TxAction<R> {
+    fn append(&self, items: &mut Vec<TransactWriteItem>, targets: &mut Vec<(String, Item)>) {
+        items.push(self.input().clone());
+        targets.push(self.target.clone());
+    }
+}
+impl<R> TxActions for TxAction<R> {}
+macro_rules! tuples {
+    ($($t:ident : $i:tt),+) => {
+        impl<$($t),+> sealed::Actions for ($(TxAction<$t>,)+) {
+            fn append(&self, items: &mut Vec<TransactWriteItem>, targets: &mut Vec<(String, Item)>) {
+                $(self.$i.append(items, targets);)+
+            }
+        }
+        impl<$($t),+> TxActions for ($(TxAction<$t>,)+) {}
+    };
+}
+tuples!(A:0);
+tuples!(A:0, B:1);
+tuples!(A:0, B:1, C:2);
+tuples!(A:0, B:1, C:2, D:3);
+tuples!(A:0, B:1, C:2, D:3, E:4);
+tuples!(A:0, B:1, C:2, D:3, E:4, F:5);
+tuples!(A:0, B:1, C:2, D:3, E:4, F:5, G:6);
+tuples!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7);
+tuples!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8);
+tuples!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9);
+tuples!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10);
+tuples!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11);
+
+pub struct TransactionBuilder<A> {
+    actions: A,
+    token: Option<String>,
+    capacity: Capacity,
+    metrics: CollectionMetrics,
+}
+pub fn transaction<A: TxActions>(actions: A) -> TransactionBuilder<A> {
+    TransactionBuilder {
+        actions,
+        token: None,
+        capacity: Capacity::None,
+        metrics: CollectionMetrics::None,
+    }
+}
+impl<A: TxActions> TransactionBuilder<A> {
+    pub fn client_request_token(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
+    }
+    pub fn capacity(mut self, capacity: Capacity) -> Self {
+        self.capacity = capacity;
+        self
+    }
+    pub fn collection_metrics(mut self, metrics: CollectionMetrics) -> Self {
+        self.metrics = metrics;
+        self
+    }
+    pub fn build(self) -> Result<PreparedTransaction<A>, BuildError> {
+        if self
+            .token
+            .as_ref()
+            .is_some_and(|t| !(1..=36).contains(&t.chars().count()))
+        {
+            return Err(constraint("invalid_client_request_token"));
+        }
+        let (mut items, mut targets) = (Vec::new(), Vec::new());
+        self.actions.append(&mut items, &mut targets);
+        validate(&items, &targets)?;
+        let input = TransactWriteItemsInput::builder()
+            .set_transact_items(Some(items))
+            .set_client_request_token(self.token)
+            .set_return_consumed_capacity(self.capacity.sdk())
+            .return_item_collection_metrics(self.metrics.into())
+            .build()
+            .map_err(|_| constraint("invalid_transaction_input"))?;
+        Ok(PreparedTransaction {
+            input,
+            actions: self.actions,
+        })
+    }
+}
+
+/// One immutable request with its original typed action shape; never auto-split.
+pub struct PreparedTransaction<A> {
+    input: TransactWriteItemsInput,
+    actions: A,
+}
+impl<A> PreparedTransaction<A> {
+    pub fn input(&self) -> &TransactWriteItemsInput {
+        &self.input
+    }
+    pub fn actions(&self) -> &A {
+        &self.actions
+    }
+    /// Replace every modeled request field, including absent caller token/capacity.
+    pub fn apply(
+        &self,
+        builder: TransactWriteItemsFluentBuilder,
+    ) -> TransactWriteItemsFluentBuilder {
+        builder
+            .set_transact_items(self.input.transact_items.clone())
+            .set_client_request_token(self.input.client_request_token.clone())
+            .set_return_consumed_capacity(self.input.return_consumed_capacity.clone())
+            .set_return_item_collection_metrics(self.input.return_item_collection_metrics.clone())
+    }
+}
+impl<A> fmt::Debug for PreparedTransaction<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("PreparedTransaction([redacted])")
+    }
+}
+
+fn table_identity(table: &str) -> (Option<(&str, &str, &str)>, &str) {
+    let parts: Vec<_> = table.splitn(6, ':').collect();
+    if let ["arn", partition, "dynamodb", region, account, resource] = parts.as_slice()
+        && let Some(name) = resource.strip_prefix("table/")
+    {
+        return (Some((partition, region, account)), name);
+    }
+    (None, table)
+}
+fn validate(items: &[TransactWriteItem], targets: &[(String, Item)]) -> Result<(), BuildError> {
+    if items.is_empty() {
+        return Err(BuildError::EmptyOperation);
+    }
+    if items.len() > 100 {
+        return Err(BuildError::RequestLimit {
+            max: 100,
+            actual: items.len(),
+        });
+    }
+    let mut location = None;
+    for (i, (table, key)) in targets.iter().enumerate() {
+        let (scope, name) = table_identity(table);
+        if let Some(scope) = scope {
+            if location.is_some_and(|previous| previous != scope) {
+                return Err(constraint("transaction_table_location"));
+            }
+            location = Some(scope);
+        }
+        if targets[..i]
+            .iter()
+            .any(|(t, k)| table_identity(t).1 == name && k == key)
+        {
+            return Err(constraint("duplicate_transaction_target"));
+        }
+    }
+    let mut known = 0usize;
+    for put in items.iter().filter_map(|item| item.put.as_ref()) {
+        let size = BilledSize::of_item(&put.item)?;
+        size.ensure_at_most(400 * 1024)?;
+        known = known
+            .checked_add(size.conservative_item_bytes())
+            .ok_or(BuildError::SizeOverflow)?;
+    }
+    if known > 4 * 1024 * 1024 {
+        return Err(BuildError::RequestLimit {
+            max: 4 * 1024 * 1024,
+            actual: known,
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_sdk_dynamodb::types::{AttributeValue as Av, Put};
+
+    #[test]
+    fn final_count_is_nonempty_and_capped_without_splitting() {
+        // Flat public tuples cannot exceed twelve until milestone 41 adds composition.
+        // Exercise the final flattened gate directly, including future over-cap input.
+        for count in [0, 1, 100, 101] {
+            let items = vec![TransactWriteItem::builder().build(); count];
+            let expected = match count {
+                0 => Err(BuildError::EmptyOperation),
+                101 => Err(BuildError::RequestLimit {
+                    max: 100,
+                    actual: 101,
+                }),
+                _ => Ok(()),
+            };
+            assert_eq!(validate(&items, &[]), expected);
+            assert_eq!(items.len(), count);
+        }
+    }
+
+    #[test]
+    fn known_put_bytes_are_bounded_without_claiming_existing_item_sizes() {
+        let put = |bytes| {
+            TransactWriteItem::builder()
+                .put(
+                    Put::builder()
+                        .table_name("orders")
+                        .item("payload", Av::S("x".repeat(bytes)))
+                        .build()
+                        .unwrap(),
+                )
+                .build()
+        };
+        let small = put(380 * 1024);
+        assert!(validate(std::slice::from_ref(&small), &[]).is_ok());
+        assert!(matches!(
+            validate(&vec![small; 12], &[]),
+            Err(BuildError::RequestLimit { max: 4_194_304, .. })
+        ));
+        assert!(matches!(
+            validate(&[put(400 * 1024)], &[]),
+            Err(BuildError::RequestLimit { max: 409_600, .. })
+        ));
+    }
+}

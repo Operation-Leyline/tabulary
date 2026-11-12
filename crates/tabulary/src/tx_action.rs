@@ -14,10 +14,6 @@ use crate::{
 /// One frozen action, retaining its record decoder for typed cancellation results.
 pub struct TxAction<R> {
     pub(crate) prepared: PreparedRequest<TransactWriteItem, R>,
-    #[allow(
-        dead_code,
-        reason = "consumed by the milestone 39 request builder in the stacked follow-up"
-    )]
     pub(crate) target: (String, Item),
 }
 impl<R> TxAction<R> {

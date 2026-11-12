@@ -1397,6 +1397,22 @@ Tables must be in the same account and region; ARN bindings permit local
 checks, while a single supplied client and service validation handle names.
 See [TransactWriteItems](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html).
 
+Milestone 39's second part supplies `transaction`, `TransactionBuilder<A>`, and
+`PreparedTransaction<A>`. It supports single actions and flat tuples of arity
+one through twelve, retaining the typed action shape (available through
+`actions()`) for milestone 40. Nested tuples and homogeneous vectors belong to
+milestone 41; the final request validator already enforces the 1..=100 cap.
+Each action retains its own `expressions()`; the transaction has no shared
+expression map. `apply` copies every SDK input field without execution.
+Caller tokens have 1..=36 characters and are passed through unchanged; omitted
+tokens remain omitted. Capacity and collection metrics are request-wide.
+Duplicate detection compares physical key names and scalar values, normalizing
+numeric spelling privately and treating a table name and its ARN as aliases.
+Explicit DynamoDB ARNs must agree on partition, region, and account. The known
+aggregate contribution checked here is the conservative size of put items;
+existing item sizes and complete wire-size accounting remain service checks
+and milestone 46 work, respectively. No decoder is provided before milestone 40.
+
 ### 11.3 Typed cancellation results without reflection
 
 `TxActions` has an associated `Reasons` type. A
