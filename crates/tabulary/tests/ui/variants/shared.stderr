@@ -1,0 +1,17 @@
+error: shared payload fields require identical types, converters and presence/default rules
+ --> tests/ui/variants/shared.rs:5:9
+  |
+5 |     B { value: u64 },
+  |         ^^^^^
+
+error: shared payload fields require identical types, converters and presence/default rules
+  --> tests/ui/variants/shared.rs:12:9
+   |
+12 |     B { value: Option<String> },
+   |         ^^^^^
+
+error: shared payload fields require identical types, converters and presence/default rules
+  --> tests/ui/variants/shared.rs:23:9
+   |
+23 |         value: u128,
+   |         ^^^^^

@@ -86,13 +86,7 @@ pub fn record(record: &Record) -> TokenStream {
         } else {
             quote!(#path::Required)
         };
-        let access = if synthetic {
-            quote!(#path::DerivedOnly)
-        } else if f.key_limit.is_some() || key_expand::source(record, i) {
-            quote!(#path::KeyOnly)
-        } else {
-            quote!(#path::Mutable)
-        };
+        let access = key_expand::access(record, i);
         handles.push((i, quote_spanned! {id.span()=>
             #fv const #handle: #path::Attr<#ident #tg, #ty, #presence, #access> = #path::__private::field(#name, #i);
         }));

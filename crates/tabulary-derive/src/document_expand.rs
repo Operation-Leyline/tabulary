@@ -97,7 +97,7 @@ pub fn implementation(
     let descriptors = schema.fields.iter().enumerate().map(|(i, field)| {
         let (ty, name) = (&field.ty, &field.name);
         let presence = if field.optional { quote!(#path::Optional) } else { quote!(#path::Required) };
-        let access = if field.key_limit.is_some() { quote!(#path::KeyOnly) } else { quote!(#path::Mutable) };
+        let access = crate::key_expand::access(schema, i);
         quote!(#path::__private::field::<Self, #ty, #presence, #access, #path::Native<#ty>>(#name, #i).descriptor())
     });
     quote! {

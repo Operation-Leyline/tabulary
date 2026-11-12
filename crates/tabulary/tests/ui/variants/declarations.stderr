@@ -1,0 +1,23 @@
+error: Variants requires unit or named-field variants
+ --> tests/ui/variants/declarations.rs:4:6
+  |
+4 |     A(String),
+  |      ^^^^^^^^
+
+error: duplicate variant tag or generated tag handle
+  --> tests/ui/variants/declarations.rs:12:5
+   |
+12 |     B,
+   |     ^
+
+error: payload overlaps discriminator or duplicates a wire name
+  --> tests/ui/variants/declarations.rs:18:9
+   |
+18 |     A { kind: String },
+   |         ^^^^
+
+error: unsupported Variants option
+  --> tests/ui/variants/declarations.rs:25:20
+   |
+25 |         #[tabulary(partition_key)]
+   |                    ^^^^^^^^^^^^^

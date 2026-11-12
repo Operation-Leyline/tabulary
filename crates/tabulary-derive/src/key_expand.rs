@@ -45,6 +45,16 @@ pub fn source(record: &Record, index: usize) -> bool {
         .iter()
         .any(|(_, t)| components(&t.parts).any(|i| i == index))
 }
+pub fn access(record: &Record, index: usize) -> TokenStream {
+    let path = &record.crate_path;
+    if template(record, index).is_some() {
+        quote!(#path::DerivedOnly)
+    } else if record.fields[index].key_limit.is_some() || source(record, index) {
+        quote!(#path::KeyOnly)
+    } else {
+        quote!(#path::Mutable)
+    }
+}
 pub fn bounds(record: &Record, generics: &mut syn::Generics) {
     let path = &record.crate_path;
     for (_, template) in &record.templates {

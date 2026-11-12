@@ -602,6 +602,11 @@ variant even when unknown fields are otherwise allowed. Shared wire names across
 variants are permitted only with identical Rust types, converters, and presence
 rules. Unknown tag, wrong tag type, and missing tag are separate faults.
 
+Shared-field compatibility uses the same written Rust type, converter path, and
+explicit default path in each variant. The derive does not resolve type aliases
+or prove that two converter paths name the same implementation. An omitted
+converter means `Native<T>`.
+
 `DeliveryStageTags::WAITING` and peers are typed tags.
 `DeliveryAttrs::STAGE.is(DeliveryStageTags::WAITING)` builds a discriminator
 condition. Variant payload handles are scoped through

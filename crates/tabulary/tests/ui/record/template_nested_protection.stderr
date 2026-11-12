@@ -1,0 +1,15 @@
+error[E0599]: no method named `set` found for struct `tabulary::Path<Envelope, std::string::String, tabulary::Required, tabulary::KeyOnly>` in the current scope
+  --> tests/ui/record/template_nested_protection.rs:12:48
+   |
+12 |     EnvelopeAttrs::ORDER.field(OrderAttrs::ID).set(String::new());
+   |                                                ^^^ method not found in `tabulary::Path<Envelope, std::string::String, tabulary::Required, tabulary::KeyOnly>`
+   |
+   = note: the method was found for `tabulary::Path<R, T, P, tabulary::Mutable, C>`
+
+error[E0599]: no method named `set` found for struct `tabulary::Path<Envelope, std::string::String, tabulary::Required, tabulary::DerivedOnly>` in the current scope
+  --> tests/ui/record/template_nested_protection.rs:13:55
+   |
+13 |     EnvelopeAttrs::ORDER.field(OrderAttrs::PARTITION).set(String::new());
+   |                                                       ^^^ method not found in `tabulary::Path<Envelope, std::string::String, tabulary::Required, tabulary::DerivedOnly>`
+   |
+   = note: the method was found for `tabulary::Path<R, T, P, tabulary::Mutable, C>`

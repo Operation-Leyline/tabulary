@@ -287,3 +287,48 @@ fn renamed_generic_records_keep_key_sources_and_nested_validation() {
         .unwrap();
     assert_eq!(prefix.as_str(), "é00000000000000000007!");
 }
+
+#[derive(tabulary::Record)]
+#[tabulary(rename_all = "snake_case")]
+struct Envelope {
+    #[tabulary(partition_key)]
+    id: String,
+    parcel: Parcel,
+    copy_shop: String,
+    copy_key: String,
+}
+
+#[test]
+fn nested_operands_accept_protected_handles_and_reject_forged_metadata() {
+    use tabulary::{BuildError, Document, Update};
+    let rendered = Update::new()
+        .and(
+            EnvelopeAttrs::COPY_SHOP
+                .set_expr(EnvelopeAttrs::PARCEL.field(ParcelAttrs::SHOP).operand()),
+        )
+        .and(
+            EnvelopeAttrs::COPY_KEY.set_expr(
+                EnvelopeAttrs::PARCEL
+                    .field(ParcelAttrs::PARTITION)
+                    .operand(),
+            ),
+        )
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(rendered.update(), Some("SET #n0 = #n1.#n2, #n3 = #n1.#n4"));
+    assert_eq!(rendered.names()["#n2"], "shop");
+    assert_eq!(rendered.names()["#n4"], "pk");
+    assert_eq!(Parcel::FIELDS, Parcel::SCHEMA.fields);
+    let forged: tabulary::Attr<Parcel, String> = tabulary::__private::field("shop", 0);
+    let error = Update::new()
+        .and(EnvelopeAttrs::COPY_SHOP.set_expr(EnvelopeAttrs::PARCEL.field(forged).operand()))
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        error,
+        BuildError::OperationConstraint {
+            code: "invalid_attribute_descriptor"
+        }
+    );
+}
