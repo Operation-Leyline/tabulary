@@ -1,0 +1,11 @@
+error: duplicate StringEnum wire value
+ --> tests/ui/string_enum/duplicate_values.rs:5:25
+  |
+5 |     #[tabulary(rename = "ready")]
+  |                         ^^^^^^^
+
+error: duplicate StringEnum wire value
+  --> tests/ui/string_enum/duplicate_values.rs:13:5
+   |
+13 |     HttpReady,
+   |     ^^^^^^^^^

@@ -510,6 +510,13 @@ values. Redaction cannot survive a caller formatting a raw SDK input.
 `#[derive(StringEnum)] #[tabulary(rename_all = "snake_case")]` on a unit enum
 generates string values and strict decode. Per-variant `rename` overrides are
 allowed; aliases and fallback variants are not implicit.
+Every variant must declare `rename` or inherit `rename_all`, using the four
+rules in §2; explicit names win. Empty or duplicate wire values are compile
+errors, as are tuple and named-field variants (including empty payloads).
+The derive implements `Value<Wire = wire::String>` and retains the caller's
+record, document, and attribute path on decode faults. Non-string values use
+the native string codec's `WrongType`/`UnsupportedType` faults. A
+`#[tabulary(crate = "::renamed_dependency")]` override selects the runtime path.
 
 Payload variants use a separate derive:
 

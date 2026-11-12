@@ -1,0 +1,17 @@
+error: StringEnum requires an enum
+ --> tests/ui/string_enum/unsupported.rs:3:8
+  |
+3 | struct NotEnum;
+  |        ^^^^^^^
+
+error: unsupported StringEnum option
+ --> tests/ui/string_enum/unsupported.rs:8:16
+  |
+8 |     #[tabulary(alias = "ready")]
+  |                ^^^^^
+
+error: unsupported StringEnum option
+  --> tests/ui/string_enum/unsupported.rs:15:16
+   |
+15 |     #[tabulary(other)]
+   |                ^^^^^

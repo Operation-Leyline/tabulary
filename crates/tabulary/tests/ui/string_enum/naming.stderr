@@ -1,0 +1,23 @@
+error: variant needs rename or container rename_all
+ --> tests/ui/string_enum/naming.rs:2:16
+  |
+2 | enum Missing { Ready }
+  |                ^^^^^
+
+error: empty StringEnum wire value
+ --> tests/ui/string_enum/naming.rs:6:25
+  |
+6 |     #[tabulary(rename = "")]
+  |                         ^^
+
+error: unsupported rename_all rule
+  --> tests/ui/string_enum/naming.rs:11:25
+   |
+11 | #[tabulary(rename_all = "lowercase")]
+   |                         ^^^^^^^^^^^
+
+error: duplicate StringEnum option
+  --> tests/ui/string_enum/naming.rs:16:34
+   |
+16 |     #[tabulary(rename = "ready", rename = "sent")]
+   |                                  ^^^^^^

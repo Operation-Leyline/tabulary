@@ -2,6 +2,7 @@
 use std::marker::PhantomData;
 
 pub use crate::record::{decode_key, encode_key};
+pub use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::{
     AccessMarker, Attr, Converter, FieldDescriptor, KeyDefinition, PresenceMarker, RecordSchema,
