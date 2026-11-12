@@ -3,9 +3,9 @@ use std::{collections::BTreeSet, num::NonZeroU32, time::Duration};
 
 use aws_sdk_dynamodb::{Client, operation::query::QueryOutput, types::AttributeValue as Av};
 use tabulary::{
-    BuildError, Cursor, Decimal, DecodeFault, FailureKind, OldItem, OldItemMode, QueryOrder,
+    BuildError, Cursor, Decimal, FailureKind, OldItem, OldItemMode, QueryOrder,
     ReadConsistency::{Eventual, Strong},
-    ReadError, Record, ReturnItem, ScanSegment, Table, TtlSeconds, Update, WriteError,
+    Record, ReturnItem, ScanSegment, Table, TtlSeconds, Update, WriteError,
 };
 use tokio::time::{sleep, timeout};
 
@@ -41,6 +41,8 @@ struct Parcel {
 #[derive(Debug, PartialEq, tabulary::Projection)]
 #[tabulary(record = Parcel)]
 struct Position {
+    #[tabulary(attribute = ParcelAttrs::LINE)]
+    line: u64,
     #[tabulary(attribute = ParcelAttrs::POSITION)]
     position: u64,
 }
@@ -125,7 +127,7 @@ async fn sparse_reindex_and_all_keys_only_views() {
                 id: "parcel".into(),
                 line,
                 route: Some("lime".into()),
-                position: 7,
+                position: line + 6,
                 note: "ready".into(),
             };
             let put = table.put(&row).build().unwrap();
@@ -143,11 +145,28 @@ async fn sparse_reindex_and_all_keys_only_views() {
         let page = request
             .decode(request.apply(client.query()).send().await)
             .unwrap();
-        assert_eq!(page.items, [Position { position: 7 }]);
+        assert_eq!(
+            page.items,
+            [Position {
+                line: 2,
+                position: 8
+            }]
+        );
+        let mut lines: Vec<_> = page.items.iter().map(|row| row.line).collect();
         let cursor = page.next.unwrap();
         assert_eq!(cursor.last_evaluated_key().len(), 3);
         assert_eq!(cursor.last_evaluated_key()["line"], Av::N("2".into()));
         let bytes = cursor.to_bytes().unwrap();
+        assert!(matches!(
+            table
+                .index(ParcelIndexes::BY_ROUTE)
+                .query(ParcelIndexes::BY_ROUTE.partition("cyan".into()), Eventual)
+                .select::<Position>()
+                .resume(Cursor::from_bytes(&bytes).unwrap())
+                .build(),
+            Err(BuildError::CursorMismatch)
+        ));
+
         let request = indexed()
             .limit(limit(3))
             .resume(Cursor::from_bytes(&bytes).unwrap())
@@ -156,7 +175,15 @@ async fn sparse_reindex_and_all_keys_only_views() {
         let page = request
             .decode(request.apply(client.query()).send().await)
             .unwrap();
-        assert_eq!(page.items, [Position { position: 7 }]);
+        assert_eq!(
+            page.items,
+            [Position {
+                line: 3,
+                position: 9
+            }]
+        );
+        lines.extend(page.items.iter().map(|row| row.line));
+        assert_eq!(lines, [2, 3]);
         assert!(page.next.is_none());
 
         assert!(matches!(
@@ -167,15 +194,17 @@ async fn sparse_reindex_and_all_keys_only_views() {
             Err(BuildError::UnsupportedConsistency)
         ));
         let local = table.index(ParcelIndexes::BY_POSITION);
-        assert!(
+        assert!(matches!(
             local
                 .query(
                     ParcelIndexes::BY_POSITION.partition("parcel".into()),
                     Strong
                 )
-                .build()
-                .is_err()
-        );
+                .build(),
+            Err(BuildError::OperationConstraint {
+                code: "projection_not_available"
+            })
+        ));
         let request = local
             .query(
                 ParcelIndexes::BY_POSITION.partition("parcel".into()),
@@ -190,9 +219,18 @@ async fn sparse_reindex_and_all_keys_only_views() {
                 .unwrap()
                 .items,
             [
-                Position { position: 7 },
-                Position { position: 7 },
-                Position { position: 7 }
+                Position {
+                    line: 1,
+                    position: 7
+                },
+                Position {
+                    line: 2,
+                    position: 8
+                },
+                Position {
+                    line: 3,
+                    position: 9
+                }
             ]
         );
     })
@@ -338,44 +376,8 @@ struct Reading {
     visible: bool,
 }
 
-// Dynoxide expands extreme N keys beyond the cursor's documented 45-byte cap.
-// Assert the refusal without changing library behavior, then explicitly substitute
-// a compact-response fixture to exercise byte resume against the same endpoint.
-fn numeric_page(
-    request: &tabulary::PreparedQuery<Reading, ReadingPrimary>,
-    mut raw: QueryOutput,
-) -> tabulary::Page<Reading, Cursor<Reading, ReadingPrimary>> {
-    if let Some(key) = raw.last_evaluated_key.as_ref()
-        && key["sequence"].as_n().unwrap().len() > 45
-    {
-        let original = key.clone();
-        let number = original["sequence"].as_n().unwrap();
-        eprintln!(
-            "endpoint limitation: expanded N is {} bytes; compact fixture follows",
-            number.len()
-        );
-        let Err(ReadError::Decode(error)) = request.decode(Ok(raw.clone())) else {
-            panic!("overlong numeric continuation must be refused")
-        };
-        assert_eq!(
-            error.source.kind,
-            DecodeFault::Custom {
-                code: "invalid_page_cursor"
-            }
-        );
-        assert_eq!(error.source.attribute(), Some("LastEvaluatedKey"));
-        assert_eq!(error.page.unwrap().last_evaluated_key(), Some(&original));
-        let compact = number.parse::<Decimal>().unwrap().to_string();
-        raw.last_evaluated_key
-            .as_mut()
-            .unwrap()
-            .insert("sequence".into(), Av::N(compact));
-    }
-    request.decode(Ok(raw)).unwrap()
-}
-
 #[test]
-fn compact_extreme_cursor_fixture_round_trips_original_key_bytes() {
+fn numeric_cursor_fixture_preserves_original_spellings() {
     let table = Table::<Reading>::new("readings_fixture").unwrap();
     let make = || table.query(Reading::primary().partition("readings".into()), Strong);
     let request = make().build().unwrap();
@@ -384,6 +386,10 @@ fn compact_extreme_cursor_fixture_round_trips_original_key_bytes() {
         "-1e-130",
         "1e-130",
         "99999999999999999999999999999999999999e88",
+        "1E+88",
+        "1E-130",
+        "-1E+88",
+        "-1E-130",
     ] {
         let key = tabulary::Item::from([
             ("group".into(), Av::S("readings".into())),
@@ -420,6 +426,16 @@ async fn extreme_number_query_pages_resume_from_bytes_and_keep_empty_filtered_pa
         .into_iter()
         .map(|s| s.parse().unwrap())
         .collect();
+        let spellings = [
+            format!("-{}{}", "9".repeat(38), "0".repeat(88)),
+            format!("-0.{}1", "0".repeat(129)),
+            "0".into(),
+            format!("0.{}1", "0".repeat(129)),
+            "12345678901234567890123456789012345678".into(),
+            format!("{}{}", "9".repeat(38), "0".repeat(88)),
+        ];
+        let lengths = [127, 133, 1, 132, 38, 126];
+        let mut observed = BTreeSet::new();
         for sequence in &values {
             let record = Reading {
                 group: "readings".into(),
@@ -445,13 +461,32 @@ async fn extreme_number_query_pages_resume_from_bytes_and_keep_empty_filtered_pa
                     query.build().unwrap()
                 };
                 let raw = request.apply(client.query()).send().await.unwrap();
-                let page = numeric_page(&request, raw);
+                let service_key = raw
+                    .last_evaluated_key()
+                    .filter(|key| !key.is_empty())
+                    .cloned();
+                if let Some(key) = &service_key {
+                    let index = if order == QueryOrder::Ascending {
+                        seen.len()
+                    } else {
+                        values.len() - seen.len() - 1
+                    };
+                    let number = key["sequence"].as_n().unwrap();
+                    assert_eq!(number, &spellings[index]);
+                    assert_eq!(number.len(), lengths[index]);
+                    observed.insert(index);
+                    eprintln!("endpoint numeric key: {number} ({} bytes)", number.len());
+                }
+                let page = request.decode(Ok(raw)).unwrap();
                 assert!(page.count <= 1);
                 seen.extend(page.items.into_iter().map(|row| row.sequence));
                 let Some(next) = page.next else {
                     break;
                 };
-                cursor = Some(next.to_bytes().unwrap());
+                let bytes = next.to_bytes().unwrap();
+                let parsed = Cursor::<Reading, ReadingPrimary>::from_bytes(&bytes).unwrap();
+                assert_eq!(parsed.last_evaluated_key(), service_key.as_ref().unwrap());
+                cursor = Some(bytes);
             }
             assert!(
                 cursor.is_none(),
@@ -463,16 +498,16 @@ async fn extreme_number_query_pages_resume_from_bytes_and_keep_empty_filtered_pa
             }
             assert!(seen == expected, "query must preserve exact numeric order");
         }
+        assert_eq!(observed, (0..values.len()).collect());
         let filtered = || {
             table
                 .query(Reading::primary().partition("readings".into()), Strong)
                 .filter(ReadingAttrs::VISIBLE.eq(false))
         };
         let request = filtered().limit(limit(1)).build().unwrap();
-        let page = numeric_page(
-            &request,
-            request.apply(client.query()).send().await.unwrap(),
-        );
+        let page = request
+            .decode(request.apply(client.query()).send().await)
+            .unwrap();
         assert_eq!((page.count, page.scanned_count), (0, 1));
         assert!(page.items.is_empty());
         let bytes = page.next.unwrap().to_bytes().unwrap();
@@ -488,10 +523,9 @@ async fn extreme_number_query_pages_resume_from_bytes_and_keep_empty_filtered_pa
             .resume(Cursor::from_bytes(&bytes).unwrap())
             .build()
             .unwrap();
-        let page = numeric_page(
-            &request,
-            request.apply(client.query()).send().await.unwrap(),
-        );
+        let page = request
+            .decode(request.apply(client.query()).send().await)
+            .unwrap();
         assert_eq!((page.count, page.scanned_count), (0, 2));
         assert!(page.next.is_some());
     })
@@ -593,6 +627,16 @@ async fn parallel_scan_segments_resume_projected_pages_and_store_ttl_and_nested_
                         .build(),
                     Err(BuildError::CursorMismatch)
                 ));
+                assert!(matches!(
+                    table
+                        .scan(Strong)
+                        .segment(ScanSegment::new(segment, 3).unwrap())
+                        .filter(EnvelopeAttrs::QUANTITY.gt(0))
+                        .select::<Quantity>()
+                        .resume(Cursor::from_bytes(&bytes).unwrap())
+                        .build(),
+                    Err(BuildError::CursorMismatch)
+                ));
                 cursor = Some(bytes);
                 continuations += 1;
             }
@@ -640,9 +684,8 @@ async fn parallel_scan_segments_resume_projected_pages_and_store_ttl_and_nested_
                     .await
                     .unwrap();
                 let description = output.time_to_live_description().unwrap();
-                if description.time_to_live_status()
-                    == Some(&aws_sdk_dynamodb::types::TimeToLiveStatus::Enabled)
-                {
+                use aws_sdk_dynamodb::types::TimeToLiveStatus::{Enabled, Enabling};
+                if matches!(description.time_to_live_status(), Some(Enabled | Enabling)) {
                     assert_eq!(description.attribute_name(), Some("purge_on"));
                     break;
                 }
