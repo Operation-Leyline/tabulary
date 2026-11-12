@@ -1096,6 +1096,22 @@ consistency, direction, and scan segment. It validates scalar key types but
 does not decode the map as a record. Index cursors retain both base and index
 keys exactly as received.
 
+Milestone 33 implements the in-memory binding, leaving its byte representation,
+encoded-size cap, and parser to milestone 36. The schema signature compares the
+complete physical `RecordSchema` metadata (name, field descriptors, primary keys,
+and index definitions), by value without hashing or Rust type identity. Codec
+implementation bodies and nested document decode rules are not represented by
+that metadata. Projection identity is the sorted, deduplicated physical attribute
+set returned by `Projection::attributes()`, with a full-record read distinct from
+an explicit selection. Two view types fetching the same physical attributes have
+the same request binding, including nested views that fetch a whole map.
+Condition identity retains AST operators, grouping, operand order, and wire tags;
+numeric constants normalize through `Decimal`, maps sort by name, and sets sort
+by normalized members. It does not rewrite logically equivalent boolean trees.
+Page limits and capacity reporting are excluded. Internal page-adapter hooks
+construct a cursor only from a nonempty service map, validate scalar keys and the
+required base/index key attributes, and preserve the original map unchanged.
+
 `resume` checks this binding, so a cursor for a different query, table, schema,
 index, or segment is a `CursorMismatch` build error. Per-page limit is not part
 of the binding and may change. Query and scan cursors cannot interchange.
