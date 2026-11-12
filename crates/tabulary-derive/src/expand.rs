@@ -1,7 +1,7 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
 
-use crate::{parse, validate::Record};
+use crate::{key_expand, parse, validate::Record};
 
 pub fn record(record: &Record) -> TokenStream {
     let Record {
@@ -13,7 +13,7 @@ pub fn record(record: &Record) -> TokenStream {
         fields,
         partition,
         sort,
-        allow_unknown: _,
+        ..
     } = record;
     let generics = crate::document_validate::bounds(record);
     let (ig, tg, wc) = generics.split_for_impl();
@@ -46,14 +46,33 @@ pub fn record(record: &Record) -> TokenStream {
     let mut checks = Vec::new();
     let mut key_writes = Vec::new();
     let mut key_reads = Vec::new();
-    let order = std::iter::once(*partition).chain(*sort).chain(
-        (0..fields.len()).filter(|i| i != partition && ::core::option::Option::Some(*i) != *sort),
-    );
+    let mut source_checks = Vec::new();
+    let mut common_reads = Vec::new();
+    let inputs = key_expand::inputs(record);
+    for &i in &inputs {
+        let f = &fields[i];
+        let (id, ty, fv) = (&f.ident, &f.ty, &f.vis);
+        let local = key_expand::local(i);
+        key_fields.push(quote!(#fv #id: #ty));
+        key_args.push(quote!(#id: #ty));
+        key_names.push(id);
+        key_values.push(quote!(#id: #local));
+        clones.push(quote_spanned!(id.span()=> ::core::clone::Clone::clone(&self.#id)));
+    }
+    let mut order: Vec<_> = std::iter::once(*partition).chain(*sort).collect();
+    for i in inputs.iter().copied().chain(0..fields.len()) {
+        if !order.contains(&i) {
+            order.push(i);
+        }
+    }
     for i in order {
         let f = &fields[i];
         let (id, ty, name, fv) = (&f.ident, &f.ty, &f.name, &f.vis);
         let local = format_ident!("__tabulary_field_{i}", span = Span::mixed_site());
-        values.push(quote!(#id: #local));
+        let synthetic = key_expand::template(record, i).is_some();
+        if !synthetic {
+            values.push(quote!(#id: #local));
+        }
         let handle = format_ident!(
             "{}",
             parse::rename(
@@ -75,22 +94,22 @@ pub fn record(record: &Record) -> TokenStream {
             flatten_read = Some(read);
             continue;
         }
-        let access = if f.key_limit.is_some() {
-            quote!(#path::KeyOnly)
-        } else {
-            quote!(#path::Mutable)
-        };
+        let access = key_expand::access(record, i);
         handles.push((i, quote_spanned! {id.span()=>
             #fv const #handle: #path::Attr<#ident #tg, #ty, #presence, #access> = #path::__private::field(#name, #i);
         }));
         descriptors.push((i, quote!(<#attrs #tg>::#handle.descriptor())));
+        if synthetic {
+            let write = key_expand::encode(record, i);
+            let read = key_expand::decode(record, i);
+            writes.push(write.clone());
+            key_writes.push(write);
+            reads.push(read.clone());
+            key_reads.push(read);
+            continue;
+        }
         let cx = quote!(#context.at(#path::PathSegment::Attribute(#name.into())));
         let (encode, decode) = if let ::core::option::Option::Some(max) = f.key_limit {
-            key_fields.push(quote!(#fv #id: #ty));
-            key_args.push(quote!(#id: #ty));
-            key_names.push(id);
-            key_values.push(quote!(#id: #local));
-            clones.push(quote_spanned!(id.span()=> ::core::clone::Clone::clone(&self.#id)));
             checks.push(quote_spanned! {id.span()=>
                 const _: () = ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
                     #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), "primary keys require S, N or B codecs");
@@ -133,8 +152,17 @@ pub fn record(record: &Record) -> TokenStream {
             key_reads.push(read.clone());
         }
         writes.push(write);
-        reads.push(read);
+        if inputs.contains(&i) {
+            reads.push(read);
+        } else {
+            common_reads.push(read);
+        }
+        if key_expand::source(record, i) {
+            source_checks.push(key_expand::checks(record, i));
+        }
     }
+    reads.extend(source_checks);
+    reads.extend(common_reads);
     handles.sort_by_key(|(i, _)| *i);
     descriptors.sort_by_key(|(i, _)| *i);
     let handles = handles.iter().map(|(_, tokens)| tokens);
@@ -183,10 +211,7 @@ pub fn record(record: &Record) -> TokenStream {
         quote!(#primary)
     };
     let key_clone = if generic {
-        let fields = fields
-            .iter()
-            .filter(|f| f.key_limit.is_some())
-            .map(|f| &f.ident);
+        let fields = inputs.iter().map(|i| &fields[*i].ident);
         quote!(impl #ig ::core::clone::Clone for #key #tg #wc {
             fn clone(&self) -> Self { Self { #(#fields: ::core::clone::Clone::clone(&self.#fields),)* #marker_value } }
         })
@@ -194,9 +219,16 @@ pub fn record(record: &Record) -> TokenStream {
         quote!()
     };
     let clone_derive = (!generic).then(|| quote!(#[derive(::core::clone::Clone)]));
+    let key_bindings = key_expand::key_bindings(record);
+    let helpers = if record.templates.is_empty() {
+        quote!()
+    } else {
+        key_expand::helpers(record)
+    };
     quote! {
         #checks
         #peers
+        #helpers
         impl #ig #attrs #tg #wc { #(#handles)* }
         #clone_derive
         #vis struct #key #generics #wc { #(#key_fields,)* #marker_decl }
@@ -220,6 +252,7 @@ pub fn record(record: &Record) -> TokenStream {
                 #check_keys
                 let #context = #path::DecodeContext::new(::core::stringify!(#ident));
                 #(#key_reads)*
+                #key_bindings
                 ::core::result::Result::Ok(Self { #(#key_values,)* #marker_value })
             }
         }

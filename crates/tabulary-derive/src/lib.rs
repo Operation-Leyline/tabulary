@@ -4,6 +4,7 @@ mod document_expand;
 mod document_parse;
 mod document_validate;
 mod expand;
+mod key_expand;
 mod parse;
 mod string_enum_expand;
 mod string_enum_parse;

@@ -31,6 +31,7 @@ pub struct Record {
     pub partition: usize,
     pub sort: Option<usize>,
     pub allow_unknown: bool,
+    pub templates: Vec<(usize, crate::template::Template)>,
 }
 
 pub fn record(input: DeriveInput) -> syn::Result<Record> {
@@ -83,7 +84,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             "Record and Document require named fields",
         ));
     };
-    crate::template::declarations(
+    let templates = crate::template::declarations(
         opts.partition.as_ref(),
         opts.sort.as_ref(),
         &fields,
@@ -99,6 +100,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
         partition: 0,
         sort: None,
         allow_unknown,
+        templates: Vec::new(),
     };
     let mut partition = None;
     let mut names = HashMap::new();
@@ -186,6 +188,36 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             key_limit,
             default: opts.default,
             flatten: opts.flatten,
+        });
+    }
+    for ((declaration, is_partition), template) in [(opts.partition, true), (opts.sort, false)]
+        .into_iter()
+        .filter_map(|(decl, kind)| decl.map(|decl| (decl, kind)))
+        .zip(templates)
+    {
+        let ident = Ident::new(
+            if is_partition { "partition" } else { "sort" },
+            declaration.name.span(),
+        );
+        if !handles.insert(ident.to_string().to_uppercase()) {
+            return Err(error(&ident, "duplicate generated attribute handle"));
+        }
+        let index = result.fields.len();
+        if is_partition {
+            partition = Some(index);
+        } else {
+            result.sort = Some(index);
+        }
+        result.templates.push((index, template));
+        result.fields.push(Field {
+            ident,
+            vis: result.vis.clone(),
+            ty: syn::parse_quote!(::std::string::String),
+            name: declaration.name.value(),
+            optional: false,
+            key_limit: Some(if is_partition { 2048 } else { 1024 }),
+            default: None,
+            flatten: false,
         });
     }
     if record {

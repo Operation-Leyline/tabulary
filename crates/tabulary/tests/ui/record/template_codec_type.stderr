@@ -1,0 +1,13 @@
+error[E0277]: the trait bound `Dec20: KeyComponentCodec<std::string::String>` is not satisfied
+ --> tests/ui/record/template_codec_type.rs:1:10
+  |
+1 | #[derive(tabulary::Record)]
+  |          ^^^^^^^^^^^^^^^^ the trait `KeyComponentCodec<std::string::String>` is not implemented for `Dec20`
+  |
+help: the trait `KeyComponentCodec<std::string::String>` is not implemented for `Dec20`
+      but trait `KeyComponentCodec<u64>` is implemented for it
+ --> src/key_component.rs
+  |
+  | impl KeyComponentCodec<u64> for Dec20 {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `u64`, found `std::string::String`
