@@ -1219,6 +1219,28 @@ No production migrations or schema synchronization are included.
 
 ## 15. Derive expansion and diagnostics
 
+Milestone 11a implements named-field `Record` derives with native codecs, all
+four rename rules, `generated_prefix`, static handles/schema, and owned keys.
+The [checked expansion fixture](../crates/tabulary-derive/tests/fixtures/record.expanded.tokens)
+is the actual emitted token stream for the adjacent `record.rs` input, checked
+for token equality and compiled as an integration-test module. It takes
+precedence over the completed-surface sketch below for this stage.
+
+The merged metadata-only `Record` trait stays unchanged. For now the derive
+emits inherent `to_item`, `from_item`, `key`, and `primary` methods; `RecordKey`
+provides key encode/decode, accepting a full item's extra fields on key decode.
+Full record decode rejects unknown fields in sorted order. Explicit defaults,
+the configurable unknown policy, and compile-fail snapshots follow in 11b.
+`Document`/nested `Value` expansion and generic bounds belong to milestone 12;
+query-facing primary interfaces belong to milestone 23. Primary/index peer
+types are currently markers. No builders, queries, or nested records are implied.
+
+Physical keys validate S/N/B categories at compile time and nonempty/byte limits
+on construction, encoding, and decoding. The existing decode taxonomy has no
+empty-key or key-size variants: these decode failures use
+`KeyFormat(InvalidLength)` at the physical attribute; encoding retains
+`EmptyKey` or `KeySize`. The native codec reports numeric-domain failures first.
+
 This is the semantic expansion for the three-field Order in the README.
 Generated boilerplate is shown using runtime helpers to keep it legible;
 the helpers below are part of the planned macro/runtime contract. No
