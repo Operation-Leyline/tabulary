@@ -1,6 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use syn::{Data, DeriveInput, Fields, GenericArgument, Ident, PathArguments, Type, Visibility};
+use syn::{
+    Data, DeriveInput, Fields, GenericArgument, Ident, Path, PathArguments, Type, Visibility,
+};
 
 use crate::parse;
 
@@ -15,6 +17,7 @@ pub struct Field {
     pub name: String,
     pub optional: bool,
     pub key_limit: Option<usize>,
+    pub default: Option<Path>,
 }
 
 pub struct Record {
@@ -24,6 +27,7 @@ pub struct Record {
     pub fields: Vec<Field>,
     pub partition: usize,
     pub sort: Option<usize>,
+    pub allow_unknown: bool,
 }
 
 pub fn record(input: DeriveInput) -> syn::Result<Record> {
@@ -34,6 +38,16 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
         ));
     }
     let opts = parse::options(&input.attrs, true)?;
+    let allow_unknown = match opts
+        .unknown
+        .as_ref()
+        .map(|policy| policy.value())
+        .as_deref()
+    {
+        None | Some("deny") => false,
+        Some("allow") => true,
+        _ => return Err(error(opts.unknown, "unknown must be \"allow\" or \"deny\"")),
+    };
     if let Some(rule) = &opts.rename_all
         && !matches!(
             rule.value().as_str(),
@@ -61,9 +75,10 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
         fields: Vec::new(),
         partition: 0,
         sort: None,
+        allow_unknown,
     };
     let mut partition = None;
-    let mut names = HashSet::new();
+    let mut names = HashMap::new();
     let mut handles = HashSet::new();
     for (i, field) in fields.named.into_iter().enumerate() {
         let opts = parse::options(&field.attrs, false)?;
@@ -71,6 +86,10 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
             .ident
             .ok_or_else(|| error(&field.ty, "expected a named field"))?;
         let rust_name = ident.to_string().trim_start_matches("r#").to_owned();
+        let name_span = opts
+            .rename
+            .as_ref()
+            .map_or(ident.span(), |name| name.span());
         let name = match opts.rename {
             Some(name) => name.value(),
             None => parse::rename(
@@ -79,8 +98,13 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
                     .ok_or_else(|| error(&ident, "field needs rename or container rename_all"))?,
             ),
         };
-        if name.is_empty() || !names.insert(name.clone()) {
-            return Err(error(&ident, "empty or duplicate wire name"));
+        if name.is_empty() {
+            return Err(syn::Error::new(name_span, "empty wire name"));
+        }
+        if let Some(first_span) = names.insert(name.clone(), name_span) {
+            let mut duplicate = syn::Error::new(name_span, format!("duplicate wire name `{name}`"));
+            duplicate.combine(syn::Error::new(first_span, "first declared here"));
+            return Err(duplicate);
         }
         if !handles.insert(parse::rename(&rust_name, "SCREAMING_SNAKE_CASE")) {
             return Err(error(&ident, "duplicate generated attribute handle"));
@@ -102,6 +126,9 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
         if key_limit.is_some() && inner.is_some() {
             return Err(error(&ident, "primary keys cannot be optional"));
         }
+        if key_limit.is_some() && opts.default.is_some() {
+            return Err(error(opts.default, "primary keys cannot have defaults"));
+        }
         if matches!(&field.ty, Type::Reference(_)) {
             return Err(error(&field.ty, "record fields must be owned"));
         }
@@ -112,6 +139,7 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
             ty: inner.unwrap_or(field.ty),
             name,
             key_limit,
+            default: opts.default,
         });
     }
     result.partition =

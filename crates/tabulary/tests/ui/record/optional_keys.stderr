@@ -1,0 +1,11 @@
+error: primary keys cannot be optional
+ --> tests/ui/record/optional_keys.rs:5:5
+  |
+5 |     id: Option<String>,
+  |     ^^
+
+error: primary keys cannot be optional
+  --> tests/ui/record/optional_keys.rs:14:5
+   |
+14 |     line: std::option::Option<u64>,
+   |     ^^^^

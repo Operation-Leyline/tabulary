@@ -1,0 +1,11 @@
+error: primary keys cannot have defaults
+ --> tests/ui/record/default_keys.rs:4:41
+  |
+4 |     #[tabulary(partition_key, default = String::new)]
+  |                                         ^^^^^^^^^^^
+
+error: primary keys cannot have defaults
+  --> tests/ui/record/default_keys.rs:13:36
+   |
+13 |     #[tabulary(sort_key, default = initial_line)]
+   |                                    ^^^^^^^^^^^^
