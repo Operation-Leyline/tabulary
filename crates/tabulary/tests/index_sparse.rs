@@ -306,6 +306,24 @@ fn conditional_key_descriptors_and_projection_hooks_preserve_presence() {
     assert_eq!(error.attribute(), Some("gsk"));
 }
 
+#[test]
+fn projecting_an_absent_synthetic_key_still_validates_present_components() {
+    use tabulary::Projection;
+    let record = Parcel {
+        sequence: None,
+        label: "bad!label".into(),
+        ..parcel()
+    };
+    let error =
+        IndexKeys::project_source(record, &mut tabulary::DecodeContext::new("Parcel")).unwrap_err();
+    assert_eq!(
+        error.kind,
+        DecodeFault::KeyFormat(KeyFormatFault::InvalidSeparator)
+    );
+    assert_eq!(error.record, "Parcel");
+    assert_eq!(error.attribute(), Some("gsk"));
+}
+
 #[derive(Debug, PartialEq, tabulary::Record)]
 #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{id:hex}"),
     index(ident = ByRoute, name = "by_route", kind = global, sparse,

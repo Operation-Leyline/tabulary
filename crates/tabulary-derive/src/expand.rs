@@ -195,8 +195,6 @@ pub fn record(record: &Record) -> TokenStream {
         }
     }
     reads.extend(common_reads);
-    writes.insert(0, crate::sparse_expand::validate_sources(record, true));
-    reads.push(crate::sparse_expand::validate_sources(record, false));
     reads.extend(sparse_reads);
     reads.extend(source_checks);
     handles.sort_by_key(|(i, _)| *i);
