@@ -1182,6 +1182,11 @@ control. The library does not fetch state, sign tokens, or assign tenancy.
 
 `ScanSegment::new(segment, total)` requires a positive total and
 `segment < total`, within DynamoDB's supported segment range.
+Milestone 35's segment value has private `u32` fields and rejects total zero,
+totals above 1,000,000, and segment IDs at or above total with
+`OperationConstraint { code: "invalid_scan_segment" }`. This also rejects
+out-of-range values before converting them to SDK integers. The boundary is
+defined by the [Scan API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html).
 `table.scan(consistency).segment(segment).resume(cursor).build()` prepares one
 page of one segment. An unsegmented scan has a distinct cursor binding.
 Changing total or segment rejects the old cursor. Each segment keeps its own
