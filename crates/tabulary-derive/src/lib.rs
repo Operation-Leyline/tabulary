@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod document_expand;
+mod document_parse;
+mod document_validate;
 mod expand;
 mod key_expand;
 mod parse;
@@ -24,6 +27,16 @@ pub fn string_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     string_enum_validate::string_enum(input)
         .map(|schema| string_enum_expand::string_enum(&schema))
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derive an owned strict map codec without table or key metadata.
+#[proc_macro_derive(Document, attributes(tabulary))]
+pub fn document(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    document_validate::document(input)
+        .map(|schema| document_expand::document(&schema))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

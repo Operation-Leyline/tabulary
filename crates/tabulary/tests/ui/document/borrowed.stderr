@@ -1,0 +1,11 @@
+error: document and record types cannot have lifetime parameters
+ --> tests/ui/document/borrowed.rs:3:13
+  |
+3 | struct Order<'a> { #[tabulary(partition_key)] id: String, note: &'a str }
+  |             ^^^^
+
+error: document and record fields must be owned
+ --> tests/ui/document/borrowed.rs:6:31
+  |
+6 | struct Invoice { note: Option<&'static str> }
+  |                               ^^^^^^^^^^^^

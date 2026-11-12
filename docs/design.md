@@ -244,6 +244,16 @@ and `{field:codec}` components. Built-in component codecs are:
 | `dec20` | `u64` | Exactly twenty decimal digits, preserving unsigned lexical order. |
 | `text` | String | UTF-8 with template separators forbidden in the component. |
 
+Milestone 15a supplies these runtime codecs in `key_component`, implementing
+`KeyComponentCodec<T>` with `format(&T) -> Result<String, KeyFormatFault>` and
+`parse(&str) -> Result<T, KeyFormatFault>`. Invalid spellings are structured
+faults, without retaining input values. Milestone 15b generates typed partition
+and sort-prefix carriers with private payload fields, complete-component tuple
+implementations, and reserved text separator validation. Generated key expansion
+and source comparison remain in 15b.
+Custom template declaration syntax and delimiter metadata are unspecified and
+deferred; the parser continues to recognize only the four built-in names.
+
 Every codec is injective within its accepted domain and implements an inverse.
 Adjacent variable-width components, ambiguous boundaries, duplicate component
 references, unknown fields, and separators admitted by a variable component's
@@ -252,14 +262,8 @@ Custom components implement `KeyComponentCodec<T>` with parse and format;
 the author declares reserved delimiters and tests round trips. They cannot
 silently replace the built-in grammar.
 
-Milestone 14 implements the built-in grammar and validation; milestone 15 adds
-formatting, inverse parsing, and source/codec type bounds. The public
-`KeyComponentCodec<T>` trait exposes `format(&T) -> Result<String, KeyFormatFault>`
-and `parse(&str) -> Result<T, KeyFormatFault>`; built-in markers live in
-`key_component`. The template grammar still accepts only the four built-in
-codec names. Custom codec declaration syntax and delimiter metadata are not
-specified here and are deferred rather than inferred from an unknown name.
-Components name Rust fields (including unprefixed
+Milestone 14 implements the built-in grammar and validation; milestone 15b adds
+formatting, inverse parsing, and source/codec type bounds. Components name Rust fields (including unprefixed
 raw identifiers), not renamed wire attributes. Primary sources cannot be
 optional or have defaults. Nonempty literal-only templates are permitted.
 
@@ -288,16 +292,19 @@ boundaries, for example `Parcel::primary().partition(shop, token)`.
 A composite sort key additionally generates `sort_prefix(parts...)` for proper
 leading components. There is no raw string key-condition escape hatch.
 
-For milestone 15, `primary().partition(component_a, component_b)` and
-`primary().sort_prefix((component_a,))` return a validated, record-owned
-`key_component::KeyPrefix<Record>` with explicit `as_str()` access and redacted
-Debug. Prefix arguments are tuples: generated `PrefixParts<Record>`
-implementations cover each nonempty proper leading tuple, so several prefix
+For milestone 15b, `primary().partition(component_a, component_b)` and
+`primary().sort_prefix((component_a,))` return generated `ParcelPartition` and
+`ParcelSortPrefix` peer types, with private payload fields, explicit `as_str()`
+access, and redacted Debug. Prefix arguments are tuples: a generated
+`ParcelPrefixParts` trait covers each nonempty proper leading tuple, so several prefix
 arities coexist without Rust method overloading. Prefixes include any literal
 after the last supplied component. Empty tuples, partial encoded strings,
 nonleading components, and the complete sort tuple have no generated implementation.
-The constructor and trait implementation hooks are reserved derive helpers,
-subject to the same honest-implementation boundary as other public traits.
+Boundaries inside a run that already contains a variable-width component are
+excluded until a following literal is supplied; a missing fixed-width tail
+cannot delimit a query prefix. Prefix traits return the concrete generated
+carrier, so an external implementation cannot wrap arbitrary strings. As with
+manual schemas, a record's own declaring module remains trusted.
 Key-condition construction itself belongs to milestone 23; these staged
 formatting helpers perform no query. Primary key constructor inputs follow
 partition components then sort components, retaining a shared source only once.
@@ -1301,9 +1308,21 @@ policy: full record decode rejects unknown fields in sorted order unless
 `unknown = "allow"` is declared. Its compile-fail snapshots cover duplicate wire
 names at both declarations, optional/non-scalar primary keys, key defaults,
 invalid/duplicate policy options, and invalid default options/signatures.
-`Document`/nested `Value` expansion and generic bounds belong to milestone 12;
-query-facing primary interfaces belong to milestone 23. Primary/index peer
-types are currently markers. No builders, queries, or nested records are implied.
+Milestone 12 adds the public `Document` map trait and generates `Document` and
+map-wire `Value` implementations for both derives. `Document` emits only its
+`<Name>Attrs` peer and codecs; it rejects key annotations. Both derives share
+naming, explicit defaults, and unknown-field rules. Record item methods delegate
+to its document codec, retaining key validation when embedded as an `M`.
+The metadata-only `Record` trait remains unchanged; query-facing primary
+interfaces belong to milestone 23. Primary/index peers remain markers.
+
+Generic peers retain type and const parameters and caller predicates. Generated
+implementations require field codecs and owned key cloning, without requiring
+non-key values to implement `Clone`. Lifetime parameters and references inside
+field types are rejected. Both derives accept the explicit `crate` path override.
+The top-level map is depth zero; each nested `M` or `L`, including an empty
+container, consumes one of 32 levels. Scalars and sets consume no levels.
+Nested codecs preserve the outer record, current document, and physical path.
 
 Physical keys validate S/N/B categories at compile time and nonempty/byte limits
 on construction, encoding, and decoding. The existing decode taxonomy has no

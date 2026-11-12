@@ -6,6 +6,8 @@ use crate::{key_expand, parse, validate::Record};
 pub fn record(record: &Record) -> TokenStream {
     let Record {
         ident,
+        generics: _,
+        crate_path: path,
         vis,
         prefix,
         fields,
@@ -14,6 +16,17 @@ pub fn record(record: &Record) -> TokenStream {
         allow_unknown,
         ..
     } = record;
+    let generics = crate::document_validate::bounds(record);
+    let (ig, tg, wc) = generics.split_for_impl();
+    let generic = !record.generics.params.is_empty();
+    let mut marker_name = "__tabulary_marker".to_owned();
+    while fields.iter().any(|field| field.ident == marker_name) {
+        marker_name.push('_');
+    }
+    let marker = format_ident!("{}", marker_name, span = Span::mixed_site());
+    let marker_decl =
+        generic.then(|| quote!(#marker: ::core::marker::PhantomData<fn() -> #ident #tg>,));
+    let marker_value = generic.then(|| quote!(#marker: ::core::marker::PhantomData,));
     let attrs = format_ident!("{}Attrs", prefix);
     let key = format_ident!("{}Key", prefix);
     let primary = format_ident!("{}Primary", prefix);
@@ -69,21 +82,21 @@ pub fn record(record: &Record) -> TokenStream {
             span = id.span()
         );
         let presence = if f.optional {
-            quote!(::tabulary::Optional)
+            quote!(#path::Optional)
         } else {
-            quote!(::tabulary::Required)
+            quote!(#path::Required)
         };
         let access = if synthetic {
-            quote!(::tabulary::DerivedOnly)
+            quote!(#path::DerivedOnly)
         } else if f.key_limit.is_some() || key_expand::source(record, i) {
-            quote!(::tabulary::KeyOnly)
+            quote!(#path::KeyOnly)
         } else {
-            quote!(::tabulary::Mutable)
+            quote!(#path::Mutable)
         };
         handles.push((i, quote_spanned! {id.span()=>
-            #fv const #handle: ::tabulary::Attr<#ident, #ty, #presence, #access> = ::tabulary::__private::field(#name, #i);
+            #fv const #handle: #path::Attr<#ident #tg, #ty, #presence, #access> = #path::__private::field(#name, #i);
         }));
-        descriptors.push((i, quote!(#attrs::#handle.descriptor())));
+        descriptors.push((i, quote!(<#attrs #tg>::#handle.descriptor())));
         if synthetic {
             let write = key_expand::encode(record, i);
             let read = key_expand::decode(record, i);
@@ -93,25 +106,25 @@ pub fn record(record: &Record) -> TokenStream {
             key_reads.push(read);
             continue;
         }
-        let cx = quote!(#context.at(::tabulary::PathSegment::Attribute(#name.into())));
+        let cx = quote!(#context.at(#path::PathSegment::Attribute(#name.into())));
         let (encode, decode) = if let ::core::option::Option::Some(max) = f.key_limit {
             checks.push(quote_spanned! {id.span()=>
-                const _: () = ::core::assert!(::core::matches!(<<#ty as ::tabulary::Value>::Wire as ::tabulary::WireType>::DYNAMO_TYPE,
-                    ::tabulary::DynamoType::S | ::tabulary::DynamoType::N | ::tabulary::DynamoType::B), "primary keys require S, N or B codecs");
+                const _: () = ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
+                    #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), "primary keys require S, N or B codecs");
             });
             (
-                quote!(::core::option::Option::Some(::tabulary::__private::encode_key(&self.#id, &mut #cx, #max)?)),
-                quote!(::tabulary::__private::decode_key(#item.get(#name), &mut #cx, #max)?),
+                quote!(::core::option::Option::Some(#path::__private::encode_key(&self.#id, &mut #cx, #max)?)),
+                quote!(#path::__private::decode_key(#item.get(#name), &mut #cx, #max)?),
             )
         } else if f.optional {
             (
-                quote!(::tabulary::field::encode_optional::<#ty, ::tabulary::Native<#ty>>(&self.#id, &mut #cx)?),
-                quote!(::tabulary::field::decode_optional::<#ty, ::tabulary::Native<#ty>>(#item.get(#name), &mut #cx)?),
+                quote!(#path::field::encode_optional::<#ty, #path::Native<#ty>>(&self.#id, &mut #cx)?),
+                quote!(#path::field::decode_optional::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #cx)?),
             )
         } else {
             (
-                quote!(::core::option::Option::Some(<#ty as ::tabulary::Value>::encode_value(&self.#id, &mut #cx)?)),
-                quote!(::tabulary::field::decode_required::<#ty, ::tabulary::Native<#ty>>(#item.get(#name), &mut #cx)?),
+                quote!(::core::option::Option::Some(<#ty as #path::Value>::encode_value(&self.#id, &mut #cx)?)),
+                quote!(#path::field::decode_required::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #cx)?),
             )
         };
         let decode = if let Some(default) = &f.default {
@@ -158,7 +171,7 @@ pub fn record(record: &Record) -> TokenStream {
     } else {
         quote! {
             if let ::core::option::Option::Some(name) = #item.keys().filter(|name| ![#(#wire_names,)*].contains(&name.as_str())).min() {
-                return ::core::result::Result::Err(#context.at(::tabulary::PathSegment::Attribute(name.clone())).error(::tabulary::DecodeFault::UnknownAttribute));
+                return ::core::result::Result::Err(#context.at(#path::PathSegment::Attribute(name.clone())).error(#path::DecodeFault::UnknownAttribute));
             }
         }
     };
@@ -166,6 +179,52 @@ pub fn record(record: &Record) -> TokenStream {
         ::core::option::Option::Some(i) => quote!(::core::option::Option::Some(#i)),
         ::core::option::Option::None => quote!(::core::option::Option::None),
     };
+    let (checks, key_check) = if generic {
+        // Associated constants may refer to generic field types; evaluate before key use.
+        let assertions = fields.iter().filter(|f| f.key_limit.is_some()).map(|f| {
+            let ty = &f.ty;
+            quote_spanned!(f.ident.span()=> ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
+                #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), "primary keys require S, N or B codecs");)
+        });
+        (
+            quote!(),
+            quote!(const __TABULARY_KEYS: () = { #(#assertions)* };),
+        )
+    } else {
+        (quote!(#(#checks)*), quote!())
+    };
+    let check_keys = generic.then(|| quote!(let () = <#ident #tg>::__TABULARY_KEYS;));
+    if let Some(check) = &check_keys {
+        writes.insert(0, check.clone());
+        reads.insert(0, check.clone());
+    }
+    let document =
+        crate::document_expand::implementation(record, &writes, &reads, &values, unknown_check);
+    let peers = if generic {
+        quote! {
+            #vis struct #attrs #generics (::core::marker::PhantomData<fn() -> #ident #tg>) #wc;
+            #vis struct #indexes #generics (::core::marker::PhantomData<fn() -> #ident #tg>) #wc;
+            #vis struct #primary #generics (::core::marker::PhantomData<fn() -> #ident #tg>) #wc;
+            impl #ig ::core::marker::Copy for #primary #tg #wc {}
+            impl #ig ::core::clone::Clone for #primary #tg #wc { fn clone(&self) -> Self { *self } }
+        }
+    } else {
+        quote!(#vis struct #attrs; #vis struct #indexes; #[derive(::core::clone::Clone, ::core::marker::Copy)] #vis struct #primary;)
+    };
+    let primary_value = if generic {
+        quote!(#primary(::core::marker::PhantomData))
+    } else {
+        quote!(#primary)
+    };
+    let key_clone = if generic {
+        let fields = inputs.iter().map(|i| &fields[*i].ident);
+        quote!(impl #ig ::core::clone::Clone for #key #tg #wc {
+            fn clone(&self) -> Self { Self { #(#fields: ::core::clone::Clone::clone(&self.#fields),)* #marker_value } }
+        })
+    } else {
+        quote!()
+    };
+    let clone_derive = (!generic).then(|| quote!(#[derive(::core::clone::Clone)]));
     let key_bindings = key_expand::key_bindings(record);
     let helpers = if record.templates.is_empty() {
         quote!()
@@ -173,56 +232,52 @@ pub fn record(record: &Record) -> TokenStream {
         key_expand::helpers(record)
     };
     quote! {
-        #(#checks)*
-        #vis struct #attrs;
-        impl #attrs { #(#handles)* }
-        #vis struct #indexes;
-        #[derive(::core::clone::Clone, ::core::marker::Copy)]
-        #vis struct #primary;
+        #checks
+        #peers
         #helpers
-        #[derive(::core::clone::Clone)]
-        #vis struct #key { #(#key_fields,)* }
-        impl #key {
-            #vis fn new(#(#key_args),*) -> ::core::result::Result<Self, ::tabulary::EncodeError> {
-                let key = Self { #(#key_names,)* };
-                <Self as ::tabulary::RecordKey<#ident>>::encode_key(&key)?;
+        impl #ig #attrs #tg #wc { #(#handles)* }
+        #clone_derive
+        #vis struct #key #generics #wc { #(#key_fields,)* #marker_decl }
+        #key_clone
+        impl #ig #key #tg #wc {
+            #vis fn new(#(#key_args),*) -> ::core::result::Result<Self, #path::EncodeError> {
+                let key = Self { #(#key_names,)* #marker_value };
+                <Self as #path::RecordKey<#ident #tg>>::encode_key(&key)?;
                 ::core::result::Result::Ok(key)
             }
         }
-        impl ::tabulary::RecordKey<#ident> for #key {
-            fn encode_key(&self) -> ::core::result::Result<::tabulary::Item, ::tabulary::EncodeError> {
-                let #context = ::tabulary::EncodeContext::new(::core::stringify!(#ident));
-                let mut #item = ::tabulary::Item::new();
+        impl #ig #path::RecordKey<#ident #tg> for #key #tg #wc {
+            fn encode_key(&self) -> ::core::result::Result<#path::Item, #path::EncodeError> {
+                #check_keys
+                let #context = #path::EncodeContext::new(::core::stringify!(#ident));
+                let mut #item = #path::Item::new();
                 #(#key_writes)*
                 ::core::result::Result::Ok(#item)
             }
-            fn decode_key(#item: &::tabulary::Item) -> ::core::result::Result<Self, ::tabulary::DecodeError> {
-                let #context = ::tabulary::DecodeContext::new(::core::stringify!(#ident));
+            fn decode_key(#item: &#path::Item) -> ::core::result::Result<Self, #path::DecodeError> {
+                #check_keys
+                let #context = #path::DecodeContext::new(::core::stringify!(#ident));
                 #(#key_reads)*
                 #key_bindings
-                ::core::result::Result::Ok(Self { #(#key_values,)* })
+                ::core::result::Result::Ok(Self { #(#key_values,)* #marker_value })
             }
         }
-        impl ::tabulary::Record for #ident {
-            const SCHEMA: ::tabulary::RecordSchema = ::tabulary::__private::schema(
-                ::core::stringify!(#ident), &[#(#descriptors,)*], ::tabulary::__private::keys(#partition, #sort));
+        impl #ig #path::Record for #ident #tg #wc {
+            const SCHEMA: #path::RecordSchema = #path::__private::schema(
+                ::core::stringify!(#ident), &[#(#descriptors,)*], #path::__private::keys(#partition, #sort));
         }
-        impl #ident {
-            #vis fn key(&self) -> ::core::result::Result<#key, ::tabulary::EncodeError> { #key::new(#(#clones),*) }
-            #vis fn primary() -> #primary { #primary }
-            #vis fn to_item(&self) -> ::core::result::Result<::tabulary::Item, ::tabulary::EncodeError> {
-                let #context = ::tabulary::EncodeContext::new(::core::stringify!(#ident));
-                let mut #item = ::tabulary::Item::new();
-                #(#writes)*
-                ::core::result::Result::Ok(#item)
+        impl #ig #ident #tg #wc {
+            #key_check
+            #vis fn key(&self) -> ::core::result::Result<#key #tg, #path::EncodeError> { <#key #tg>::new(#(#clones),*) }
+            #vis fn primary() -> #primary #tg { #primary_value }
+            #vis fn to_item(&self) -> ::core::result::Result<#path::Item, #path::EncodeError> {
+                <Self as #path::Document>::encode_map(self, &mut #path::EncodeContext::new(::core::stringify!(#ident)))
             }
-            #vis fn from_item(#item: &::tabulary::Item) -> ::core::result::Result<Self, ::tabulary::DecodeError> {
-                let #context = ::tabulary::DecodeContext::new(::core::stringify!(#ident));
-                #(#reads)*
-                #unknown_check
-                ::core::result::Result::Ok(Self { #(#values,)* })
+            #vis fn from_item(#item: &#path::Item) -> ::core::result::Result<Self, #path::DecodeError> {
+                <Self as #path::Document>::decode_map(#item, &mut #path::DecodeContext::new(::core::stringify!(#ident)))
             }
         }
+        #document
     }
 }
 

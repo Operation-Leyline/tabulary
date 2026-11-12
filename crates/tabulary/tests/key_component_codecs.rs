@@ -25,3 +25,16 @@ fn built_in_domains_have_strict_canonical_inverses() {
     assert_eq!(<Hex as Codec<[u8; 2]>>::parse("00"), Err(K::InvalidLength));
     assert_eq!(<Dec20 as Codec<u64>>::parse("1"), Err(K::InvalidLength));
 }
+
+#[test]
+fn component_extraction_checks_utf8_boundaries_and_fixed_tails() {
+    let mut rest = "éff界tail";
+    assert_eq!(take(&mut rest, None, 2, Some('界')), Ok("é"));
+    assert_eq!(take(&mut rest, Some(2), 0, None), Ok("ff"));
+    assert_eq!(rest, "界tail");
+    for (width, tail) in [(Some(1), 0), (Some(100), 0), (None, 100)] {
+        let mut rest = "é";
+        assert_eq!(take(&mut rest, width, tail, None), Err(K::InvalidLength));
+        assert_eq!(rest, "é");
+    }
+}

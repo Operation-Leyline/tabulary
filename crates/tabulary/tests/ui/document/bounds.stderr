@@ -1,0 +1,19 @@
+error[E0599]: the method `encode_map` exists for struct `Envelope<u8>`, but its trait bounds were not satisfied
+ --> tests/ui/document/bounds.rs:7:19
+  |
+4 | struct Envelope<T> { payload: T }
+  | ------------------ method `encode_map` not found for this struct because it doesn't satisfy `Envelope<u8>: Document`
+...
+7 |     let _ = value.encode_map(&mut tabulary::EncodeContext::new("Envelope"));
+  |                   ^^^^^^^^^^ method cannot be called on `Envelope<u8>` due to unsatisfied trait bounds
+  |
+note: trait bound `u8: tabulary::Value` was not satisfied
+ --> tests/ui/document/bounds.rs:2:10
+  |
+2 | #[derive(tabulary::Document)]
+  |          ^^^^^^^^^^^^^^^^^^ type parameter would need to implement `Document`
+  = help: consider manually implementing the trait to avoid undesired bounds
+  = help: items from traits can only be used if the trait is implemented and in scope
+  = note: the following trait defines an item `encode_map`, perhaps you need to implement it:
+          candidate #1: `Document`
+  = note: this error originates in the derive macro `tabulary::Document` (in Nightly builds, run with -Z macro-backtrace for more info)

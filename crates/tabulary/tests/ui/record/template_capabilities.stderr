@@ -26,45 +26,48 @@ error[E0599]: no method named `set` found for struct `Attr<Order, std::string::S
   |
   = note: the method was found for `Attr<R, T, P, tabulary::Mutable, C>`
 
-error[E0277]: the trait bound `(std::string::String,): PrefixParts<Order>` is not satisfied
+error[E0277]: the trait bound `(std::string::String,): OrderPrefixParts` is not satisfied
  --> tests/ui/record/template_capabilities.rs:9:34
   |
 9 |     Order::primary().sort_prefix(("partial".to_owned(),));
-  |                      ----------- ^^^^^^^^^^^^^^^^^^^^^^^ the trait `PrefixParts<Order>` is not implemented for `(std::string::String,)`
+  |                      ----------- ^^^^^^^^^^^^^^^^^^^^^^^ the trait `OrderPrefixParts` is not implemented for `(std::string::String,)`
   |                      |
   |                      required by a bound introduced by this call
   |
-help: the trait `PrefixParts<Order>` is not implemented for `(std::string::String,)`
-      but it is implemented for `(u64,)`
+help: the trait `OrderPrefixParts` is implemented for `(u64,)`
  --> tests/ui/record/template_capabilities.rs:1:10
   |
 1 | #[derive(tabulary::Record)]
   |          ^^^^^^^^^^^^^^^^
-  = help: for that trait implementation, expected `u64`, found `std::string::String`
 note: required by a bound in `OrderPrimary::sort_prefix`
- --> tests/ui/record/template_capabilities.rs:1:10
+ --> tests/ui/record/template_capabilities.rs:3:8
   |
 1 | #[derive(tabulary::Record)]
-  |          ^^^^^^^^^^^^^^^^ required by this bound in `OrderPrimary::sort_prefix`
+  |          ---------------- required by a bound in this associated function
+2 | #[tabulary(rename_all = "snake_case", partition(nam...
+3 | struct Order { id: String, count: u64, label: String }
+  |        ^^^^^ required by this bound in `OrderPrimary::sort_prefix`
   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `(u64, std::string::String): PrefixParts<Order>` is not satisfied
+error[E0277]: the trait bound `(u64, std::string::String): OrderPrefixParts` is not satisfied
   --> tests/ui/record/template_capabilities.rs:10:34
    |
 10 |     Order::primary().sort_prefix((1u64, "whole".to_owned()));
-   |                      ----------- ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `PrefixParts<Order>` is not implemented for `(u64, std::string::String)`
+   |                      ----------- ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `OrderPrefixParts` is not implemented for `(u64, std::string::String)`
    |                      |
    |                      required by a bound introduced by this call
    |
-help: the trait `PrefixParts<Order>` is not implemented for `(u64, std::string::String)`
-      but it is implemented for `(u64,)`
+help: the trait `OrderPrefixParts` is implemented for `(u64,)`
   --> tests/ui/record/template_capabilities.rs:1:10
    |
  1 | #[derive(tabulary::Record)]
    |          ^^^^^^^^^^^^^^^^
 note: required by a bound in `OrderPrimary::sort_prefix`
-  --> tests/ui/record/template_capabilities.rs:1:10
+  --> tests/ui/record/template_capabilities.rs:3:8
    |
  1 | #[derive(tabulary::Record)]
-   |          ^^^^^^^^^^^^^^^^ required by this bound in `OrderPrimary::sort_prefix`
+   |          ---------------- required by a bound in this associated function
+ 2 | #[tabulary(rename_all = "snake_case", partition(nam...
+ 3 | struct Order { id: String, count: u64, label: String }
+   |        ^^^^^ required by this bound in `OrderPrimary::sort_prefix`
    = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)

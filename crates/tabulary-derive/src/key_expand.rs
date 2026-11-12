@@ -46,7 +46,30 @@ pub fn source(record: &Record, index: usize) -> bool {
         .iter()
         .any(|(_, t)| components(t).any(|i| i == index))
 }
-fn codec(codec: Codec, span: Span) -> TokenStream {
+pub fn bounds(record: &Record, generics: &mut syn::Generics) {
+    let path = &record.crate_path;
+    for (_, template) in &record.templates {
+        for part in &template.parts {
+            if let Part::Component {
+                field, codec: kind, ..
+            } = part
+            {
+                let field = &record.fields[*field];
+                let ty = &field.ty;
+                let codec = codec(*kind, field.ident.span(), path);
+                generics.make_where_clause().predicates.push(syn::parse_quote_spanned!(field.ident.span()=> #codec: #path::KeyComponentCodec<#ty>));
+                generics.make_where_clause().predicates.push(
+                    syn::parse_quote_spanned!(field.ident.span()=> #ty: ::core::cmp::PartialEq),
+                );
+            }
+        }
+    }
+}
+fn codec(codec: Codec, span: Span, path: &syn::Path) -> TokenStream {
+    let mut path = path.clone();
+    for segment in &mut path.segments {
+        segment.ident.set_span(span);
+    }
     let name = syn::Ident::new(
         match codec {
             Codec::Hex => "Hex",
@@ -56,7 +79,7 @@ fn codec(codec: Codec, span: Span) -> TokenStream {
         },
         span,
     );
-    quote_spanned!(span=> ::tabulary::key_component::#name)
+    quote_spanned!(span=> #path::key_component::#name)
 }
 fn boundary(parts: &[Part], position: usize) -> (usize, Option<char>) {
     let mut tail = 0;
@@ -72,14 +95,15 @@ fn boundary(parts: &[Part], position: usize) -> (usize, Option<char>) {
     (tail, None)
 }
 fn component_context(record: &Record, key: usize, field: Option<usize>) -> TokenStream {
+    let path = &record.crate_path;
     let name = &record.fields[key].name;
     let context = format_ident!("cx", span = Span::mixed_site());
-    let base = quote!(#context.at(::tabulary::PathSegment::Attribute(#name.into())));
+    let base = quote!(#context.at(#path::PathSegment::Attribute(#name.into())));
     match field {
         Some(i) => {
             let name = record.fields[i].ident.to_string();
             let name = name.trim_start_matches("r#");
-            quote!(#base.at(::tabulary::PathSegment::Component(#name)))
+            quote!(#base.at(#path::PathSegment::Component(#name)))
         }
         None => base,
     }
@@ -98,6 +122,7 @@ fn format(
     receiver: bool,
     full: &[Part],
 ) -> TokenStream {
+    let path = &record.crate_path;
     let output = format_ident!("__tabulary_output", span = Span::mixed_site());
     let component = format_ident!("__tabulary_component", span = Span::mixed_site());
     let steps = parts.iter().enumerate().map(|(position, part)| match part {
@@ -105,13 +130,13 @@ fn format(
         Part::Component { field, codec: kind, .. } => {
             let f = &record.fields[*field]; let (id, ty) = (&f.ident, &f.ty);
             let value = if receiver { quote!(&self.#id) } else { quote!(&#id) };
-            let cx = component_context(record, key, Some(*field)); let codec = codec(*kind, record.fields[*field].ident.span());
+            let cx = component_context(record, key, Some(*field)); let codec = codec(*kind, record.fields[*field].ident.span(), &record.crate_path);
             let reserved = if *kind == Codec::Text { boundary(full, position).1 } else { None };
             let reserve = reserved.map(|c| quote! {
-                if #component.contains(#c) { return ::core::result::Result::Err(#cx.error(::tabulary::EncodeFault::KeyFormat(::tabulary::KeyFormatFault::InvalidSeparator))); }
+                if #component.contains(#c) { return ::core::result::Result::Err(#cx.error(#path::EncodeFault::KeyFormat(#path::KeyFormatFault::InvalidSeparator))); }
             });
             quote_spanned! {id.span()=>
-                let #component = <#codec as ::tabulary::KeyComponentCodec<#ty>>::format(#value).map_err(|fault| #cx.error(::tabulary::EncodeFault::KeyFormat(fault)))?;
+                let #component = <#codec as #path::KeyComponentCodec<#ty>>::format(#value).map_err(|fault| #cx.error(#path::EncodeFault::KeyFormat(fault)))?;
                 #reserve
                 #output.push_str(&#component);
             }
@@ -121,6 +146,7 @@ fn format(
 }
 
 pub fn encode(record: &Record, key: usize) -> TokenStream {
+    let path = &record.crate_path;
     let context = format_ident!("cx", span = Span::mixed_site());
     let item = format_ident!("item", span = Span::mixed_site());
     let parts = &template(record, key).unwrap().parts;
@@ -131,11 +157,12 @@ pub fn encode(record: &Record, key: usize) -> TokenStream {
         record.fields[key].key_limit.unwrap(),
     );
     quote! { { #format
-        #item.insert(#name.into(), ::tabulary::__private::encode_key(&#output, &mut #context.at(::tabulary::PathSegment::Attribute(#name.into())), #max)?);
+        #item.insert(#name.into(), #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), #max)?);
     } }
 }
 
 pub fn decode(record: &Record, key: usize) -> TokenStream {
+    let path = &record.crate_path;
     let context = format_ident!("cx", span = Span::mixed_site());
     let item = format_ident!("item", span = Span::mixed_site());
     let parts = &template(record, key).unwrap().parts;
@@ -151,15 +178,15 @@ pub fn decode(record: &Record, key: usize) -> TokenStream {
         match part {
             Part::Literal(s) => {
                 let fault = if position == 0 { quote!(InvalidPrefix) } else { quote!(InvalidSeparator) };
-                quote!(#rest = #rest.strip_prefix(#s).ok_or_else(|| #cx.error(::tabulary::DecodeFault::KeyFormat(::tabulary::KeyFormatFault::#fault)))?;)
+                quote!(#rest = #rest.strip_prefix(#s).ok_or_else(|| #cx.error(#path::DecodeFault::KeyFormat(#path::KeyFormatFault::#fault)))?;)
             }
             Part::Component { field, codec: kind, width } => {
                 let (tail, separator) = boundary(parts, position); let separator = option(separator); let width = option(*width);
-                let local = parsed(key, *field); let codec = codec(*kind, record.fields[*field].ident.span()); let ty = &record.fields[*field].ty; let id = &record.fields[*field].ident;
+                let local = parsed(key, *field); let codec = codec(*kind, record.fields[*field].ident.span(), &record.crate_path); let ty = &record.fields[*field].ty; let id = &record.fields[*field].ident;
                 quote_spanned! {id.span()=>
                     let #local: #ty = {
-                        let component = ::tabulary::key_component::take(&mut #rest, #width, #tail, #separator).map_err(|fault| #cx.error(::tabulary::DecodeFault::KeyFormat(fault)))?;
-                        <#codec as ::tabulary::KeyComponentCodec<#ty>>::parse(component).map_err(|fault| #cx.error(::tabulary::DecodeFault::KeyFormat(fault)))?
+                        let component = #path::key_component::take(&mut #rest, #width, #tail, #separator).map_err(|fault| #cx.error(#path::DecodeFault::KeyFormat(fault)))?;
+                        <#codec as #path::KeyComponentCodec<#ty>>::parse(component).map_err(|fault| #cx.error(#path::DecodeFault::KeyFormat(fault)))?
                     };
                 }
             }
@@ -171,30 +198,32 @@ pub fn decode(record: &Record, key: usize) -> TokenStream {
         components(template(record, key).unwrap()).last(),
     );
     quote! {
-        let #text: ::std::string::String = ::tabulary::__private::decode_key(#item.get(#name), &mut #context.at(::tabulary::PathSegment::Attribute(#name.into())), #max)?;
+        let #text: ::std::string::String = #path::__private::decode_key(#item.get(#name), &mut #context.at(#path::PathSegment::Attribute(#name.into())), #max)?;
         let mut #rest = #text.as_str();
         #(#steps)*
-        if !#rest.is_empty() { return ::core::result::Result::Err(#cx.error(::tabulary::DecodeFault::KeyFormat(::tabulary::KeyFormatFault::InvalidLength))); }
+        if !#rest.is_empty() { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyFormat(#path::KeyFormatFault::InvalidLength))); }
     }
 }
 
 pub fn checks(record: &Record, field: usize) -> TokenStream {
+    let path = &record.crate_path;
     let local = local(field);
     let checks = record.templates.iter().filter(|(_, t)| components(t).any(|i| i == field)).map(|(key, _)| {
         let parsed = parsed(*key, field); let cx = component_context(record, *key, Some(field));
-        quote! { if #local != #parsed { return ::core::result::Result::Err(#cx.error(::tabulary::DecodeFault::KeyMismatch)); } }
+        quote! { if #local != #parsed { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
     });
     quote!(#(#checks)*)
 }
 
 pub fn key_bindings(record: &Record) -> TokenStream {
+    let path = &record.crate_path;
     let bindings = inputs(record).into_iter().map(|field| {
         if record.fields[field].key_limit.is_some() { return checks(record, field); }
         let key = record.templates.iter().find(|(_, t)| components(t).any(|i| i == field)).unwrap().0;
         let parsed = parsed(key, field); let local = local(field);
         let checks = record.templates.iter().filter(|(i, t)| *i != key && components(t).any(|i| i == field)).map(|(other_key, _)| {
             let other = self::parsed(*other_key, field); let cx = component_context(record, *other_key, Some(field));
-            quote! { if #parsed != #other { return ::core::result::Result::Err(#cx.error(::tabulary::DecodeFault::KeyMismatch)); } }
+            quote! { if #parsed != #other { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
         });
         quote! { #(#checks)* let #local = #parsed; }
     });
@@ -202,18 +231,34 @@ pub fn key_bindings(record: &Record) -> TokenStream {
 }
 
 pub fn helpers(record: &Record) -> TokenStream {
+    let path = &record.crate_path;
     let context = format_ident!("cx", span = Span::mixed_site());
     let output = format_ident!("__tabulary_output", span = Span::mixed_site());
     let (ident, vis) = (&record.ident, &record.vis);
     let primary = format_ident!("{}Primary", record.prefix);
+    let generics = crate::document_validate::bounds(record);
+    let (ig, tg, wc) = generics.split_for_impl();
+    let partition_value = format_ident!("{}Partition", record.prefix);
+    let sort_value = format_ident!("{}SortPrefix", record.prefix);
+    let prefix_parts = format_ident!("{}PrefixParts", record.prefix);
+    let carrier = |name| {
+        quote! {
+            #vis struct #name #generics #wc { value: ::std::string::String, marker: ::core::marker::PhantomData<fn() -> #ident #tg> }
+            impl #ig #name #tg #wc { #vis fn as_str(&self) -> &str { &self.value } }
+            impl #ig ::core::fmt::Debug for #name #tg #wc {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result { f.write_str(::core::stringify!(#name)) }
+            }
+        }
+    };
+    let partition_carrier = template(record, record.partition).map(|_| carrier(&partition_value));
     let partition = template(record, record.partition).map(|t| {
         let args = components(t).map(|i| { let f = &record.fields[i]; let (id, ty) = (&f.ident, &f.ty); quote!(#id: #ty) });
         let format = format(record, record.partition, &t.parts, false, &t.parts);
         let name = &record.fields[record.partition].name;
-        quote! { #vis fn partition(&self, #(#args),*) -> ::core::result::Result<::tabulary::key_component::KeyPrefix<#ident>, ::tabulary::EncodeError> {
-            let #context = ::tabulary::EncodeContext::new(::core::stringify!(#ident)); #format
-            ::tabulary::__private::encode_key(&#output, &mut #context.at(::tabulary::PathSegment::Attribute(#name.into())), 2048)?;
-            ::core::result::Result::Ok(::tabulary::key_component::KeyPrefix::from_components(#output))
+        quote! { #vis fn partition(&self, #(#args),*) -> ::core::result::Result<#partition_value #tg, #path::EncodeError> {
+            let #context = #path::EncodeContext::new(::core::stringify!(#ident)); #format
+            #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), 2048)?;
+            ::core::result::Result::Ok(#partition_value { value: #output, marker: ::core::marker::PhantomData })
         } }
     });
     let mut implementations = Vec::new();
@@ -229,6 +274,16 @@ pub fn helpers(record: &Record) -> TokenStream {
             .collect();
         for end in positions.iter().skip(1) {
             let parts = &t.parts[..*end];
+            // A variable endpoint needs its following literal. A fixed tail
+            // cannot delimit a query prefix until that tail is supplied too.
+            if parts
+                .iter()
+                .rev()
+                .take_while(|p| !matches!(p, Part::Literal(_)))
+                .any(|p| matches!(p, Part::Component { width: None, .. }))
+            {
+                continue;
+            }
             let fields: Vec<_> = parts
                 .iter()
                 .filter_map(|p| match p {
@@ -241,19 +296,25 @@ pub fn helpers(record: &Record) -> TokenStream {
             let format = format(record, key, parts, false, &t.parts);
             let name = &record.fields[key].name;
             implementations.push(quote! {
-                impl ::tabulary::key_component::PrefixParts<#ident> for (#(#types,)*) {
-                    fn format_prefix(self) -> ::core::result::Result<::tabulary::key_component::KeyPrefix<#ident>, ::tabulary::EncodeError> {
+                impl #ig #prefix_parts #tg for (#(#types,)*) #wc {
+                    fn format_prefix(self) -> ::core::result::Result<#sort_value #tg, #path::EncodeError> {
                         let (#(#ids,)*) = self;
-                        let #context = ::tabulary::EncodeContext::new(::core::stringify!(#ident)); #format
-                        ::tabulary::__private::encode_key(&#output, &mut #context.at(::tabulary::PathSegment::Attribute(#name.into())), 1024)?;
-                        ::core::result::Result::Ok(::tabulary::key_component::KeyPrefix::from_components(#output))
+                        let #context = #path::EncodeContext::new(::core::stringify!(#ident)); #format
+                        #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), 1024)?;
+                        ::core::result::Result::Ok(#sort_value { value: #output, marker: ::core::marker::PhantomData })
                     }
                 }
             });
         }
     }
-    let prefix = (!implementations.is_empty()).then(|| quote! {
-        #vis fn sort_prefix<P: ::tabulary::key_component::PrefixParts<#ident>>(&self, parts: P) -> ::core::result::Result<::tabulary::key_component::KeyPrefix<#ident>, ::tabulary::EncodeError> { parts.format_prefix() }
+    let sort_carrier = (!implementations.is_empty()).then(|| {
+        let carrier = carrier(&sort_value);
+        quote! { #carrier #[doc(hidden)] #vis trait #prefix_parts #generics #wc {
+            fn format_prefix(self) -> ::core::result::Result<#sort_value #tg, #path::EncodeError>;
+        } }
     });
-    quote! { impl #primary { #partition #prefix } #(#implementations)* }
+    let prefix = (!implementations.is_empty()).then(|| quote! {
+        #vis fn sort_prefix<P: #prefix_parts #tg>(&self, parts: P) -> ::core::result::Result<#sort_value #tg, #path::EncodeError> { parts.format_prefix() }
+    });
+    quote! { #partition_carrier #sort_carrier impl #ig #primary #tg #wc { #partition #prefix } #(#implementations)* }
 }

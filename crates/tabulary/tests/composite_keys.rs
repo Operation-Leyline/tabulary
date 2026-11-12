@@ -157,7 +157,7 @@ fn query_prefixes_only_accept_complete_leading_components() {
     assert_eq!(partition.as_str(), "parcel!c3a921!00ff");
     assert_eq!(first.as_str(), "line!00000000000000000007!");
     assert_eq!(second.as_str(), "line!00000000000000000007!-2!");
-    assert_eq!(format!("{first:?}"), "KeyPrefix");
+    assert_eq!(format!("{first:?}"), "ParcelSortPrefix");
 }
 
 #[derive(Debug, PartialEq, tabulary::Record)]
@@ -270,4 +270,46 @@ fn mixed_field_and_template_keys_deduplicate_inputs_in_logical_order() {
         record.key().unwrap().encode_key().unwrap()
     );
     assert_eq!(Line::from_item(&record.to_item().unwrap()).unwrap(), record);
+}
+
+extern crate tabulary as storage;
+#[derive(storage::Record)]
+#[tabulary(
+    crate = "storage",
+    rename_all = "snake_case",
+    partition(name = "pk", template = "{id:hex}"),
+    sort(name = "sk", template = "{id:text}{number:dec20}!{token:hex}")
+)]
+struct Generic<T> {
+    id: T,
+    number: u64,
+    token: Vec<u8>,
+}
+
+#[test]
+fn renamed_generic_records_keep_key_sources_and_nested_validation() {
+    use tabulary::{DecodeContext, EncodeContext, Value};
+    let record = Generic {
+        id: "é".to_owned(),
+        number: 7,
+        token: vec![255],
+    };
+    let value = record
+        .encode_value(&mut EncodeContext::new("Envelope"))
+        .unwrap();
+    let decoded =
+        Generic::<String>::decode_value(&value, &mut DecodeContext::new("Envelope")).unwrap();
+    assert_eq!(decoded.to_item().unwrap(), record.to_item().unwrap());
+    let key = record.key().unwrap().clone();
+    assert_eq!(
+        key.encode_key().unwrap(),
+        GenericKey::<String>::decode_key(&record.to_item().unwrap())
+            .unwrap()
+            .encode_key()
+            .unwrap()
+    );
+    let prefix = Generic::<String>::primary()
+        .sort_prefix(("é".to_owned(), 7))
+        .unwrap();
+    assert_eq!(prefix.as_str(), "é00000000000000000007!");
 }
