@@ -5,8 +5,13 @@ use crate::{DynamoType, FieldAccess, IndexKind, IndexProjection, KeyDefinition, 
 use aws_sdk_dynamodb::primitives::Blob;
 
 const MAX: usize = 4 * 1024 * 1024;
-// 38 significant digits, minus, decimal point, E, exponent sign and 3 digits.
-pub(super) const MAX_NUMBER_KEY_BYTES: usize = 45;
+// Bound work on untrusted numeric text, not an endpoint's formatting choice.
+// Adjusted exponents are -130..=125 with at most 38 significant digits.
+// Negative positional worst cases: 1 + 126 = 127 bytes for a large integer;
+// 1 + 2 ("0.") + 129 zeroes + 38 digits = 170 for a small fraction.
+// Round up to 192 bytes, leaving 22 bytes of spelling margin. Both cursor
+// construction and the byte parser apply this cap before Decimal parsing.
+pub(super) const MAX_NUMBER_KEY_BYTES: usize = 192;
 const WIRES: &[DynamoType] = &[
     DynamoType::S,
     DynamoType::N,
