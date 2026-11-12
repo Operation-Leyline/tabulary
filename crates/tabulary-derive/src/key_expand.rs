@@ -292,14 +292,25 @@ pub fn helpers_for(
     };
     let partition_carrier = template(record, partition_key).map(|_| carrier(&partition_value));
     let partition = template(record, partition_key).map(|t| {
-        let args = components(&t.parts).map(|i| { let f = &record.fields[i]; let (id, ty) = (&f.ident, &f.ty); quote!(#id: #ty) });
+        let ids: Vec<_> = components(&t.parts).map(|i| &record.fields[i].ident).collect();
+        let args: Vec<_> = components(&t.parts).map(|i| { let f = &record.fields[i]; let (id, ty) = (&f.ident, &f.ty); quote!(#id: #ty) }).collect();
         let format = format(record, partition_key, &t.parts, false, &t.parts);
         let name = &record.fields[partition_key].name;
         let max = record.fields[partition_key].key_limit.unwrap();
-        quote! { #vis fn partition(&self, #(#args),*) -> ::core::result::Result<#partition_value #tg, #path::EncodeError> {
+        quote! {
+          #vis fn partition(&self, #(#args),*) -> #path::KeyCondition<#ident #tg, Self> {
+            let value = self.partition_value(#(#ids),*).map(|value| value.value);
+            #path::__private::partition::<#ident #tg, Self, ::std::string::String, #path::Native<::std::string::String>>(value)
+          }
+          #vis fn partition_value(&self, #(#args),*) -> ::core::result::Result<#partition_value #tg, #path::EncodeError> {
             let #context = #path::EncodeContext::new(::core::stringify!(#ident)); #format
             #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), #max)?;
             ::core::result::Result::Ok(#partition_value { value: #output, marker: ::core::marker::PhantomData })
+        } }
+    }).unwrap_or_else(|| {
+        let ty = &record.fields[partition_key].ty;
+        quote! { #vis fn partition(&self, value: #ty) -> #path::KeyCondition<#ident #tg, Self> where #ty: 'static {
+            #path::__private::partition::<#ident #tg, Self, #ty, #path::Native<#ty>>(::core::result::Result::Ok(value))
         } }
     });
     let mut implementations = Vec::new();
@@ -341,8 +352,16 @@ pub fn helpers_for(
     }
     let sort_carrier = (!implementations.is_empty()).then(|| {
         let carrier = carrier(&sort_value);
+        let codec = format_ident!("{}SortCodec", prefix);
+        let types = components(&template(record, sort_key.unwrap()).unwrap().parts).map(|i| &record.fields[i].ty);
         quote! { #carrier #[doc(hidden)] #vis trait #prefix_parts #generics #wc {
             fn format_prefix(self) -> ::core::result::Result<#sort_value #tg, #path::EncodeError>;
+        }
+        impl #ig #path::PrefixCodec<(#(#types,)*)> for #codec #tg #wc {
+            type Prefix = #sort_value #tg;
+            fn encode_prefix(value: &Self::Prefix, cx: &mut #path::EncodeContext) -> ::core::result::Result<#path::__private::AttributeValue, #path::EncodeError> {
+                #path::__private::encode_key(&value.value, cx, 1024)
+            }
         } }
     });
     let prefix = (!implementations.is_empty()).then(|| quote! {

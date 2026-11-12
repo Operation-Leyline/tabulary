@@ -263,14 +263,12 @@ pub fn record(record: &Record) -> TokenStream {
             .map(|i| crate::index_expand::definition(record, i));
         quote!(.with_indexes(&[#(#definitions),*]))
     });
-    let helpers = if record.templates.is_empty() {
-        quote!()
-    } else {
-        key_expand::helpers(record)
-    };
+    let helpers = key_expand::helpers(record);
+    let primary_schema = crate::query_expand::primary(record);
     quote! {
         #checks
         #peers
+        #primary_schema
         #helpers
         #index_peers
         impl #ig #attrs #tg #wc { #(#handles)* }

@@ -178,6 +178,13 @@ mod expansion_fixture {
     #[test]
     fn checked_expansion_compiles_and_round_trips() {
         let _ = (Order::primary(), OrderIndexes);
+        assert!(
+            Order::primary()
+                .partition("o".into())
+                .sort_eq(8)
+                .build()
+                .is_ok()
+        );
         let record = Order {
             order_ref: "order-lime".into(),
             line_no: 8,

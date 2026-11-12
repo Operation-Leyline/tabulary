@@ -1,6 +1,7 @@
 //! Reserved derive helpers; these carry no semver guarantee.
 use std::marker::PhantomData;
 
+pub use crate::key_condition::partition;
 pub use crate::record::{decode_key, encode_key};
 pub use crate::value::wrong_type;
 pub use crate::variants::disjoint;

@@ -140,7 +140,7 @@ fn text_reserves_the_first_separator_character_and_key_size_is_checked() {
 #[test]
 fn query_prefixes_only_accept_complete_leading_components() {
     let partition = Parcel::primary()
-        .partition("\u{e9}!".into(), [0, 255])
+        .partition_value("\u{e9}!".into(), [0, 255])
         .unwrap();
     let first = Parcel::primary().sort_prefix((7,)).unwrap();
     let second = Parcel::primary().sort_prefix((7, -2)).unwrap();
@@ -171,7 +171,7 @@ fn adjacent_fixed_and_variable_runs_and_shared_sources_round_trip() {
             cx: 7,
         };
         let item = record.to_item().unwrap();
-        let prefix = Runs::primary().partition(text.into(), [255]).unwrap();
+        let prefix = Runs::primary().partition_value(text.into(), [255]).unwrap();
         assert_eq!(prefix.as_str(), item["pk"].as_s().unwrap());
         assert_eq!(Runs::from_item(&item).unwrap(), record);
         key_round_trip(record.key().unwrap());
