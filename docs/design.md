@@ -438,6 +438,14 @@ Timestamp helpers offer checked
 and precision loss return errors.
 `TimeError::{Overflow, SubunitPrecision, BeforeEpoch}` identifies conversion
 faults; BeforeEpoch applies to unsigned TTL conversion, not signed timestamps.
+All four wrappers expose `get()` for their declared epoch count. Each timestamp
+offers `to_seconds`, `to_millis`, and `to_micros`, returning the named wrapper
+or `TimeError`. Conversions reject any remainder before checking count overflow;
+negative values are never rounded. TTL also offers `from_system_time` and
+`to_system_time`; a pre-epoch input returns `BeforeEpoch` before precision checks.
+SystemTime conversion checks the platform's representable range. Constructors
+accept the full underlying integer range; the native integer codecs own wire
+validation. None of these helpers reads the clock.
 
 ### 4.1 Custom converters and explicit defaults
 
