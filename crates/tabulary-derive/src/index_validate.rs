@@ -10,6 +10,7 @@ pub struct Index {
     pub ident: Ident,
     pub name: LitStr,
     pub local: bool,
+    pub sparse: bool,
     pub partition: usize,
     pub sort: Option<usize>,
     pub include: Option<Vec<String>>,
@@ -26,6 +27,7 @@ pub fn indexes(
             ident,
             name,
             local,
+            sparse,
             partition,
             sort,
             projection,
@@ -45,10 +47,20 @@ pub fn indexes(
                 "duplicate generated index handle",
             ));
         }
-        let partition = key(record, partition, fields, &ident, true)?;
+        let partition = key(record, partition, fields, &ident, true, sparse)?;
         let sort = sort
-            .map(|k| key(record, k, fields, &ident, false))
+            .map(|k| key(record, k, fields, &ident, false, sparse))
             .transpose()?;
+        if sparse
+            && !std::iter::once(partition).chain(sort).any(|key| {
+                crate::sparse_expand::inputs(record, key).any(|i| record.fields[i].optional)
+            })
+        {
+            return Err(syn::Error::new_spanned(
+                &ident,
+                "sparse index needs at least one optional input",
+            ));
+        }
         if Some(partition) == sort {
             return Err(syn::Error::new_spanned(
                 &ident,
@@ -98,11 +110,17 @@ pub fn indexes(
             ident,
             name,
             local,
+            sparse,
             partition,
             sort,
             include,
             all,
         });
+    }
+    for i in 0..record.fields.len() {
+        if key_expand::template(record, i).is_some() {
+            record.fields[i].optional = crate::sparse_expand::conditional(record, i);
+        }
     }
     Ok(())
 }
@@ -125,17 +143,17 @@ fn key(
     fields: &FieldsNamed,
     index: &Ident,
     partition: bool,
+    sparse: bool,
 ) -> syn::Result<usize> {
     let max = if partition { 2048 } else { 1024 };
     match key {
         Key::Field(ident) => {
             let i = field(record, &ident)?;
-            required(&record.fields[i])?;
+            required(&record.fields[i], sparse)?;
             Ok(i)
         }
         Key::Template(decl) => {
-            // Use the primary grammar on inner types, then diagnose the staged
-            // optional-index gate at the referenced source field.
+            // The primary grammar validates boundaries on the logical inner type.
             let mut inner = fields.clone();
             for field in &mut inner.named {
                 if let Some(ty) = crate::validate::optional(&field.ty) {
@@ -144,7 +162,7 @@ fn key(
             }
             let template = crate::template::parse(&decl.template, &inner)?;
             for i in key_expand::components(&template.parts) {
-                required(&record.fields[i])?;
+                required(&record.fields[i], sparse)?;
             }
             let name = decl.name.value();
             if name.is_empty() {
@@ -193,9 +211,9 @@ fn key(
         }
     }
 }
-fn required(field: &Field) -> syn::Result<()> {
-    let message = if field.optional {
-        "optional index inputs arrive with sparse indexes in milestone 17"
+fn required(field: &Field, sparse: bool) -> syn::Result<()> {
+    let message = if field.optional && !sparse {
+        "non-sparse index inputs must be required"
     } else if field.default.is_some() {
         "index key inputs cannot have defaults"
     } else {

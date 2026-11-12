@@ -13,6 +13,7 @@ pub struct Declaration {
     pub ident: Ident,
     pub name: LitStr,
     pub local: bool,
+    pub sparse: bool,
     pub partition: Key,
     pub sort: Option<Key>,
     pub projection: Projection,
@@ -21,11 +22,11 @@ pub struct Declaration {
 pub fn declaration(meta: &ParseNestedMeta<'_>) -> syn::Result<Declaration> {
     let (mut ident, mut name, mut kind, mut partition, mut sort, mut project) =
         (None, None, None, None, None, None);
+    let mut sparse = None;
     meta.parse_nested_meta(|m| {
         if m.path.is_ident("sparse") {
-            return Err(m.error("sparse indexes arrive with milestone 17"));
-        }
-        if m.path.is_ident("ident") {
+            put(&mut sparse, true, &m)
+        } else if m.path.is_ident("ident") {
             put(&mut ident, m.value()?.parse()?, &m)
         } else if m.path.is_ident("name") {
             put(&mut name, m.value()?.parse()?, &m)
@@ -78,6 +79,7 @@ pub fn declaration(meta: &ParseNestedMeta<'_>) -> syn::Result<Declaration> {
         ident: ident.ok_or_else(|| meta.error("index needs ident"))?,
         name: name.ok_or_else(|| meta.error("index needs name"))?,
         local: kind.ok_or_else(|| meta.error("index needs kind"))?,
+        sparse: sparse.unwrap_or(false),
         partition: partition.ok_or_else(|| meta.error("index needs partition"))?,
         sort,
         projection: project.ok_or_else(|| meta.error("index needs project"))?,

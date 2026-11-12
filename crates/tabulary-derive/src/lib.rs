@@ -12,6 +12,7 @@ mod parse;
 mod projection_expand;
 mod projection_parse;
 mod projection_source;
+mod sparse_expand;
 mod string_enum_expand;
 mod string_enum_parse;
 mod string_enum_validate;
