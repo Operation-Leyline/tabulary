@@ -252,11 +252,14 @@ Custom components implement `KeyComponentCodec<T>` with parse and format;
 the author declares reserved delimiters and tests round trips. They cannot
 silently replace the built-in grammar.
 
-Milestone 14 implements the built-in grammar and validation only. A validated
-primary `partition(name = ..., template = ...)` or `sort(...)` declaration
-reports that expansion requires milestone 15; it is never ignored. Formatting,
-inverse parsing, source/codec type bounds, and custom component integration
-belong to that later stage. Components name Rust fields (including unprefixed
+Milestone 14 implements the built-in grammar and validation; milestone 15 adds
+formatting, inverse parsing, and source/codec type bounds. The public
+`KeyComponentCodec<T>` trait exposes `format(&T) -> Result<String, KeyFormatFault>`
+and `parse(&str) -> Result<T, KeyFormatFault>`; built-in markers live in
+`key_component`. The template grammar still accepts only the four built-in
+codec names. Custom codec declaration syntax and delimiter metadata are not
+specified here and are deferred rather than inferred from an unknown name.
+Components name Rust fields (including unprefixed
 raw identifiers), not renamed wire attributes. Primary sources cannot be
 optional or have defaults. Nonempty literal-only templates are permitted.
 
@@ -284,6 +287,21 @@ Template helpers expose typed query prefixes only at complete component
 boundaries, for example `Parcel::primary().partition(shop, token)`.
 A composite sort key additionally generates `sort_prefix(parts...)` for proper
 leading components. There is no raw string key-condition escape hatch.
+
+For milestone 15, `primary().partition(component_a, component_b)` and
+`primary().sort_prefix((component_a,))` return a validated, record-owned
+`key_component::KeyPrefix<Record>` with explicit `as_str()` access and redacted
+Debug. Prefix arguments are tuples: generated `PrefixParts<Record>`
+implementations cover each nonempty proper leading tuple, so several prefix
+arities coexist without Rust method overloading. Prefixes include any literal
+after the last supplied component. Empty tuples, partial encoded strings,
+nonleading components, and the complete sort tuple have no generated implementation.
+The constructor and trait implementation hooks are reserved derive helpers,
+subject to the same honest-implementation boundary as other public traits.
+Key-condition construction itself belongs to milestone 23; these staged
+formatting helpers perform no query. Primary key constructor inputs follow
+partition components then sort components, retaining a shared source only once.
+Synthesized handles are `DerivedOnly`; their stored source handles are `KeyOnly`.
 
 ### 3.2 Index declarations, sparsity, and projections
 
