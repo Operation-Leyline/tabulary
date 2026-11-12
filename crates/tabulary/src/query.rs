@@ -112,11 +112,7 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
     }
     pub fn build(self) -> Result<PreparedQuery<R, I, P>, BuildError> {
         let keys = self.index.map_or(R::SCHEMA.primary, |index| index.keys);
-        if keys != I::KEYS
-            || self
-                .index
-                .is_some_and(|index| !R::SCHEMA.indexes.contains(&index))
-        {
+        if keys != I::KEYS {
             return Err(BuildError::IncompatibleIndex);
         }
         if self.consistency == ReadConsistency::Strong

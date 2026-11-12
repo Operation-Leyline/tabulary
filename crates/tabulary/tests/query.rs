@@ -172,19 +172,17 @@ fn index_consistency_projection_and_complete_cursor_keys_are_checked() {
         .select::<Label>()
         .build()
         .unwrap()
-        .decode(Ok(QueryOutput::builder()
-            .items([("label".into(), Av::S("ready".into()))].into())
-            .count(1)
-            .scanned_count(1)
-            .build()))
+        .decode(Ok(output(
+            vec![[("label".into(), Av::S("ready".into()))].into()],
+            1,
+            None,
+        )))
         .unwrap();
     assert_eq!(page.items[0].label, "ready");
     let mut complete = key();
     complete.insert("label".into(), Av::S("ready".into()));
     let page = prepared
-        .decode(Ok(QueryOutput::builder()
-            .set_last_evaluated_key(Some(complete.clone()))
-            .build()))
+        .decode(Ok(output(vec![], 0, Some(complete.clone()))))
         .unwrap();
     assert_eq!(
         make(Eventual)
@@ -318,9 +316,7 @@ fn apply_copies_all_modeled_fields_and_never_uses_transport_or_follows_a_page() 
     assert!(!format!("{prepared:?}").contains("private-order"));
     assert!(
         prepared
-            .decode(Ok(QueryOutput::builder()
-                .set_last_evaluated_key(Some(key()))
-                .build()))
+            .decode(Ok(output(vec![], 0, Some(key()))))
             .unwrap()
             .next
             .is_some()
