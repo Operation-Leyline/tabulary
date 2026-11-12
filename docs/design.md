@@ -525,6 +525,8 @@ Nonzero magnitude must be between `1e-130` and
 `9.9999999999999999999999999999999999999e125`, inclusive.
 `Decimal::from_str` returns `DecodeFault::InvalidNumber` for malformed syntax
 and `DecodeFault::NumberRange` for precision or service-domain violations.
+`DecodeFault` implements `Display` and `std::error::Error`, so parsing supports
+`?` with boxed errors. Its display contains fault metadata, never the input.
 Integer decoding validates this domain first, then returns `InexactNumber`
 for a fractional value or `NumberRange` for a value outside the Rust type's
 range; it never truncates or rounds. Native integer encoding validates this

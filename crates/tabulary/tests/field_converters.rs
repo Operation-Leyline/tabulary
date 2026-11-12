@@ -99,9 +99,9 @@ fn invoice() -> Invoice {
     }
 }
 #[test]
-fn strict_decode_projection_defaults_and_optional_presence_use_the_converter() {
+fn records_and_projections_round_trip_the_selected_string_representation() {
     let record = invoice();
-    let mut item = record.to_item().unwrap();
+    let item = record.to_item().unwrap();
     assert_eq!(item["total"], Av::S(u128::MAX.to_string()));
     assert_eq!(Invoice::from_item(&item).unwrap().amount, record.amount);
     assert_eq!(Total::from_item(&item).unwrap().value, u128::MAX);
@@ -109,6 +109,9 @@ fn strict_decode_projection_defaults_and_optional_presence_use_the_converter() {
         InvoiceAttrs::TOTAL.descriptor().wire,
         tabulary::DynamoType::S
     );
+}
+#[test]
+fn projections_inherit_defaults_and_optional_absence() {
     assert_eq!(
         AmountView::from_item(&Item::new()).unwrap(),
         AmountView {
@@ -116,7 +119,9 @@ fn strict_decode_projection_defaults_and_optional_presence_use_the_converter() {
             optional: None
         }
     );
-    for (wire, fault) in [
+}
+fn invalid_values() -> [(Av, DecodeFault); 3] {
+    [
         (
             Av::S("01".into()),
             DecodeFault::Custom {
@@ -137,20 +142,35 @@ fn strict_decode_projection_defaults_and_optional_presence_use_the_converter() {
                 actual: tabulary::DynamoType::Null,
             },
         ),
-    ] {
-        item.insert("total".into(), wire.clone());
+    ]
+}
+#[test]
+fn converted_record_decode_rejects_corruption_at_the_field_path() {
+    let mut item = invoice().to_item().unwrap();
+    for (wire, fault) in invalid_values() {
+        item.insert("total".into(), wire);
         let error = Invoice::from_item(&item).err().unwrap();
         assert_eq!(
             (error.record, error.document, error.path.to_string()),
             ("Invoice", "Invoice", "[\"total\"]".into())
         );
         assert_eq!(error.kind, fault);
+    }
+}
+#[test]
+fn converted_projection_decode_rejects_native_shaped_and_malformed_values() {
+    for (wire, fault) in invalid_values() {
+        let item = [("total".into(), wire.clone())].into();
         assert_eq!(Total::from_item(&item).unwrap_err().kind, fault);
         for name in ["total", "optional"] {
             let map = [(name.into(), wire.clone())].into();
             assert_eq!(AmountView::from_item(&map).unwrap_err().kind, fault);
         }
     }
+}
+#[test]
+fn missing_converted_required_fields_remain_missing() {
+    let mut item = invoice().to_item().unwrap();
     item.remove("total");
     assert_eq!(
         Invoice::from_item(&item).err().unwrap().kind,
@@ -159,6 +179,16 @@ fn strict_decode_projection_defaults_and_optional_presence_use_the_converter() {
     assert_eq!(
         Total::from_item(&item).unwrap_err().kind,
         DecodeFault::Missing
+    );
+}
+#[test]
+fn optional_converted_values_round_trip_present_and_absent() {
+    assert_eq!(
+        Invoice::from_item(&invoice().to_item().unwrap())
+            .unwrap()
+            .amount
+            .optional,
+        None
     );
     let mut record = invoice();
     record.amount.optional = Some(u128::MAX);
@@ -169,7 +199,7 @@ fn strict_decode_projection_defaults_and_optional_presence_use_the_converter() {
     );
 }
 #[test]
-fn converter_faults_keep_the_nested_physical_path_on_both_directions() {
+fn converter_encode_fault_keeps_the_nested_physical_path() {
     let mut record = invoice();
     record.amount.code = Code(13);
     let error = record.to_item().unwrap_err();
@@ -183,6 +213,9 @@ fn converter_faults_keep_the_nested_physical_path_on_both_directions() {
         (error.record, error.document, error.path.to_string()),
         ("Invoice", "Amount", "[\"amount\"][\"code\"]".into())
     );
+}
+#[test]
+fn converter_decode_fault_keeps_the_nested_physical_path() {
     let mut item = invoice().to_item().unwrap();
     let Av::M(amount) = item.get_mut("amount").unwrap() else {
         panic!("map")
@@ -201,9 +234,12 @@ fn converter_faults_keep_the_nested_physical_path_on_both_directions() {
     );
 }
 #[test]
-fn conditions_updates_and_nested_handles_encode_the_same_representation_as_put() {
+fn equality_condition_uses_the_same_converter_as_put() {
     let condition = InvoiceAttrs::TOTAL.eq(u128::MAX).build().unwrap().render();
     assert_eq!(condition.values()[":v0"], Av::S(u128::MAX.to_string()));
+}
+#[test]
+fn updates_and_nested_handles_retain_the_selected_converter() {
     let update = Update::new()
         .and(InvoiceAttrs::TOTAL.set(u128::MAX))
         .and(
@@ -231,13 +267,31 @@ fn conditions_updates_and_nested_handles_encode_the_same_representation_as_put()
             .values()
             .any(|v| v == &Av::S(format!("{:020}", 8)))
     );
-    // The selected wire explicitly opts into ordering and prefix predicates.
-    assert!(KeyedAttrs::<Code>::CODE.lt(Code(8)).build().is_ok());
-    assert!(
-        KeyedAttrs::<Code>::CODE
-            .begins_with(Code(8))
-            .build()
-            .is_ok()
+}
+#[test]
+fn ordered_condition_encodes_the_exact_converted_string_operand() {
+    let rendered = KeyedAttrs::<Code>::CODE
+        .lt(Code(8))
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(rendered.condition(), Some("#n0 < :v0"));
+    assert_eq!(
+        rendered.values()[":v0"],
+        Av::S("00000000000000000008".into())
+    );
+}
+#[test]
+fn prefix_condition_encodes_the_exact_converted_string_operand() {
+    let rendered = KeyedAttrs::<Code>::CODE
+        .begins_with(Code(8))
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(rendered.condition(), Some("begins_with(#n0, :v0)"));
+    assert_eq!(
+        rendered.values()[":v0"],
+        Av::S("00000000000000000008".into())
     );
 }
 #[derive(tabulary::Record)]
@@ -259,12 +313,15 @@ struct KeyView {
     id: u128,
 }
 #[test]
-fn primary_index_and_reindex_paths_use_converters_and_validate_physical_keys() {
+fn converted_primary_keys_round_trip_and_project() {
     let key = KeyedKey::<Code>::new(u128::MAX, "row".into()).unwrap();
     let map = key.encode_key().unwrap();
     assert_eq!(map["id"], Av::S(u128::MAX.to_string()));
     assert_eq!(KeyedKey::<Code>::decode_key(&map).unwrap().id, u128::MAX);
     assert_eq!(KeyView::from_item(&map).unwrap().id, u128::MAX);
+}
+#[test]
+fn converted_sparse_index_source_round_trips_when_present() {
     let record = Keyed {
         id: u128::MAX,
         sort: "row".into(),
@@ -277,6 +334,9 @@ fn primary_index_and_reindex_paths_use_converters_and_validate_physical_keys() {
             .code,
         Some(Code(7))
     );
+}
+#[test]
+fn primary_query_uses_the_key_converter() {
     let primary = Keyed::<Code>::primary()
         .partition(u128::MAX)
         .sort_eq("row".into())
@@ -284,6 +344,9 @@ fn primary_index_and_reindex_paths_use_converters_and_validate_physical_keys() {
         .unwrap()
         .render();
     assert_eq!(primary.values()[":v0"], Av::S(u128::MAX.to_string()));
+}
+#[test]
+fn index_query_uses_both_key_converters() {
     let index = KeyedIndexes::<Code>::BY_CODE
         .partition(Code(7))
         .sort_eq(u128::MAX)
@@ -292,6 +355,10 @@ fn primary_index_and_reindex_paths_use_converters_and_validate_physical_keys() {
         .render();
     assert_eq!(index.values()[":v0"], Av::S(format!("{:020}", 7)));
     assert_eq!(index.values()[":v1"], Av::S(u128::MAX.to_string()));
+}
+#[test]
+fn reindex_encodes_a_present_converted_source() {
+    let key = KeyedKey::<Code>::new(u128::MAX, "row".into()).unwrap();
     let changes = Update::new().reindex(
         KeyedIndexes::<Code>::BY_CODE,
         KeyedByCodeInputs::<Code>::new(Some(Code(8)), u128::MAX),
@@ -309,6 +376,9 @@ fn primary_index_and_reindex_paths_use_converters_and_validate_physical_keys() {
             .values()
             .any(|v| v == &Av::S(format!("{:020}", 8)))
     );
+}
+#[test]
+fn converted_keys_still_validate_physical_empty_and_oversized_values() {
     for sort in [String::new(), "x".repeat(1025)] {
         assert!(KeyedKey::<Code>::new(1, sort.clone()).is_err());
         let map = [
@@ -319,6 +389,65 @@ fn primary_index_and_reindex_paths_use_converters_and_validate_physical_keys() {
         assert!(KeyedKey::<Code>::decode_key(&map).is_err());
     }
 }
+#[test]
+fn converted_key_decode_refuses_native_numbers_at_the_physical_key_path() {
+    let item = [
+        ("id".into(), Av::N("7".into())),
+        ("sort".into(), Av::S("row".into())),
+    ]
+    .into();
+    let error = KeyedKey::<Code>::decode_key(&item).err().unwrap();
+    assert_eq!(
+        error.kind,
+        DecodeFault::WrongType {
+            expected: tabulary::DynamoType::S,
+            actual: tabulary::DynamoType::N
+        }
+    );
+    assert_eq!(error.record, "Keyed");
+    assert_eq!(error.path.to_string(), "[\"id\"]");
+}
+#[test]
+fn absent_converted_sparse_source_omits_the_index_attribute() {
+    let record = Keyed::<Code> {
+        id: 7,
+        sort: "row".into(),
+        code: None,
+        total: u128::MAX,
+    };
+    let item = record.to_item().unwrap();
+    assert!(!item.contains_key("code"));
+    assert_eq!(Keyed::<Code>::from_item(&item).unwrap().code, None);
+}
+#[test]
+fn reindex_removes_an_absent_converted_source_without_encoding_it() {
+    let changes = Update::new().reindex(
+        KeyedIndexes::<Code>::BY_CODE,
+        KeyedByCodeInputs::<Code>::new(None, u128::MAX),
+    );
+    let request = tabulary::Table::<Keyed<Code>>::new("invoices")
+        .unwrap()
+        .update(KeyedKey::<Code>::new(7, "row".into()).unwrap())
+        .changes(changes)
+        .build()
+        .unwrap();
+    let expressions = request.expressions();
+    assert_eq!(expressions.values().len(), 1);
+    assert_eq!(expressions.values()[":v0"], Av::S(u128::MAX.to_string()));
+    let alias = expressions
+        .names()
+        .iter()
+        .find(|(_, name)| name.as_str() == "code")
+        .unwrap()
+        .0;
+    assert!(
+        expressions
+            .update()
+            .unwrap()
+            .ends_with(&format!("REMOVE {alias}"))
+    );
+}
+
 #[derive(tabulary::Record)]
 #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "invoice!{source:dec}"),
     index(ident = BySource, name = "by_source", kind = global, partition(name = "gpk", template = "source!{source:dec}"), sort = code, project = all))]
@@ -329,7 +458,7 @@ struct Composite {
     code: Code,
 }
 #[test]
-fn template_sources_and_custom_key_capabilities_remain_logical() {
+fn template_sources_store_the_field_converter_and_check_logical_agreement() {
     let record = Composite {
         source: 7,
         code: Code(8),
@@ -343,6 +472,9 @@ fn template_sources_and_custom_key_capabilities_remain_logical() {
         Composite::from_item(&item).err().unwrap().kind,
         DecodeFault::KeyMismatch
     );
+}
+#[test]
+fn custom_key_ordering_and_prefix_encode_the_converted_operands() {
     let ordered = CompositeIndexes::BY_SOURCE
         .partition(7)
         .sort_lt(Code(9))
@@ -350,13 +482,16 @@ fn template_sources_and_custom_key_capabilities_remain_logical() {
         .unwrap()
         .render();
     assert_eq!(ordered.values()[":v1"], Av::S(format!("{:020}", 9)));
-    assert!(
-        CompositeIndexes::BY_SOURCE
-            .partition(7)
-            .sort_begins_with(Code(9))
-            .build()
-            .is_ok()
-    );
+    let prefix = CompositeIndexes::BY_SOURCE
+        .partition(7)
+        .sort_begins_with(Code(9))
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(prefix.values()[":v1"], Av::S("00000000000000000009".into()));
+}
+#[test]
+fn composite_reindex_keeps_the_source_converter() {
     let changes = Update::new().reindex(
         CompositeIndexes::BY_SOURCE,
         CompositeBySourceInputs::new(7, Code(9)),
@@ -402,7 +537,7 @@ struct Shipment {
     stage: Stage,
 }
 #[test]
-fn flattened_shared_payloads_preserve_their_converter_in_records_and_documents() {
+fn flattened_document_shared_payloads_use_their_converter() {
     let status = Status {
         stage: Stage::Sent { total: u128::MAX },
     };
@@ -416,12 +551,24 @@ fn flattened_shared_payloads_preserve_their_converter_in_records_and_documents()
             .stage,
         status.stage
     );
+}
+#[test]
+fn flattened_record_shared_payloads_use_their_converter() {
     let record = Shipment {
         id: "shipment".into(),
-        stage: status.stage,
+        stage: Stage::Sent { total: u128::MAX },
+    };
+    let item = record.to_item().unwrap();
+    assert_eq!(item["total"], Av::S(u128::MAX.to_string()));
+    assert_eq!(Shipment::from_item(&item).unwrap().stage, record.stage);
+}
+#[test]
+fn flattened_record_corruption_reports_the_payload_path() {
+    let record = Shipment {
+        id: "shipment".into(),
+        stage: Stage::Sent { total: u128::MAX },
     };
     let mut item = record.to_item().unwrap();
-    assert_eq!(Shipment::from_item(&item).unwrap().stage, record.stage);
     item.insert("total".into(), Av::S("01".into()));
     let error = Shipment::from_item(&item).err().unwrap();
     assert_eq!(error.path.to_string(), "[\"total\"]");

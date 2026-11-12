@@ -29,7 +29,7 @@ error: duplicate with option
    |                                                       ^^^^
 
 error[E0080]: evaluation panicked: primary keys require S, N or B codecs
-  --> tests/ui/converters/declarations.rs:33:48
+  --> tests/ui/converters/declarations.rs:40:48
    |
-33 |     #[tabulary(partition_key, with = boolean)] id: bool,
+40 |     #[tabulary(partition_key, with = boolean)] id: String,
    |                                                ^^ evaluation of `_` failed here
