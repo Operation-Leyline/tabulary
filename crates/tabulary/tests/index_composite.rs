@@ -43,7 +43,9 @@ fn index_templates_reuse_primary_formatting_and_inverse_checks() {
             .collect::<Vec<_>>(),
         ["line_no", "created", "pk", "gpk", "gsk"]
     );
-    let partition = ParcelIndexes::BY_COURIER.partition("é".into()).unwrap();
+    let partition = ParcelIndexes::BY_COURIER
+        .partition_value("é".into())
+        .unwrap();
     assert_eq!(partition.as_str(), "courier!c3a9");
     assert_eq!(
         ParcelIndexes::BY_COURIER
@@ -124,7 +126,7 @@ fn generic_fixed_width_and_text_components_preserve_types_and_boundaries() {
     assert_eq!(Generic::<[u8; 2]>::from_item(&item).unwrap(), record);
     assert_eq!(
         StoredIndexes::<[u8; 2]>::BY_VALUE
-            .partition([0, 255])
+            .partition_value([0, 255])
             .unwrap()
             .as_str(),
         "00ff"
@@ -171,9 +173,13 @@ fn shared_partition_and_sort_keys_use_the_stricter_limit_in_every_formatter() {
         record.to_item().unwrap_err().kind,
         tabulary::EncodeFault::KeySize { max: 1024, .. }
     ));
-    let result = SharedIndexes::FIRST.partition(value);
+    let result = SharedIndexes::FIRST.partition_value(value);
     assert!(
         matches!(result, Err(e) if matches!(e.kind, tabulary::EncodeFault::KeySize { max: 1024, .. }))
     );
-    assert!(SharedIndexes::FIRST.partition("x".repeat(1024)).is_ok());
+    assert!(
+        SharedIndexes::FIRST
+            .partition_value("x".repeat(1024))
+            .is_ok()
+    );
 }

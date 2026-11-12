@@ -1,0 +1,89 @@
+error[E0308]: mismatched types
+  --> tests/ui/key_condition/prefix.rs:12:61
+   |
+12 |     Order::primary().partition("o".into()).sort_begins_with("000".to_owned());
+   |                                            ---------------- ^^^^^^^^^^^^^^^^ expected `OrderSortPrefix`, found `String`
+   |                                            |
+   |                                            arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/key_condition.rs
+   |
+   |     pub fn sort_begins_with(self, value: C::Prefix) -> KeyCondition<R, I, SortComplete>
+   |            ^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/key_condition/prefix.rs:13:61
+   |
+13 |     Order::primary().partition("o".into()).sort_begins_with((7,));
+   |                                            ---------------- ^^^^ expected `OrderSortPrefix`, found `({integer},)`
+   |                                            |
+   |                                            arguments to this method are incorrect
+   |
+   = note: expected struct `OrderSortPrefix`
+               found tuple `({integer},)`
+note: method defined here
+  --> src/key_condition.rs
+   |
+   |     pub fn sort_begins_with(self, value: C::Prefix) -> KeyCondition<R, I, SortComplete>
+   |            ^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `(): OrderPrefixParts` is not satisfied
+  --> tests/ui/key_condition/prefix.rs:14:34
+   |
+14 |     Order::primary().sort_prefix(());
+   |                      ----------- ^^ the trait `OrderPrefixParts` is not implemented for `()`
+   |                      |
+   |                      required by a bound introduced by this call
+   |
+help: the trait `OrderPrefixParts` is implemented for `(u64,)`
+  --> tests/ui/key_condition/prefix.rs:1:10
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ^^^^^^^^^^^^^^^^
+note: required by a bound in `OrderPrimary::sort_prefix`
+  --> tests/ui/key_condition/prefix.rs:5:8
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ---------------- required by a bound in this associated function
+...
+ 5 | struct Order {
+   |        ^^^^^ required by this bound in `OrderPrimary::sort_prefix`
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `({integer}, std::string::String): OrderPrefixParts` is not satisfied
+  --> tests/ui/key_condition/prefix.rs:15:34
+   |
+15 |     Order::primary().sort_prefix((7, "x".to_owned()));
+   |                      ----------- ^^^^^^^^^^^^^^^^^^^ the trait `OrderPrefixParts` is not implemented for `({integer}, std::string::String)`
+   |                      |
+   |                      required by a bound introduced by this call
+   |
+help: the trait `OrderPrefixParts` is implemented for `(u64,)`
+  --> tests/ui/key_condition/prefix.rs:1:10
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ^^^^^^^^^^^^^^^^
+note: required by a bound in `OrderPrimary::sort_prefix`
+  --> tests/ui/key_condition/prefix.rs:5:8
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ---------------- required by a bound in this associated function
+...
+ 5 | struct Order {
+   |        ^^^^^ required by this bound in `OrderPrimary::sort_prefix`
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/key_condition/prefix.rs:17:61
+   |
+17 |     Order::primary().partition("o".into()).sort_begins_with(prefix);
+   |                                            ---------------- ^^^^^^ expected `OrderSortPrefix`, found `OrderByLabelSortPrefix`
+   |                                            |
+   |                                            arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/key_condition.rs
+   |
+   |     pub fn sort_begins_with(self, value: C::Prefix) -> KeyCondition<R, I, SortComplete>
+   |            ^^^^^^^^^^^^^^^^

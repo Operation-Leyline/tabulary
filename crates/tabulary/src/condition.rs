@@ -163,7 +163,7 @@ impl<R> fmt::Debug for Condition<R> {
     }
 }
 impl<R> Condition<R> {
-    fn new(build: impl FnOnce() -> Result<ConditionNode, BuildError> + 'static) -> Self {
+    pub(crate) fn new(build: impl FnOnce() -> Result<ConditionNode, BuildError> + 'static) -> Self {
         Self {
             build: Box::new(build),
             owner: PhantomData,

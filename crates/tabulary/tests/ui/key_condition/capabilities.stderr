@@ -1,0 +1,90 @@
+error[E0277]: the trait bound `Codec: PrefixCodec<u128>` is not satisfied
+  --> tests/ui/key_condition/capabilities.rs:13:11
+   |
+13 |     value.sort_begins_with(1);
+   |           ^^^^^^^^^^^^^^^^ the trait `PrefixCodec<u128>` is not implemented for `Codec`
+   |
+help: the trait `PrefixCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | / impl<T: Value> PrefixCodec<T> for Native<T>
+   | | where
+   | |     T::Wire: Prefix,
+   | |____________________^
+
+error[E0277]: the trait bound `Wire: tabulary::condition::Prefix` is not satisfied
+  --> tests/ui/key_condition/capabilities.rs:13:11
+   |
+13 |     value.sort_begins_with(1);
+   |           ^^^^^^^^^^^^^^^^ the trait `tabulary::condition::Prefix` is not implemented for `Wire`
+   |
+help: the following other types implement trait `tabulary::condition::Prefix`
+  --> src/condition.rs
+   |
+   |     ($cap:ident: $($wire:ident),+) => {$(impl $cap for wire::$wire {})+};
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                                          |
+   |                                          `tabulary::wire::Binary`
+   |                                          `tabulary::wire::String`
+...
+   | capabilities!(Prefix: String, Binary);
+   | ------------------------------------- in this macro invocation
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_begins_with`
+  --> src/key_condition.rs
+   |
+   |     pub fn sort_begins_with(self, value: C::Prefix) -> KeyCondition<R, I, SortComplete>
+   |            ---------------- required by a bound in this associated function
+...
+   |         C::Wire: Prefix,
+   |                  ^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_begins_with`
+   = note: this error originates in the macro `capabilities` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Number: tabulary::condition::Prefix` is not satisfied
+  --> tests/ui/key_condition/capabilities.rs:16:44
+   |
+16 |     Order::primary().partition("o".into()).sort_begins_with(1);
+   |                                            ^^^^^^^^^^^^^^^^ the trait `tabulary::condition::Prefix` is not implemented for `Number`
+   |
+help: the following other types implement trait `tabulary::condition::Prefix`
+  --> src/condition.rs
+   |
+   |     ($cap:ident: $($wire:ident),+) => {$(impl $cap for wire::$wire {})+};
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                                          |
+   |                                          `tabulary::wire::Binary`
+   |                                          `tabulary::wire::String`
+...
+   | capabilities!(Prefix: String, Binary);
+   | ------------------------------------- in this macro invocation
+   = note: required for `Native<u64>` to implement `PrefixCodec<u64>`
+   = note: this error originates in the macro `capabilities` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `sort_eq` found for struct `KeyCondition<Order, OrderByHash, NoSort>` in the current scope
+  --> tests/ui/key_condition/capabilities.rs:17:49
+   |
+17 |     OrderIndexes::BY_HASH.partition("o".into()).sort_eq(1);
+   |                                                 ^^^^^^^ method not found in `KeyCondition<Order, OrderByHash, NoSort>`
+   |
+   = note: the method was found for `KeyCondition<R, I, SortKey<T, C>>`
+
+error[E0308]: mismatched types
+  --> tests/ui/key_condition/capabilities.rs:18:57
+   |
+18 |     let _: tabulary::KeyCondition<Order, OrderByHash> = Order::primary().partition("o".into());
+   |            ------------------------------------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `KeyCondition<Order, OrderByHash, NoSort>`, found `KeyCondition<Order, OrderPrimary, ...>`
+   |            |
+   |            expected due to this
+   |
+   = note: expected struct `KeyCondition<Order, OrderByHash, NoSort>`
+              found struct `KeyCondition<Order, OrderPrimary, SortKey<u64>>`
+
+error[E0308]: mismatched types
+  --> tests/ui/key_condition/capabilities.rs:19:62
+   |
+19 |     let _: tabulary::BuiltKeyCondition<Order, OrderByHash> = Order::primary().partition("o".into()).build().unwrap();
+   |            -----------------------------------------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `BuiltKeyCondition<Order, OrderByHash>`, found `BuiltKeyCondition<Order, OrderPrimary>`
+   |            |
+   |            expected due to this
+   |
+   = note: expected struct `BuiltKeyCondition<Order, OrderByHash>`
+              found struct `BuiltKeyCondition<Order, OrderPrimary>`

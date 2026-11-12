@@ -78,6 +78,12 @@ pub fn expand(record: &Record) -> TokenStream {
                 type Sort = #sort;
                 const DEFINITION: #path::IndexDefinition = #definition;
             }
+            impl #ig #path::KeySchema<#owner #tg> for #peer #tg #wc {
+                type Partition = <Self as #path::IndexSchema<#owner #tg>>::Partition;
+                type PartitionCodec = <Self as #path::IndexSchema<#owner #tg>>::PartitionCodec;
+                type Sort = <Self as #path::IndexSchema<#owner #tg>>::Sort;
+                const KEYS: #path::KeyDefinition = <Self as #path::IndexSchema<#owner #tg>>::DEFINITION.keys;
+            }
             #(#codecs)* #helpers
         });
     }

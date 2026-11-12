@@ -310,6 +310,15 @@ formatting helpers perform no query. Primary key constructor inputs follow
 partition components then sort components, retaining a shared source only once.
 Synthesized handles are `DerivedOnly`; their stored source handles are `KeyOnly`.
 
+Milestone 23 promotes `partition(...)` on primary and index peers to an owned
+`KeyCondition`; the previous composite formatting helper is named
+`partition_value(...)` and retains its private typed carrier and `as_str()`.
+Composite query entry points call this helper and retain any formatting error
+until `build()`, matching field-keyed entry points. `sort_prefix` still returns
+its typed carrier immediately; `sort_begins_with` accepts that carrier only,
+never a raw string or a full component tuple. Other composite sort predicates
+accept the complete logical tuple and use the existing template codec.
+
 ### 3.2 Index declarations, sparsity, and projections
 
 ```rust,ignore
@@ -924,6 +933,22 @@ keys. Hash-only schemas expose no sort operators. The type state prevents
 omitting partition equality, adding a second sort predicate, OR, or using a
 non-key attribute. Each index exposes its own distinct key-condition type.
 
+`KeySchema<R>` is the common query-facing contract with logical `Partition`,
+`PartitionCodec`, `Sort`, and physical `KEYS`; primary peers additionally implement
+`PrimarySchema<R>`, which inherits this contract. Index peers retain their
+`IndexSchema<R>` metadata and implement `KeySchema<R>` using the same types and
+physical positions. The metadata-only `Record` trait remains unchanged.
+`KeyCondition<R, I>` defaults its sort state to the schema's `Sort`; every sort
+operator consumes that slot and returns the `SortComplete` state. `build()`
+returns `BuiltKeyCondition<R, I>` with inspectable `root()` and `render()`;
+rendering populates only `key_condition()` through the ordinary condition
+renderer and request-local aliases. Both unbuilt and built Debug omit values.
+Key constants validate the physical descriptor, codec wire type, scalar domain,
+and partition/sort byte limit before rendering. Native string/binary codecs
+implement `PrefixCodec<T>`; custom codecs must opt in and also declare the
+`condition::Prefix` wire capability. Composite codecs implement it with their
+generated complete-boundary prefix carrier as the associated `Prefix` input.
+
 Query builders accept `filter(Condition<R>)`, `limit(NonZeroU32)`,
 `order(QueryOrder::Ascending | Descending)`, `select::<P>()`, and
 `resume(Cursor<R, I>)`. Key fields are rejected in query filters; express
@@ -1373,8 +1398,8 @@ map-wire `Value` implementations for both derives. `Document` emits only its
 `<Name>Attrs` peer and codecs; it rejects key annotations. Both derives share
 naming, explicit defaults, and unknown-field rules. Record item methods delegate
 to its document codec, retaining key validation when embedded as an `M`.
-The metadata-only `Record` trait remains unchanged; query-facing primary
-interfaces belong to milestone 23. Primary/index peers remain markers.
+The metadata-only `Record` trait remains unchanged. Milestone 23 adds the
+query-facing primary and index interfaces described in §9.1.
 
 Generic peers retain type and const parameters and caller predicates. Generated
 implementations require field codecs and owned key cloning, without requiring
@@ -1410,16 +1435,17 @@ struct OrderIndexes;
 #[derive(Clone, Copy)]
 struct OrderPrimary;
 
-impl tabulary::PrimarySchema<Order> for OrderPrimary {
+impl tabulary::KeySchema<Order> for OrderPrimary {
     type Partition = String;
     type PartitionCodec = tabulary::Native<String>;
     type Sort = tabulary::SortKey<u64>;
-    const DEFINITION: tabulary::KeyDefinition = tabulary::__private::keys(0, Some(1));
+    const KEYS: tabulary::KeyDefinition = tabulary::__private::keys(0, Some(1));
 }
+impl tabulary::PrimarySchema<Order> for OrderPrimary {}
 
 impl OrderPrimary {
     fn partition(self, order_ref: String) -> tabulary::KeyCondition<Order, Self> {
-        tabulary::__private::partition(self, order_ref)
+        tabulary::__private::partition::<Order, Self, _, tabulary::Native<String>>(Ok(order_ref))
     }
 }
 

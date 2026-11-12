@@ -1,0 +1,70 @@
+error[E0599]: no method named `build` found for struct `OrderPrimary` in the current scope
+  --> tests/ui/key_condition/grammar.rs:11:22
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ---------------- method `build` not found for this struct
+...
+11 |     Order::primary().build();
+   |                      ^^^^^ method not found in `OrderPrimary`
+
+error[E0599]: no method named `sort_eq` found for struct `OrderPrimary` in the current scope
+  --> tests/ui/key_condition/grammar.rs:12:22
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ---------------- method `sort_eq` not found for this struct
+...
+12 |     Order::primary().sort_eq(1);
+   |                      ^^^^^^^ method not found in `OrderPrimary`
+
+error[E0599]: no method named `sort_lt` found for struct `KeyCondition<Order, OrderPrimary, SortComplete>` in the current scope
+  --> tests/ui/key_condition/grammar.rs:13:55
+   |
+13 |     Order::primary().partition("o".into()).sort_eq(1).sort_lt(2);
+   |                                                       ^^^^^^^ method not found in `KeyCondition<Order, OrderPrimary, SortComplete>`
+   |
+   = note: the method was found for `KeyCondition<R, I, SortKey<T, C>>`
+
+error[E0599]: no method named `or` found for struct `KeyCondition<R, I, S>` in the current scope
+  --> tests/ui/key_condition/grammar.rs:14:44
+   |
+14 |     Order::primary().partition("o".into()).or(OrderAttrs::LABEL.eq("x".into()));
+   |                                            ^^ method not found in `KeyCondition<Order, OrderPrimary, SortKey<u64>>`
+
+error[E0599]: no method named `and` found for struct `KeyCondition<R, I, S>` in the current scope
+  --> tests/ui/key_condition/grammar.rs:15:44
+   |
+15 |     Order::primary().partition("o".into()).and(OrderAttrs::LABEL.eq("x".into()));
+   |                                            ^^^ method not found in `KeyCondition<Order, OrderPrimary, SortKey<u64>>`
+
+error[E0308]: mismatched types
+  --> tests/ui/key_condition/grammar.rs:16:32
+   |
+16 |     Order::primary().partition(OrderAttrs::LABEL);
+   |                      --------- ^^^^^^^^^^^^^^^^^ expected `String`, found `Attr<Order, String>`
+   |                      |
+   |                      arguments to this method are incorrect
+   |
+   = note: expected struct `std::string::String`
+              found struct `Attr<Order, std::string::String>`
+note: method defined here
+  --> tests/ui/key_condition/grammar.rs:1:10
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ^^^^^^^^^^^^^^^^
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/key_condition/grammar.rs:17:52
+   |
+17 |     Order::primary().partition("o".into()).sort_eq(OrderAttrs::LABEL);
+   |                                            ------- ^^^^^^^^^^^^^^^^^ expected `u64`, found `Attr<Order, String>`
+   |                                            |
+   |                                            arguments to this method are incorrect
+   |
+   = note: expected type `u64`
+            found struct `Attr<Order, std::string::String>`
+note: method defined here
+  --> src/key_condition.rs
+   |
+   |     pub fn sort_eq(self, value: T) -> KeyCondition<R, I, SortComplete> {
+   |            ^^^^^^^
