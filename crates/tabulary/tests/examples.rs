@@ -16,6 +16,7 @@ use aws_smithy_runtime_api::client::{
     orchestrator::{HttpRequest, HttpResponse},
 };
 use aws_smithy_types::body::SdkBody;
+use serde_json::{Value as Json, json};
 use tabulary::{FailureKind, OldItem};
 
 #[path = "../../../docs/examples/06_query_batch.rs"]
@@ -59,11 +60,14 @@ fn step(
     }
 }
 #[derive(Clone, Debug)]
-struct Replay(Arc<Mutex<VecDeque<Step>>>);
+struct Replay {
+    steps: Arc<Mutex<VecDeque<Step>>>,
+    requests: Arc<Mutex<Vec<Json>>>,
+}
 impl HttpConnector for Replay {
     fn call(&self, request: HttpRequest) -> HttpConnectorFuture {
         let step = self
-            .0
+            .steps
             .lock()
             .unwrap()
             .pop_front()
@@ -73,6 +77,10 @@ impl HttpConnector for Replay {
             Some(format!("DynamoDB_20120810.{}", step.operation).as_str())
         );
         let body = std::str::from_utf8(request.body().bytes().unwrap()).unwrap();
+        self.requests
+            .lock()
+            .unwrap()
+            .push(serde_json::from_str(body).unwrap());
         for fragment in step.request_fragments {
             assert!(body.contains(fragment), "missing {fragment} in {body}");
         }
@@ -88,7 +96,10 @@ impl HttpConnector for Replay {
 }
 impl Replay {
     fn client(steps: Vec<Step>) -> (Client, Self) {
-        let replay = Self(Arc::new(Mutex::new(steps.into())));
+        let replay = Self {
+            steps: Arc::new(Mutex::new(steps.into())),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        };
         let connector = SharedHttpConnector::new(replay.clone());
         let config = aws_sdk_dynamodb::Config::builder()
             .behavior_version(BehaviorVersion::latest())
@@ -101,7 +112,7 @@ impl Replay {
     }
     fn done(&self) {
         assert!(
-            self.0.lock().unwrap().is_empty(),
+            self.steps.lock().unwrap().is_empty(),
             "example omitted an expected call"
         );
     }
@@ -162,20 +173,27 @@ async fn status_waiting_shape_and_guarded_transition_cleanup() {
     let item = status::waiting_item().unwrap();
     assert_eq!(item["deliveryStage"], Av::S("waiting".into()));
     assert_eq!(item["queued_on"], Av::N("9000000".into()));
-    let (client, replay) = Replay::client(vec![step(
-        "UpdateItem",
-        &[
-            "REMOVE",
-            "queued_on",
-            "failure_code",
-            "tracking_ref",
-            "track-jade",
-            "waiting",
-            "ALL_OLD",
-        ],
-        "{}",
-    )]);
+    let (client, replay) = Replay::client(vec![step("UpdateItem", &[], "{}")]);
     assert!(status::mark_sent(&client).await.is_ok());
+    assert_eq!(
+        replay.requests.lock().unwrap()[0],
+        json!({
+            "TableName": "deliveries",
+            "Key": {"delivery_ref": {"S": "del-ochre"}},
+            "UpdateExpression": "SET #n0 = :v0, #n1 = :v1 REMOVE #n2, #n3",
+            "ConditionExpression": "(#n0 = :v2 AND #n0 = :v3)",
+            "ExpressionAttributeNames": {
+                "#n0": "deliveryStage", "#n1": "tracking_ref",
+                "#n2": "failure_code", "#n3": "queued_on"
+            },
+            "ExpressionAttributeValues": {
+                ":v0": {"S": "sent"}, ":v1": {"S": "track-jade"},
+                ":v2": {"S": "waiting"}, ":v3": {"S": "waiting"}
+            },
+            "ReturnValues": "NONE", "ReturnItemCollectionMetrics": "NONE",
+            "ReturnValuesOnConditionCheckFailure": "ALL_OLD"
+        })
+    );
     replay.done();
 }
 
@@ -281,11 +299,29 @@ async fn query_example_resumes_empty_pages_and_enforces_its_page_budget() {
         .unwrap();
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0].to_item().unwrap()["line_no"], Av::N("4".into()));
-    assert!(
-        batch::read_lines(&client, NonZeroU32::new(1).unwrap())
-            .await
-            .is_err()
+    let exhausted = batch::read_lines(&client, NonZeroU32::new(1).unwrap())
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        exhausted.downcast::<std::io::Error>().unwrap().kind(),
+        std::io::ErrorKind::Other
     );
+    let expected = json!({
+        "TableName": "orders", "ConsistentRead": true, "ScanIndexForward": true,
+        "Limit": 2, "ReturnConsumedCapacity": "TOTAL",
+        "KeyConditionExpression": "(#n0 = :v0 AND #n1 BETWEEN :v1 AND :v2)",
+        "ExpressionAttributeNames": {"#n0": "order_ref", "#n1": "line_no"},
+        "ExpressionAttributeValues": {
+            ":v0": {"S": "ord-amber"}, ":v1": {"N": "1"}, ":v2": {"N": "9"}
+        }
+    });
+    let requests = replay.requests.lock().unwrap();
+    assert_eq!(requests[0], expected);
+    let mut resumed = expected.clone();
+    resumed["ExclusiveStartKey"] = json!({"order_ref": {"S": "ord-amber"}, "line_no": {"N": "1"}});
+    assert_eq!(requests[1], resumed);
+    assert_eq!(requests[2], expected);
     replay.done();
 }
 
@@ -316,6 +352,14 @@ async fn batch_example_explicitly_submits_pending_keys_and_retains_input_order()
     assert_eq!(
         rows[2].as_ref().unwrap().to_item().unwrap()["line_no"],
         Av::N("7".into())
+    );
+    let key = |number: &str| json!({"order_ref": {"S": "ord-amber"}, "line_no": {"N": number}});
+    assert_eq!(
+        *replay.requests.lock().unwrap(),
+        vec![
+            json!({"RequestItems": {"orders": {"ConsistentRead": true, "Keys": [key("1"), key("4"), key("7")]}}, "ReturnConsumedCapacity": "TOTAL"}),
+            json!({"RequestItems": {"orders": {"ConsistentRead": true, "Keys": [key("1")]}}, "ReturnConsumedCapacity": "TOTAL"})
+        ]
     );
     replay.done();
 }

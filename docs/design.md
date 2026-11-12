@@ -159,6 +159,9 @@ These are the current runtime trait boundaries. `Record` owns metadata,
 It has no document supertrait or associated key/primary types.
 The derive emits inherent `to_item`, `from_item`, `key`, and `primary` methods.
 Manual records implement `Document` and `RecordKey<R>` separately when needed.
+Manual codec, document, and record implementations remain supported without
+`derive`; typed handles, key-condition entry points, and projections are generated
+by derives only. Their reserved construction hooks are not public API.
 Use the generated primary peer as a query cursor marker; a table scan uses `()`.
 There is no `Primary<R>` alias; use the concrete primary peer.
 
@@ -200,8 +203,11 @@ downcast, or run-time schema discovery.
 
 Contexts track root record, current document, wire attribute segments, and list
 indexes. Read helpers borrow the item; they never convert it through JSON.
-Manual implementations of these public traits are supported. Reserved
-`__private` macro helpers carry no semver guarantee.
+Manual `Converter`, `Value`, `Document`, `Record`, and `RecordKey<R>`
+implementations are supported. Typed attribute handles, key conditions, and
+projections (including `ProjectionSource`) are produced by derives only;
+manual construction of those typed interfaces is outside the supported API.
+Reserved `__private` macro helpers are not public API and carry no semver guarantee.
 
 `WireType` exposes `const DYNAMO_TYPE: DynamoType`. The public `wire` module
 provides zero-sized `String`, `Number`, `Binary`, `Bool`, `Null`, `List`, `Map`,
@@ -439,7 +445,8 @@ a mismatch is `OperationConstraint { code: "primary_source_mutation" }`. They
 are never mutation targets. Standalone `Update::build()` has no operation key,
 so a reindex containing primary inputs fails with `reindex_requires_key`; the
 ordinary UpdateItem build supplies that key, including transaction conversion.
-`ReindexSchema<R>` supports manual bindings using the same expansion path.
+`ReindexSchema<R>` describes generated bindings using the same expansion path;
+manual typed reindex bindings are outside the supported API.
 
 ## 4. Value mapping and validation
 
@@ -705,8 +712,9 @@ same request. Conditional old-item decode uses the old discriminator.
 Milestone 31 preserves the discriminator `Attr` type. `Record` derives implement
 `FlattenedVariants<V>` with the discriminator's field position, binding transition
 values to the record's flattened enum rather than to nested maps or unrelated
-tag attributes. Manual records implement the same trait; build validates the
-descriptor, key protection, and disjoint common/variant namespaces.
+tag attributes. This trait supplies generated metadata; manual typed transition
+bindings are outside the supported API. Build validates the descriptor, key
+protection, and disjoint common/variant namespaces.
 Transitions encode the new enum at update build, then visit `Variants::ATTRIBUTES`
 in its metadata order (generated tag first, followed by sorted payload names).
 Present attributes become ordinary SET actions; every omitted group attribute
@@ -842,8 +850,9 @@ values; textual rendering and expression-size validation belong to later stages.
 Update actions similarly encode only at `Update::build`, returning a record-owned
 `BuiltUpdate` with inspectable actions and redacted Debug. Milestone 22 adds
 `Path` handles composed with `field`, `at`, and `entry`. Document derives publish
-`Document::FIELDS` for descriptor validation; manual document codecs must provide
-this metadata to support `field` (the default empty slice refuses traversal).
+`Document::FIELDS` for descriptor validation; manual document codecs may provide
+physical metadata, but typed field handles still come from derives. The default
+empty slice refuses traversal.
 Traversal uses native document/list/map codecs; leaf handles retain their codec.
 List indexes accept integers convertible to `usize`; negative or overflowing
 indexes fail at build with `invalid_list_index`. Indexed elements have the
@@ -952,7 +961,7 @@ and can outlive all records used to create it.
 | `put(&record)` | `PutItemInput` | `WriteResult<R> { item: Option<R>, capacity, item_collection_metrics }` |
 | `delete(key)` | `DeleteItemInput` | Same, optionally ALL_OLD. |
 | `update(key)` with `changes(Update<R>)` | `UpdateItemInput` | Same, optionally ALL_NEW or ALL_OLD. |
-| `query(key_condition, consistency)` | `QueryInput` | One `Page<P, Cursor<R, Primary<R>>>`. |
+| `query(key_condition, consistency)` | `QueryInput` | One `Page<P, Cursor<R, I>>`, where `I` is the concrete primary peer (for example, `OrderPrimary`). |
 | `scan(consistency)` | `ScanInput` | One page, optionally bound to a parallel segment. |
 | `batch_get(keys, consistency, budget)` | Explicit batch state (§10) | Records/missing keys in input order, or typed partial error. |
 | `batch_write(actions, budget)` | Explicit batch state (§10) | Processed action identities and pending actions. |
@@ -1292,9 +1301,9 @@ defined by the [Scan API](https://docs.aws.amazon.com/amazondynamodb/latest/APIR
 `table.scan(consistency).segment(segment).resume(cursor).build()` prepares one
 page of one segment. An unsegmented scan has a distinct cursor binding.
 The Scan builder also accepts `filter`, `limit`, `select`, and `capacity`, with
-the same read rules as Query; Scan filters may include key attributes. While
-`Record` remains metadata-only, table scans use `Cursor<R, ()>` rather than the
-planned `Primary<R>` marker. Index scans use `Cursor<R, I>` with the generated
+the same read rules as Query; Scan filters may include key attributes.
+Table scans use `Cursor<R, ()>` because `Record` remains metadata-only.
+Index scans use `Cursor<R, I>` with the generated
 index peer. Both retain the full schema and operation binding described above.
 Changing total or segment rejects the old cursor. Each segment keeps its own
 cursor; the application schedules concurrent calls and bounds memory.
@@ -1792,8 +1801,8 @@ attributes actually present.
 
 Milestone 09 provides the standalone estimator; milestone 49 adds the
 `Record::billed_size` convenience. `of_item`
-accepts a borrowed SDK `HashMap<String, AttributeValue>` (the planned `Item`
-alias) and returns `Result<BilledSize, EncodeError>`. Its diagnostic root is
+accepts a borrowed SDK `HashMap<String, AttributeValue>` (the `Item` alias) and
+returns `Result<BilledSize, EncodeError>`. Its diagnostic root is
 `Item`, with physical attribute/index paths. It validates numeric domain and
 document depth, but is not a general schema or set-uniqueness validator.
 Invalid numeric syntax/domain returns `NumberRange`; malformed NULL and future
@@ -1970,8 +1979,10 @@ first version; owned decoded values avoid response lifetime traps.
 Generated constructors are doc-hidden runtime helpers rather than unsafe
 backdoors. At build, validate descriptors against the owner's static schema,
 so forged descriptors cannot bypass immutable-key, version, or index checks.
-Public traits remain implementable; this is type discipline, not a security
-boundary against deliberately dishonest trait implementations.
+Supported codec, document, and record traits remain manually implementable.
+Public visibility of reserved expansion hooks does not make manual typed-handle
+construction supported. This is type discipline, not a security boundary against
+deliberately dishonest trait implementations.
 
 ## 16. Test contract and CI
 
@@ -2047,8 +2058,8 @@ functions, `Projection::project_source`, `key_component::take`, and
 carriers, `*PartitionCodec`/`*SortCodec` peers, and `*PrefixParts` traits also
 support cross-crate expansion. These names need public visibility to appear in
 associated types or generated bounds; they are not independent application APIs.
-Implementing a manual Projection currently also requires its source's
-`ProjectionSource` hook.
+Typed projections and their `ProjectionSource` hooks are generated only; manual
+projection implementations are outside the supported API.
 The seven worked examples and README use no `__private` items.
 
 The review found larger gaps in the intended contract that remain unimplemented:
@@ -2059,9 +2070,6 @@ The review found larger gaps in the intended contract that remain unimplemented:
 - Section 5's `.variant(tag)` payload handles and their implicit tag-guarded
   conditions do not exist. Whole-group projections and guarded transitions do.
   Scoped payload-condition acceptance remains unexecuted.
-- Manual codecs/schemas work, but constructing typed handles or manual query entry
-  points currently requires reserved helpers. A supported constructor API needs
-  a separate contract decision; examples do not make these helpers public guidance.
 
 These gaps require follow-up work; the final review does not claim the whole
 design is implemented. The metadata-only Record boundary and missing `Primary<R>`
