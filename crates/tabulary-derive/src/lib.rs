@@ -11,6 +11,7 @@ mod string_enum_validate;
 mod template;
 mod validate;
 mod variants_expand;
+mod variants_flatten;
 mod variants_parse;
 mod variants_validate;
 

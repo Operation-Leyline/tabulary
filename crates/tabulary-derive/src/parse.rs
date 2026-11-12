@@ -10,6 +10,7 @@ pub struct Options {
     pub default: Option<Path>,
     pub partition_key: bool,
     pub sort_key: bool,
+    pub flatten: bool,
     pub partition: Option<crate::template::Declaration>,
     pub sort: Option<crate::template::Declaration>,
 }
@@ -41,6 +42,13 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                     return Ok(());
                 }
                 (false, "rename") => &mut result.rename,
+                (false, "flatten") => {
+                    if result.flatten {
+                        return Err(meta.error("duplicate flatten option"));
+                    }
+                    result.flatten = true;
+                    return Ok(());
+                }
                 (false, "default") => {
                     if result.default.is_some() {
                         return Err(meta.error("duplicate default option"));
