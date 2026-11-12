@@ -1068,6 +1068,17 @@ is an evaluated-item limit per call, not a requested count of matching records.
 There is no automatic paginator or collection loop. Pages and scans are not
 snapshot isolation, even when each read is strong.
 
+Milestone 34's shared `page` module retains the SDK's `i32` counts. It refuses
+negative counts, a Count that differs from the returned item count, a ScannedCount
+below Count, and invalid service continuation keys. These page-level faults use
+position zero and a structured custom fault at `Count`, `ScannedCount`, or
+`LastEvaluatedKey`; item faults retain their zero-based response position.
+`ReadDecodeError::page` is `Some(PageMetadata)` for page reads and `None` for
+GetItem. It preserves the original count, scanned count, and absent/empty/nonempty
+continuation map even on failure; `last_evaluated_key()` explicitly exposes the
+raw map. The entire raw page remains available through `raw_items()`; no partial
+success page or resumable cursor is returned on a corrupt page.
+
 ### 9.2 Typed projections
 
 ```rust,ignore
