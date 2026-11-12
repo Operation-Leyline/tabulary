@@ -273,10 +273,12 @@ pub fn record(record: &Record) -> TokenStream {
         }))
     });
     let primary_schema = crate::query_expand::primary(record);
+    let transition = crate::variants_flatten::transition(record);
     quote! {
         #checks
         #peers
         #primary_schema
+        #transition
         #helpers
         #index_peers
         impl #ig #attrs #tg #wc { #(#handles)* }
