@@ -1537,6 +1537,25 @@ let ttl = definition.ttl_input("parcels_test")?; // Option<UpdateTimeToLiveInput
 
 `create_input` returns the SDK `CreateTableInput`.
 `Billing::Provisioned` requires table and every GSI throughput explicitly.
+Milestone 37a adds the `Record::table_definition()` default method (with the
+`Record` trait in scope), `Billing`, and `Throughput { read, write }`. Provisioned
+billing takes `table: Throughput` and `global_indexes: BTreeMap<String,
+Throughput>` keyed by physical GSI name. Both unit counts must be positive;
+missing or extra GSI entries, including LSI entries, are errors. On-demand
+inputs omit throughput. Empty index lists are absent SDK fields.
+
+The input uses deterministic physical-name order for attribute definitions and
+indexes, HASH before RANGE for keys, and sorted INCLUDE names. It revalidates
+manual schemas as well as derives: key positions, S/N/B types, distinct key
+names, required primary keys, index-name collisions, and LSI restrictions.
+The initial limits are 20 GSIs, 5 LSIs, 1–20 INCLUDE attributes per index and
+100 INCLUDE entries summed over indexes (repeated names in different indexes
+count separately). Automatically projected keys cannot be INCLUDE entries.
+Table/index identifiers are 3–255 ASCII letters, digits, underscores, hyphens,
+or dots; physical key and INCLUDE names are 1–255 UTF-8 bytes. Invalid schema
+definitions use `BuildError::IncompatibleIndex`; invalid billing/name settings
+use structured `OperationConstraint` codes. These helpers add no dependencies.
+
 The generator checks LSI partition equality, scalar types, index/projection
 limits, and collisions. An LSI on a hash-only table is invalid.
 Same-table multiple record schemas can use

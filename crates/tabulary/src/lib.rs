@@ -38,6 +38,7 @@ mod scan;
 mod schema;
 mod secret;
 mod table;
+mod table_definition;
 mod time;
 mod transition;
 pub mod update;
@@ -110,6 +111,9 @@ pub use scan::ScanSegment;
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
 pub use secret::Secret;
 pub use table::Table;
+pub use table_definition::Billing;
+pub use table_definition::TableDefinition;
+pub use table_definition::Throughput;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Document;
 #[cfg(feature = "derive")]
