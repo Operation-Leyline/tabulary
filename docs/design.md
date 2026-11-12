@@ -1169,8 +1169,9 @@ consistency, direction, and scan segment. It validates scalar key types but
 does not decode the map as a record. Index cursors retain both base and index
 keys exactly as received.
 
-Milestone 33 implements the in-memory binding, leaving its byte representation,
-encoded-size cap, and parser to milestone 36. The schema signature compares the
+Milestone 33 implements the in-memory binding. Milestone 36 is split at its byte
+boundary: 36a adds encoding and size checks; 36b adds the untrusted-byte parser.
+The schema signature compares the
 complete physical `RecordSchema` metadata (name, field descriptors, primary keys,
 and index definitions), by value without hashing or Rust type identity. Codec
 implementation bodies and nested document decode rules are not represented by
@@ -1199,6 +1200,18 @@ sorted. There is no schema hash collision dependency.
 V1 rejects unknown format versions; it does not promise cross-major-version
 resumption. Reject invalid keys and trailing bytes. Empty key maps cannot
 construct a resumable cursor.
+
+`to_bytes()` returns `Result<Vec<u8>, BuildError>`. V1 starts with the byte `1`,
+followed by the canonical binding and the complete key map sorted by name.
+Lengths and collection counts are big-endian `u32`; schema positions are
+big-endian `u64`. Tagged schema, expression, and value fields retain the existing
+structural identity, including declaration order in schema metadata. Key number
+spellings remain unchanged; only binding constants normalize through `Decimal`.
+The size check at request build counts the binding and the minimum envelope
+without allocating an output buffer. Encoding also checks the complete cursor,
+including service keys, against the 4 MiB cap. Expression trees, as well as nested
+document constants, have a maximum depth of 32; excessive depth is `InvalidCursor`
+at request build.
 
 Opaque does not mean encrypted or authenticated. Tokens contain key and filter
 values. Applications exposing them outside a trusted boundary must authenticate

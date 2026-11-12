@@ -1,4 +1,4 @@
-//! In-memory continuation identity. Byte encoding belongs to milestone 36.
+//! Continuation identity and versioned byte encoding.
 use std::{collections::BTreeMap, fmt, marker::PhantomData};
 
 use aws_sdk_dynamodb::types::AttributeValue;
@@ -133,7 +133,7 @@ impl<R: Record, I> CursorBinding<R, I> {
         if index.is_some_and(|index| !R::SCHEMA.indexes.contains(&index)) {
             return Err(BuildError::IncompatibleIndex);
         }
-        Ok(Self {
+        let binding = Self {
             table: table.name().into(),
             schema: R::SCHEMA,
             index,
@@ -142,7 +142,9 @@ impl<R: Record, I> CursorBinding<R, I> {
             projection: projection(selection),
             consistency,
             marker: PhantomData,
-        })
+        };
+        bytes::binding_size(&binding)?;
+        Ok(binding)
     }
     /// Only absence or an empty map means end; no record decoder is involved.
     pub(crate) fn cursor(&self, key: Option<Item>) -> Result<Option<Cursor<R, I>>, BuildError> {
@@ -285,6 +287,8 @@ impl CanonicalValue {
         })
     }
 }
+
+mod bytes;
 
 #[cfg(test)]
 mod tests;
