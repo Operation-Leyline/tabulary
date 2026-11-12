@@ -1,5 +1,7 @@
 #![cfg(feature = "derive")]
 
+#[path = "endpoint/indexed.rs"]
+mod indexed;
 #[path = "endpoint/support.rs"]
 mod support;
 
