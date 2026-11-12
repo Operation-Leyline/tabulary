@@ -721,9 +721,17 @@ inspectable tree and redacted Debug. This build step validates descriptors and
 values; textual rendering and expression-size validation belong to later stages.
 
 Update actions similarly encode only at `Update::build`, returning a record-owned
-`BuiltUpdate` with inspectable actions and redacted Debug. Milestone 21 covers
-top-level actions and SET operands; nested paths, overlap checks, and canonical
-rendering arrive in milestone 22. `operand()` reads a typed path on the SET right
+`BuiltUpdate` with inspectable actions and redacted Debug. Milestone 22 adds
+`Path` handles composed with `field`, `at`, and `entry`. Document derives publish
+`Document::FIELDS` for descriptor validation; manual document codecs must provide
+this metadata to support `field` (the default empty slice refuses traversal).
+Traversal uses native document/list/map codecs; leaf handles retain their codec.
+List indexes accept integers convertible to `usize`; negative or overflowing
+indexes fail at build with `invalid_list_index`. Indexed elements have the
+explicit `remove_element()` action; dynamic entries are optional and use
+`remove()`. `MapKey::new` rejects an empty key and preserves all other characters
+as one literal segment. Protected access is retained through every ancestor.
+`operand()` reads a typed path on the SET right
 side, including protected fields, while only mutable handles provide targets.
 `SetOperand` supports one `.plus(T)` or `.minus(T)`, returning a `SetExpression`
 that cannot chain arithmetic, matching DynamoDB's SET grammar. Both preserve the
@@ -748,6 +756,13 @@ aliases and only `condition()` populated. It traverses the validated tree
 left-to-right, encloses AND/OR groups in parentheses, and writes NOT as
 `NOT (child)`. Rendering does not re-encode constants. Request-wide size and
 substitution checks belong to operation builders and milestone 46.
+
+`BuiltUpdate::render()` returns standalone update text and bindings.
+`render_with_condition(&BuiltCondition<R>)` allocates the update first and then
+the condition in the same alias space, matching the example below. Overlap
+validation runs at update build on physical segment vectors, across all groups,
+and returns `OverlappingUpdate` with both paths. Declaration order in the built
+actions remains inspectable; only rendering groups actions by their keyword.
 
 `plan.expressions()` returns `RenderedExpressions`, with
 `condition()`, `update()`, `key_condition()`, `filter()`,
