@@ -1222,6 +1222,17 @@ without retaining token contents. Parsed schema/request bytes stay private and
 are compared with the request's complete canonical binding at `resume`, so
 parsing under a different record marker does not erase a schema mismatch.
 
+The key map contains exactly the union of base-table and selected-index key
+attributes (at most four distinct names); additional attributes are refused.
+Both parsing and in-memory construction enforce this rule. String/binary
+partition values have a 2048-byte cap and sort values a 1024-byte cap. Numeric
+key text has a 45-byte cap before Decimal parsing: 38 significant digits plus a
+minus sign, decimal point, exponent marker, exponent sign, and three exponent
+digits. Longer spellings, including redundant zeros, are refused even when they
+would normalize into the numeric domain. Bounded original spellings are retained.
+The parser extracts required key descriptors into four borrowed slots, then
+validates every key exactly once before constructing owned data.
+
 Opaque does not mean encrypted or authenticated. Tokens contain key and filter
 values. Applications exposing them outside a trusted boundary must authenticate
 and authorize them, or store them server-side. Matching a cursor is never access

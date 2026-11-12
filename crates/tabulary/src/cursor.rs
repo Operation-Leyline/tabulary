@@ -160,7 +160,19 @@ impl<R: Record, I> CursorBinding<R, I> {
             return Ok(None);
         };
         for (name, value) in &key {
-            if name.is_empty() || crate::record::validate_key(value, 2048).is_err() {
+            if name.is_empty()
+                || matches!(value, AttributeValue::N(n) if n.len() > bytes::MAX_NUMBER_KEY_BYTES)
+                || ![
+                    Some(self.schema.primary.partition),
+                    self.schema.primary.sort,
+                    self.index.map(|i| i.keys.partition),
+                    self.index.and_then(|i| i.keys.sort),
+                ]
+                .into_iter()
+                .flatten()
+                .any(|p| self.schema.fields.get(p).is_some_and(|f| f.name == name))
+                || crate::record::validate_key(value, 2048).is_err()
+            {
                 return Err(BuildError::InvalidCursor);
             }
         }

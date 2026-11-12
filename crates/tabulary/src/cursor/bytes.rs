@@ -5,6 +5,8 @@ use crate::{DynamoType, FieldAccess, IndexKind, IndexProjection, KeyDefinition, 
 use aws_sdk_dynamodb::primitives::Blob;
 
 const MAX: usize = 4 * 1024 * 1024;
+// 38 significant digits, minus, decimal point, E, exponent sign and 3 digits.
+pub(super) const MAX_NUMBER_KEY_BYTES: usize = 45;
 const WIRES: &[DynamoType] = &[
     DynamoType::S,
     DynamoType::N,
@@ -108,11 +110,35 @@ impl<R, I> Cursor<R, I> {
         let start = r.0;
         let (fields, primary, index) = r.binding()?;
         let binding = &start[..start.len() - r.0.len()];
-        let key_start = r.0;
-        let count = r.count(6)?;
-        if count == 0 {
+        let positions = [
+            (Some(primary.0), 2048),
+            (primary.1, 1024),
+            (index.map(|k| k.0), 2048),
+            (index.and_then(|k| k.1), 1024),
+        ];
+        let mut required = [None; 4];
+        let mut f = Reader(fields);
+        let fields = f.count(15)?;
+        if positions
+            .iter()
+            .any(|(p, _)| p.is_some_and(|p| p >= fields as u64))
+        {
             return Err(CursorError::InvalidKey);
         }
+        for at in 0..fields {
+            let (name, wire) = f.field()?;
+            for (slot, (position, max)) in required.iter_mut().zip(positions) {
+                if position == Some(at as u64) {
+                    *slot = Some((name, wire, max));
+                }
+            }
+        }
+        let key_start = r.0;
+        let count = r.count(6)?;
+        if count == 0 || count > 4 {
+            return Err(CursorError::InvalidKey);
+        }
+        let mut seen = [false; 4];
         let mut previous = None;
         for _ in 0..count {
             let name = r.text()?;
@@ -120,48 +146,41 @@ impl<R, I> Cursor<R, I> {
                 return Err(CursorError::InvalidKey);
             }
             previous = Some(name);
-            r.scalar()?;
+            let (tag, value) = r.scalar()?;
+            let mut matched = false;
+            for (slot, seen) in required.iter().zip(&mut seen) {
+                if let Some((expected, wire, max)) = slot
+                    && name == *expected
+                {
+                    if tag != *wire || (tag != 1 && value.len() > *max) {
+                        return Err(CursorError::InvalidKey);
+                    }
+                    *seen = true;
+                    matched = true;
+                }
+            }
+            if !matched {
+                return Err(CursorError::InvalidKey);
+            }
         }
         if !r.0.is_empty() {
             return Err(CursorError::TrailingBytes);
         }
-        // Validate the required base and index keys against the token's schema,
-        // including when the caller later resumes with a different record schema.
-        for keys in std::iter::once(primary).chain(index) {
-            for (position, max) in [(Some(keys.0), 2048), (keys.1, 1024)] {
-                let Some(position) = position else { continue };
-                let mut f = Reader(fields);
-                let n = f.count(15)?;
-                if position >= n as u64 {
-                    return Err(CursorError::InvalidKey);
-                }
-                for at in 0..n {
-                    let (name, wire) = f.field()?;
-                    if at as u64 != position {
-                        continue;
-                    }
-                    let mut k = Reader(key_start);
-                    k.count(6)?;
-                    let mut found = false;
-                    for _ in 0..count {
-                        let key_name = k.text()?;
-                        let (tag, value) = k.scalar()?;
-                        if key_name == name {
-                            found = tag == wire && (tag == 1 || value.len() <= max);
-                        }
-                    }
-                    if !found {
-                        return Err(CursorError::InvalidKey);
-                    }
-                }
-            }
+        if required
+            .iter()
+            .zip(seen)
+            .any(|(slot, seen)| slot.is_some() && !seen)
+        {
+            return Err(CursorError::InvalidKey);
         }
         let mut k = Reader(key_start);
         k.count(6)?;
         let mut key = Item::new();
         for _ in 0..count {
             let name = k.text()?.to_owned();
-            let (tag, value) = k.scalar()?;
+            // The borrowed pass validated these bytes; do not reparse numbers.
+            let tag = k.byte()?;
+            let value = k.blob()?;
             let value = match tag {
                 0 => AttributeValue::S(std::str::from_utf8(value).unwrap().into()),
                 1 => AttributeValue::N(std::str::from_utf8(value).unwrap().into()),
@@ -500,15 +519,21 @@ impl<'a> Reader<'a> {
         } else {
             None
         };
-        if self.tag(1)? == 0 {
-            self.node(0)?;
-            self.tag(1)?;
-        } else if self.tag(1)? == 1 {
-            let segment = u32::from_be_bytes(self.take(4)?.try_into().unwrap());
-            let total = u32::from_be_bytes(self.take(4)?.try_into().unwrap());
-            if total == 0 || total > 1_000_000 || segment >= total {
-                return Err(CursorError::InvalidFormat);
+        match self.byte()? {
+            0 => {
+                self.node(0)?;
+                self.tag(1)?;
             }
+            1 => {
+                if self.tag(1)? == 1 {
+                    let segment = u32::from_be_bytes(self.take(4)?.try_into().unwrap());
+                    let total = u32::from_be_bytes(self.take(4)?.try_into().unwrap());
+                    if total == 0 || total > 1_000_000 || segment >= total {
+                        return Err(CursorError::InvalidFormat);
+                    }
+                }
+            }
+            _ => return Err(CursorError::InvalidFormat),
         }
         if self.tag(1)? == 1 {
             self.node(0)?;
@@ -546,6 +571,9 @@ impl<'a> Reader<'a> {
         let tag = self.tag(2)?;
         let value = self.blob()?;
         if tag == 1 {
+            if value.len() > MAX_NUMBER_KEY_BYTES {
+                return Err(CursorError::InvalidKey);
+            }
             std::str::from_utf8(value)
                 .ok()
                 .and_then(|n| n.parse::<Decimal>().ok())
