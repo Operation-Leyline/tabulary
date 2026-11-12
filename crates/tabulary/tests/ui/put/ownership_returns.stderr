@@ -1,0 +1,45 @@
+error[E0308]: mismatched types
+  --> tests/ui/put/ownership_returns.rs:21:23
+   |
+21 |     let _ = table.put(&invoice);
+   |                   --- ^^^^^^^^ expected `&Order`, found `&Invoice`
+   |                   |
+   |                   arguments to this method are incorrect
+   |
+   = note: expected reference `&Order`
+              found reference `&Invoice`
+note: method defined here
+  --> src/put.rs
+   |
+   |     pub fn put<'a>(&self, record: &'a R) -> PutBuilder<'a, R> {
+   |            ^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/put/ownership_returns.rs:22:41
+   |
+22 |     let _ = table.put(&order).condition(InvoiceAttrs::ID.not_exists());
+   |                               --------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Condition<Order>`, found `Condition<Invoice>`
+   |                               |
+   |                               arguments to this method are incorrect
+   |
+   = note: expected struct `Condition<Order>`
+              found struct `Condition<Invoice>`
+note: method defined here
+  --> src/put.rs
+   |
+   |     pub fn condition(mut self, condition: Condition<R>) -> Self {
+   |            ^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/put/ownership_returns.rs:23:43
+   |
+23 |     let _ = table.put(&order).return_item(ReturnItem::AllNew);
+   |                               ----------- ^^^^^^^^^^^^^^^^^^ expected `ReturnOld`, found `ReturnItem`
+   |                               |
+   |                               arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/put.rs
+   |
+   |     pub fn return_item(mut self, choice: ReturnOld) -> Self {
+   |            ^^^^^^^^^^^
