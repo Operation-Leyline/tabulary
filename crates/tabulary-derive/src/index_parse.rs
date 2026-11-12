@@ -84,9 +84,6 @@ pub fn declaration(meta: &ParseNestedMeta<'_>) -> syn::Result<Declaration> {
     })
 }
 fn put<T>(slot: &mut Option<T>, value: T, meta: &ParseNestedMeta<'_>) -> syn::Result<()> {
-    if slot.replace(value).is_some() {
-        Err(meta.error("duplicate index option"))
-    } else {
-        Ok(())
-    }
+    slot.replace(value)
+        .map_or(Ok(()), |_| Err(meta.error("duplicate index option")))
 }

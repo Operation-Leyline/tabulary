@@ -1,0 +1,11 @@
+error: include accepts only non-key attributes
+ --> tests/ui/index/include_keys.rs:2:133
+  |
+2 | ..."by_value", kind = global, partition = value, project = include(id)))]
+  |                                                                    ^^
+
+error: include accepts only non-key attributes
+ --> tests/ui/index/include_keys.rs:8:133
+  |
+8 | ...y_value", kind = global, partition = value, project = include(value)))]
+  |                                                                  ^^^^^

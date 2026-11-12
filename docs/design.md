@@ -350,6 +350,8 @@ read. Sparse membership is computed on encode and checked on full decode.
 `project = include(field_a, field_b)` describe index storage. Include entries
 refer to Rust fields; the derive resolves their wire names. A sparse record
 can still have required common fields when it is read from its base table.
+Include lists reject primary and index keys, which DynamoDB projects automatically
+([Projection API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Projection.html)).
 
 Index reads have a separate `IndexTable<R, I>` type:
 

@@ -1,6 +1,6 @@
 #![cfg(feature = "derive")]
 use aws_sdk_dynamodb::types::{AttributeValue as Av, ScalarAttributeType as Scalar};
-use tabulary::{IndexKind, IndexProjection, IndexSchema, Record};
+use tabulary::{IndexKind, IndexProjection, IndexSchema, Native, NoSort, Record};
 
 #[derive(Debug, PartialEq, tabulary::Record)]
 #[tabulary(rename_all = "camelCase",
@@ -17,15 +17,26 @@ struct Order {
 }
 
 #[test]
+fn manual_key_name_collisions_are_rejected() {
+    const FIELDS: [tabulary::FieldDescriptor; 2] = [
+        Order::SCHEMA.fields[0],
+        tabulary::FieldDescriptor {
+            index: 1,
+            ..Order::SCHEMA.fields[0]
+        },
+    ];
+    let schema =
+        tabulary::__private::schema("Manual", &FIELDS, tabulary::__private::keys(0, Some(1)));
+    assert_eq!(
+        schema.attribute_definitions(),
+        Err(tabulary::BuildError::IncompatibleIndex)
+    );
+}
+
+#[test]
 fn hash_only_global_local_and_projected_names_share_one_schema() {
-    fn global<
-        I: IndexSchema<
-                Order,
-                Partition = String,
-                PartitionCodec = tabulary::Native<String>,
-                Sort = tabulary::NoSort,
-            >,
-    >(
+    type Text = Native<String>;
+    fn global<I: IndexSchema<Order, Partition = String, PartitionCodec = Text, Sort = NoSort>>(
         _: I,
     ) {
     }
