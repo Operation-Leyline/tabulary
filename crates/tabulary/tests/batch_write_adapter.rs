@@ -68,6 +68,138 @@ fn states(error: &tabulary::BatchWriteError<Order>) -> Vec<tabulary::BatchWriteS
     error.partial.entries.iter().map(|e| e.state).collect()
 }
 
+// Manual encoding preserves valid noncanonical number spellings in the request.
+struct NumericOrder(tabulary::Item);
+impl tabulary::Record for NumericOrder {
+    const SCHEMA: tabulary::RecordSchema = <Order as tabulary::Record>::SCHEMA;
+}
+impl tabulary::Document for NumericOrder {
+    const NAME: &'static str = "Order";
+    fn encode_map(
+        &self,
+        _: &mut tabulary::EncodeContext,
+    ) -> Result<tabulary::Item, tabulary::EncodeError> {
+        Ok(self.0.clone())
+    }
+    fn decode_map(
+        item: &tabulary::Item,
+        _: &mut tabulary::DecodeContext,
+    ) -> Result<Self, tabulary::DecodeError> {
+        Ok(Self(item.clone()))
+    }
+}
+
+#[test]
+fn echoed_numbers_match_by_decimal_value_including_nested_number_sets() {
+    for echoed in ["1e0", "different", "malformed", "duplicate"] {
+        let item = [
+            ("id".into(), Av::S("order".into())),
+            ("amount".into(), Av::N("1.00".into())),
+            (
+                "payload".into(),
+                Av::M(
+                    [(
+                        "values".into(),
+                        Av::L(vec![Av::Ns(vec!["1.0".into(), "2.00".into()])]),
+                    )]
+                    .into(),
+                ),
+            ),
+        ]
+        .into();
+        let mut b = Table::<NumericOrder>::new("orders")
+            .unwrap()
+            .batch_write(
+                vec![BatchAction::put(&NumericOrder(item)).unwrap()],
+                BatchBudget::new(2).unwrap(),
+            )
+            .unwrap();
+        let r = b.next_request().unwrap().unwrap();
+        let mut write = r.input().request_items.as_ref().unwrap()["orders"][0].clone();
+        let item = &mut write.put_request.as_mut().unwrap().item;
+        item.insert(
+            "amount".into(),
+            Av::N(
+                match echoed {
+                    "different" => "3",
+                    "malformed" => "invalid",
+                    _ => "1e0",
+                }
+                .into(),
+            ),
+        );
+        let numbers = if echoed == "duplicate" {
+            vec!["1".into(), "1.00".into()]
+        } else {
+            vec!["2e0".into(), "1e0".into()]
+        };
+        item.insert(
+            "payload".into(),
+            Av::M([("values".into(), Av::L(vec![Av::Ns(numbers)]))].into()),
+        );
+        let result = b.accept(r.decode(Ok(output(vec![write], None))));
+        if echoed == "1e0" {
+            result.unwrap();
+            let next = b.next_request().unwrap().unwrap();
+            assert_eq!(next.positions(), &[0]);
+            assert_eq!(
+                next.input().request_items.as_ref().unwrap()["orders"][0]
+                    .put_request
+                    .as_ref()
+                    .unwrap()
+                    .item["amount"],
+                Av::N("1.00".into())
+            );
+            b.accept(next.decode(Ok(output(vec![], None)))).unwrap();
+            assert!(b.finish().is_ok());
+        } else {
+            let error = result.unwrap_err();
+            assert!(matches!(
+                error.kind,
+                BatchWriteErrorKind::State(BatchStateError::InvalidResponse)
+            ));
+            assert_eq!(error.partial.entries[0].state, Indeterminate);
+        }
+    }
+}
+
+#[test]
+fn modeled_throttling_is_indeterminate_and_retains_the_sdk_source() {
+    use aws_sdk_dynamodb::{
+        operation::batch_write_item::BatchWriteItemError,
+        types::error::ProvisionedThroughputExceededException,
+    };
+    use aws_smithy_runtime_api::{client::orchestrator::HttpResponse, http::StatusCode};
+    use aws_smithy_types::body::SdkBody;
+    let mut b = batch(2, 2);
+    let r = b.next_request().unwrap().unwrap();
+    let source = SdkError::service_error(
+        BatchWriteItemError::ProvisionedThroughputExceededException(
+            ProvisionedThroughputExceededException::builder()
+                .message("private-throttle")
+                .build(),
+        ),
+        HttpResponse::new(
+            StatusCode::try_from(400).unwrap(),
+            SdkBody::from("private-response"),
+        ),
+    );
+    let error = b.accept(r.decode(Err(source))).unwrap_err();
+    assert!(matches!(
+        error.sdk_error().unwrap().as_service_error(),
+        Some(BatchWriteItemError::ProvisionedThroughputExceededException(
+            _
+        ))
+    ));
+    assert_eq!(states(&error), vec![Indeterminate, Indeterminate]);
+    assert!(matches!(
+        b.next_request(),
+        Err(BatchStateError::Indeterminate)
+    ));
+    assert_eq!(error.capacity, vec![None]);
+    assert!(!format!("{error:?} {error}").contains("private-throttle"));
+}
+
 #[test]
 fn unprocessed_subset_only_and_exact_capacity_vectors_by_round() {
     let mut b = batch(3, 3);

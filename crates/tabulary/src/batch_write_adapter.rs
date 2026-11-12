@@ -7,12 +7,12 @@ use aws_sdk_dynamodb::{
         BatchWriteItemError, BatchWriteItemInput, BatchWriteItemOutput,
         builders::BatchWriteItemFluentBuilder,
     },
-    types::{ConsumedCapacity, DeleteRequest, PutRequest, WriteRequest},
+    types::{AttributeValue as Av, ConsumedCapacity, DeleteRequest, PutRequest, WriteRequest},
 };
 
 use crate::{
     BatchAction, BatchBudget, BatchStateError, BatchWriteChunk, BatchWritePartial,
-    BatchWriteProgress, BuildError, Capacity, Record, RenderedExpressions, Table,
+    BatchWriteProgress, BuildError, Capacity, Decimal, Item, Record, RenderedExpressions, Table,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,7 +126,7 @@ impl PreparedBatchWrite {
                 .and_then(|items| items.get(&table));
             for write in writes {
                 let position = issued
-                    .and_then(|issued| issued.iter().position(|w| *w == write))
+                    .and_then(|issued| issued.iter().position(|w| same_write(w, &write)))
                     .map(|i| self.positions()[i]);
                 match position {
                     Some(position) if !pending.contains(&position) => pending.push(position),
@@ -149,6 +149,51 @@ impl PreparedBatchWrite {
             round: self.round,
             pending,
         })
+    }
+}
+
+fn same_write(a: &WriteRequest, b: &WriteRequest) -> bool {
+    match (
+        &a.put_request,
+        &a.delete_request,
+        &b.put_request,
+        &b.delete_request,
+    ) {
+        (Some(a), None, Some(b), None) => same_item(&a.item, &b.item),
+        (None, Some(a), None, Some(b)) => same_item(&a.key, &b.key),
+        _ => false,
+    }
+}
+fn same_item(a: &Item, b: &Item) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .all(|(k, a)| b.get(k).is_some_and(|b| same_value(a, b)))
+}
+fn number_set(values: &[String]) -> Option<Vec<Decimal>> {
+    let mut values = values
+        .iter()
+        .map(|n| n.parse().ok())
+        .collect::<Option<Vec<Decimal>>>()?;
+    values.sort_unstable();
+    if values.is_empty() || values.windows(2).any(|pair| pair[0] == pair[1]) {
+        return None;
+    }
+    Some(values)
+}
+fn same_value(a: &Av, b: &Av) -> bool {
+    // Recursion follows the frozen item's validated, bounded document shape.
+    match (a, b) {
+        (Av::N(a), Av::N(b)) => {
+            matches!((a.parse::<Decimal>(), b.parse::<Decimal>()), (Ok(a), Ok(b)) if a == b)
+        }
+        (Av::Ns(a), Av::Ns(b)) => {
+            matches!((number_set(a), number_set(b)), (Some(a), Some(b)) if a == b)
+        }
+        (Av::M(a), Av::M(b)) => same_item(a, b),
+        (Av::L(a), Av::L(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_value(a, b))
+        }
+        _ => a == b,
     }
 }
 
