@@ -1,0 +1,68 @@
+error[E0599]: no method named `condition` found for struct `BatchAction<R>` in the current scope
+  --> tests/ui/batch_write/unsupported.rs:17:12
+   |
+17 |     action.condition(OrderAttrs::QUANTITY.eq(1));
+   |            ^^^^^^^^^ method not found in `BatchAction<Order>`
+
+error[E0599]: no method named `return_item` found for struct `BatchAction<R>` in the current scope
+  --> tests/ui/batch_write/unsupported.rs:20:10
+   |
+18 | /     BatchAction::put(&record)
+19 | |         .unwrap()
+20 | |         .return_item(ReturnOld::AllOld);
+   | |         -^^^^^^^^^^^ method not found in `BatchAction<Order>`
+   | |_________|
+   |
+
+error[E0599]: no method named `on_condition_failure` found for struct `BatchAction<R>` in the current scope
+  --> tests/ui/batch_write/unsupported.rs:23:10
+   |
+21 | /     BatchAction::put(&record)
+22 | |         .unwrap()
+23 | |         .on_condition_failure(OldItemMode::All);
+   | |         -^^^^^^^^^^^^^^^^^^^^ method not found in `BatchAction<Order>`
+   | |_________|
+   |
+
+error[E0599]: no method named `unchecked_version` found for struct `BatchAction<R>` in the current scope
+  --> tests/ui/batch_write/unsupported.rs:24:40
+   |
+24 |     BatchAction::put(&record).unwrap().unchecked_version();
+   |                                        ^^^^^^^^^^^^^^^^^ method not found in `BatchAction<Order>`
+
+error[E0599]: no associated function or constant named `update` found for struct `BatchAction<R>` in the current scope
+  --> tests/ui/batch_write/unsupported.rs:25:27
+   |
+25 |     BatchAction::<Order>::update(Update::new().and(OrderAttrs::QUANTITY.set(2)));
+   |                           ^^^^^^ associated function or constant not found in `BatchAction<Order>`
+   |
+note: if you're trying to build a new `BatchAction<Order>` consider using one of the following associated functions:
+      BatchAction::<R>::put
+      BatchAction::<R>::delete
+  --> src/batch_write.rs
+   |
+   |     pub fn put(record: &R) -> Result<Self, BuildError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+   |     pub fn delete<K: RecordKey<R>>(key: K) -> Result<Self, BuildError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/batch_write/unsupported.rs:28:9
+   |
+27 |       BatchAction::<Order>::put(
+   |       ------------------------- arguments to this function are incorrect
+28 | /         &table
+29 | |             .put(&record)
+30 | |             .condition(OrderAttrs::QUANTITY.eq(1))
+31 | |             .build()
+32 | |             .unwrap(),
+   | |_____________________^ expected `&Order`, found `&PreparedRequest<PutItemInput, Order>`
+   |
+   = note: expected reference `&Order`
+              found reference `&PreparedRequest<aws_sdk_dynamodb::operation::put_item::_put_item_input::PutItemInput, Order>`
+note: associated function defined here
+  --> src/batch_write.rs
+   |
+   |     pub fn put(record: &R) -> Result<Self, BuildError> {
+   |            ^^^
