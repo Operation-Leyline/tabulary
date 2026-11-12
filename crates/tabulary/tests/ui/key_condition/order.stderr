@@ -1,0 +1,227 @@
+error[E0277]: sort codec `DecimalSortCodec` does not declare order preservation
+  --> tests/ui/key_condition/order.rs:43:46
+   |
+43 |     Decimal::primary().partition("o".into()).sort_ge((9,));
+   |                                              ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `OrderedKeyCodec<(u64,)>` is not implemented for `DecimalSortCodec`
+  --> tests/ui/key_condition/order.rs:6:5
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ---------------- in this derive macro expansion
+...
+ 6 |     count: u64,
+   |     ^^^^^
+   = note: use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise
+help: the trait `OrderedKeyCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_ge`
+  --> src/key_condition.rs
+   |
+   |         pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> where C: OrderedKeyCodec<T> { self.sort(Operator::$op, v...
+   |                                                                                     ^^^^^^^^^^^^^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_ge`
+...
+   |     ordered!(sort_lt => Lt, sort_le => Le, sort_gt => Gt, sort_ge => Ge);
+   |     --------------------------------------------------------------------
+   |     |                                                     |
+   |     |                                                     required by a bound in this associated function
+   |     in this macro invocation
+   = note: this error originates in the derive macro `tabulary::Record` which comes from the expansion of the macro `ordered` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: sort codec `SignedSortCodec` does not declare order preservation
+  --> tests/ui/key_condition/order.rs:44:45
+   |
+44 |     Signed::primary().partition("o".into()).sort_gt((-1,));
+   |                                             ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `OrderedKeyCodec<(i64,)>` is not implemented for `SignedSortCodec`
+  --> tests/ui/key_condition/order.rs:13:5
+   |
+ 8 | #[derive(tabulary::Record)]
+   |          ---------------- in this derive macro expansion
+...
+13 |     signed: i64,
+   |     ^^^^^^
+   = note: use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise
+help: the trait `OrderedKeyCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_gt`
+  --> src/key_condition.rs
+   |
+   |         pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> where C: OrderedKeyCodec<T> { self.sort(Operator::$op, v...
+   |                                                                                     ^^^^^^^^^^^^^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_gt`
+...
+   |     ordered!(sort_lt => Lt, sort_le => Le, sort_gt => Gt, sort_ge => Ge);
+   |     --------------------------------------------------------------------
+   |     |                                      |
+   |     |                                      required by a bound in this associated function
+   |     in this macro invocation
+   = note: this error originates in the derive macro `tabulary::Record` which comes from the expansion of the macro `ordered` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: sort codec `VariableSortCodec` does not declare order preservation
+  --> tests/ui/key_condition/order.rs:45:47
+   |
+45 |     Variable::primary().partition("o".into()).sort_lt(("a".into(), 9));
+   |                                               ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `OrderedKeyCodec<(std::string::String, u64)>` is not implemented for `VariableSortCodec`
+  --> tests/ui/key_condition/order.rs:20:5
+   |
+15 | #[derive(tabulary::Record)]
+   |          ---------------- in this derive macro expansion
+...
+20 |     label: String,
+   |     ^^^^^
+   = note: use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise
+help: the trait `OrderedKeyCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_lt`
+  --> src/key_condition.rs
+   |
+   |         pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> where C: OrderedKeyCodec<T> { self.sort(Operator::$op, v...
+   |                                                                                     ^^^^^^^^^^^^^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_lt`
+...
+   |     ordered!(sort_lt => Lt, sort_le => Le, sort_gt => Gt, sort_ge => Ge);
+   |     --------------------------------------------------------------------
+   |     |        |
+   |     |        required by a bound in this associated function
+   |     in this macro invocation
+   = note: this error originates in the derive macro `tabulary::Record` which comes from the expansion of the macro `ordered` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: sort codec `VariableSortCodec` does not declare order preservation
+  --> tests/ui/key_condition/order.rs:46:47
+   |
+46 |     Variable::primary().partition("o".into()).sort_le(("a".into(), 9));
+   |                                               ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `OrderedKeyCodec<(std::string::String, u64)>` is not implemented for `VariableSortCodec`
+  --> tests/ui/key_condition/order.rs:20:5
+   |
+15 | #[derive(tabulary::Record)]
+   |          ---------------- in this derive macro expansion
+...
+20 |     label: String,
+   |     ^^^^^
+   = note: use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise
+help: the trait `OrderedKeyCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_le`
+  --> src/key_condition.rs
+   |
+   |         pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> where C: OrderedKeyCodec<T> { self.sort(Operator::$op, v...
+   |                                                                                     ^^^^^^^^^^^^^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_le`
+...
+   |     ordered!(sort_lt => Lt, sort_le => Le, sort_gt => Gt, sort_ge => Ge);
+   |     --------------------------------------------------------------------
+   |     |                       |
+   |     |                       required by a bound in this associated function
+   |     in this macro invocation
+   = note: this error originates in the derive macro `tabulary::Record` which comes from the expansion of the macro `ordered` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: sort codec `SuffixByLabelSortCodec` does not declare order preservation
+  --> tests/ui/key_condition/order.rs:47:51
+   |
+47 |     SuffixIndexes::BY_LABEL.partition("o".into()).sort_between(("a".into(),), ("z".into(),));
+   |                                                   ^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `OrderedKeyCodec<(std::string::String,)>` is not implemented for `SuffixByLabelSortCodec`
+  --> tests/ui/key_condition/order.rs:30:5
+   |
+23 | #[derive(tabulary::Record)]
+   |          ---------------- in this derive macro expansion
+...
+30 |     label: String,
+   |     ^^^^^
+   = note: use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise
+help: the trait `OrderedKeyCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_between`
+  --> src/key_condition.rs
+   |
+   |     pub fn sort_between(self, lo: T, hi: T) -> KeyCondition<R, I, SortComplete>
+   |            ------------ required by a bound in this associated function
+   |     where
+   |         C: OrderedKeyCodec<T>,
+   |            ^^^^^^^^^^^^^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_between`
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: sort codec `VariableHexSortCodec` does not declare order preservation
+  --> tests/ui/key_condition/order.rs:48:50
+   |
+48 |     VariableHex::primary().partition("o".into()).sort_ge((vec![1], 9));
+   |                                                  ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `OrderedKeyCodec<(Vec<u8>, u64)>` is not implemented for `VariableHexSortCodec`
+  --> tests/ui/key_condition/order.rs:39:5
+   |
+32 | #[derive(tabulary::Record)]
+   |          ---------------- in this derive macro expansion
+...
+39 |     bytes: Vec<u8>,
+   |     ^^^^^
+   = note: use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise
+help: the trait `OrderedKeyCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_ge`
+  --> src/key_condition.rs
+   |
+   |         pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> where C: OrderedKeyCodec<T> { self.sort(Operator::$op, v...
+   |                                                                                     ^^^^^^^^^^^^^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_ge`
+...
+   |     ordered!(sort_lt => Lt, sort_le => Le, sort_gt => Gt, sort_ge => Ge);
+   |     --------------------------------------------------------------------
+   |     |                                                     |
+   |     |                                                     required by a bound in this associated function
+   |     in this macro invocation
+   = note: this error originates in the derive macro `tabulary::Record` which comes from the expansion of the macro `ordered` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: sort codec `VariableHexByBytesSortCodec` does not declare order preservation
+  --> tests/ui/key_condition/order.rs:49:56
+   |
+49 |     VariableHexIndexes::BY_BYTES.partition("o".into()).sort_ge((vec![1],));
+   |                                                        ^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `OrderedKeyCodec<(Vec<u8>,)>` is not implemented for `VariableHexByBytesSortCodec`
+  --> tests/ui/key_condition/order.rs:39:5
+   |
+32 | #[derive(tabulary::Record)]
+   |          ---------------- in this derive macro expansion
+...
+39 |     bytes: Vec<u8>,
+   |     ^^^^^
+   = note: use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise
+help: the trait `OrderedKeyCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_ge`
+  --> src/key_condition.rs
+   |
+   |         pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> where C: OrderedKeyCodec<T> { self.sort(Operator::$op, v...
+   |                                                                                     ^^^^^^^^^^^^^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_ge`
+...
+   |     ordered!(sort_lt => Lt, sort_le => Le, sort_gt => Gt, sort_ge => Ge);
+   |     --------------------------------------------------------------------
+   |     |                                                     |
+   |     |                                                     required by a bound in this associated function
+   |     in this macro invocation
+   = note: this error originates in the derive macro `tabulary::Record` which comes from the expansion of the macro `ordered` (in Nightly builds, run with -Z macro-backtrace for more info)
