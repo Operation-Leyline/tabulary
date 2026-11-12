@@ -33,6 +33,7 @@ mod scalar;
 mod schema;
 mod secret;
 mod table;
+mod table_definition;
 mod time;
 pub mod update;
 mod update_item;
@@ -96,6 +97,9 @@ pub use rendered_expressions::RenderedExpressions;
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
 pub use secret::Secret;
 pub use table::Table;
+pub use table_definition::Billing;
+pub use table_definition::TableDefinition;
+pub use table_definition::Throughput;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Document;
 #[cfg(feature = "derive")]
