@@ -1,0 +1,251 @@
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:10:41
+   |
+ 8 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+ 9 | #[tabulary(record = Order)]
+10 | struct Foreign { #[tabulary(attribute = InvoiceAttrs::ID)] id: String }
+   |                                         ^^^^^^^^^^^^^^^^ expected `Attr<Order, String, Required, KeyOnly>`, found `Attr<Invoice, String, Required, KeyOnly>`
+   |
+   = note: expected struct `Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+              found struct `Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn select<S, const I: usize, O, H: Handle>(
+   |        ^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:10:41
+   |
+ 8 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+ 9 | #[tabulary(record = Order)]
+10 | struct Foreign { #[tabulary(attribute = InvoiceAttrs::ID)] id: String }
+   |                                         ^^^^^^^^^^^^^^^^ expected `Attr<Order, String, Required, KeyOnly>`, found `Attr<Invoice, String, Required, KeyOnly>`
+   |
+   = note: expected struct `Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+              found struct `Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn decode<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |        ^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:10:41
+   |
+ 8 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+ 9 | #[tabulary(record = Order)]
+10 | struct Foreign { #[tabulary(attribute = InvoiceAttrs::ID)] id: String }
+   |                                         ^^^^^^^^^^^^^^^^ expected `Attr<Order, String, Required, KeyOnly>`, found `Attr<Invoice, String, Required, KeyOnly>`
+   |
+   = note: expected struct `Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+              found struct `Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn take<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |        ^^^^
+
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<1, std::string::String, _>` is not satisfied
+  --> tests/ui/projection/types.rs:12:21
+   |
+12 | #[tabulary(record = Order)]
+   |                     ^^^^^ unsatisfied trait bound
+   |
+help: the trait `tabulary::projection::SourceField<1, std::string::String, _>` is not implemented for `Order`
+  --> tests/ui/projection/types.rs:4:1
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+  --> tests/ui/projection/types.rs:4:43
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   |                                           ^^          ^^^^^       ^^^^ `tabulary::projection::SourceField<2, Option<std::string::String>, Attr<Order, std::string::String, tabulary::Optional>>`
+   |                                           |           |
+   |                                           |           `tabulary::projection::SourceField<1, u64, Attr<Order, u64>>`
+   |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::decode`
+  --> src/projection.rs
+   |
+   | pub fn decode<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |                  ^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<1, std::string::String, _>` is not satisfied
+  --> tests/ui/projection/types.rs:12:21
+   |
+12 | #[tabulary(record = Order)]
+   |                     ^^^^^ unsatisfied trait bound
+   |
+help: the trait `tabulary::projection::SourceField<1, std::string::String, _>` is not implemented for `Order`
+  --> tests/ui/projection/types.rs:4:1
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+  --> tests/ui/projection/types.rs:4:43
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   |                                           ^^          ^^^^^       ^^^^ `tabulary::projection::SourceField<2, Option<std::string::String>, Attr<Order, std::string::String, tabulary::Optional>>`
+   |                                           |           |
+   |                                           |           `tabulary::projection::SourceField<1, u64, Attr<Order, u64>>`
+   |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::take`
+  --> src/projection.rs
+   |
+   | pub fn take<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |                ^^^^^^^^^^^^^^^^^^^^ required by this bound in `take`
+
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<1, Option<u64>, _>` is not satisfied
+  --> tests/ui/projection/types.rs:15:21
+   |
+15 | #[tabulary(record = Order)]
+   |                     ^^^^^ unsatisfied trait bound
+   |
+help: the trait `tabulary::projection::SourceField<1, Option<u64>, _>` is not implemented for `Order`
+  --> tests/ui/projection/types.rs:4:1
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+  --> tests/ui/projection/types.rs:4:43
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   |                                           ^^          ^^^^^       ^^^^ `tabulary::projection::SourceField<2, Option<std::string::String>, Attr<Order, std::string::String, tabulary::Optional>>`
+   |                                           |           |
+   |                                           |           `tabulary::projection::SourceField<1, u64, Attr<Order, u64>>`
+   |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::decode`
+  --> src/projection.rs
+   |
+   | pub fn decode<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |                  ^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<1, Option<u64>, _>` is not satisfied
+  --> tests/ui/projection/types.rs:15:21
+   |
+15 | #[tabulary(record = Order)]
+   |                     ^^^^^ unsatisfied trait bound
+   |
+help: the trait `tabulary::projection::SourceField<1, Option<u64>, _>` is not implemented for `Order`
+  --> tests/ui/projection/types.rs:4:1
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+  --> tests/ui/projection/types.rs:4:43
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   |                                           ^^          ^^^^^       ^^^^ `tabulary::projection::SourceField<2, Option<std::string::String>, Attr<Order, std::string::String, tabulary::Optional>>`
+   |                                           |           |
+   |                                           |           `tabulary::projection::SourceField<1, u64, Attr<Order, u64>>`
+   |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::take`
+  --> src/projection.rs
+   |
+   | pub fn take<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |                ^^^^^^^^^^^^^^^^^^^^ required by this bound in `take`
+
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<2, std::string::String, _>` is not satisfied
+  --> tests/ui/projection/types.rs:18:21
+   |
+18 | #[tabulary(record = Order)]
+   |                     ^^^^^ unsatisfied trait bound
+   |
+help: the trait `tabulary::projection::SourceField<2, std::string::String, _>` is not implemented for `Order`
+  --> tests/ui/projection/types.rs:4:1
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+  --> tests/ui/projection/types.rs:4:43
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   |                                           ^^          ^^^^^       ^^^^ `tabulary::projection::SourceField<2, Option<std::string::String>, Attr<Order, std::string::String, tabulary::Optional>>`
+   |                                           |           |
+   |                                           |           `tabulary::projection::SourceField<1, u64, Attr<Order, u64>>`
+   |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::decode`
+  --> src/projection.rs
+   |
+   | pub fn decode<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |                  ^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<2, std::string::String, _>` is not satisfied
+  --> tests/ui/projection/types.rs:18:21
+   |
+18 | #[tabulary(record = Order)]
+   |                     ^^^^^ unsatisfied trait bound
+   |
+help: the trait `tabulary::projection::SourceField<2, std::string::String, _>` is not implemented for `Order`
+  --> tests/ui/projection/types.rs:4:1
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+  --> tests/ui/projection/types.rs:4:43
+   |
+ 4 | struct Order { #[tabulary(partition_key)] id: String, count: u64, note: Option<String> }
+   |                                           ^^          ^^^^^       ^^^^ `tabulary::projection::SourceField<2, Option<std::string::String>, Attr<Order, std::string::String, tabulary::Optional>>`
+   |                                           |           |
+   |                                           |           `tabulary::projection::SourceField<1, u64, Attr<Order, u64>>`
+   |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::take`
+  --> src/projection.rs
+   |
+   | pub fn take<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |                ^^^^^^^^^^^^^^^^^^^^ required by this bound in `take`
+
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:29:39
+   |
+27 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+28 | #[tabulary(record = Order)]
+29 | struct Codec { #[tabulary(attribute = BAD_CODEC)] count: u64 }
+   |                                       ^^^^^^^^^ expected `Attr<Order, u64>`, found `Attr<Order, u64, Required, Mutable, ...>`
+   |
+   = note: expected struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, Native<u64>>`
+              found struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, OtherCodec>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn select<S, const I: usize, O, H: Handle>(
+   |        ^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:29:39
+   |
+27 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+28 | #[tabulary(record = Order)]
+29 | struct Codec { #[tabulary(attribute = BAD_CODEC)] count: u64 }
+   |                                       ^^^^^^^^^ expected `Attr<Order, u64>`, found `Attr<Order, u64, Required, Mutable, ...>`
+   |
+   = note: expected struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, Native<u64>>`
+              found struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, OtherCodec>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn decode<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |        ^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:29:39
+   |
+27 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+28 | #[tabulary(record = Order)]
+29 | struct Codec { #[tabulary(attribute = BAD_CODEC)] count: u64 }
+   |                                       ^^^^^^^^^ expected `Attr<Order, u64>`, found `Attr<Order, u64, Required, Mutable, ...>`
+   |
+   = note: expected struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, Native<u64>>`
+              found struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, OtherCodec>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn take<S: SourceField<I, O, H>, const I: usize, O, H>(
+   |        ^^^^

@@ -1,0 +1,56 @@
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<1, StateTag, _>` is not satisfied
+ --> tests/ui/projection/variants.rs:8:21
+  |
+8 | #[tabulary(record = Order)]
+  |                     ^^^^^ unsatisfied trait bound
+  |
+help: the trait `tabulary::projection::SourceField<1, StateTag, _>` is not implemented for `Order`
+ --> tests/ui/projection/variants.rs:6:1
+  |
+6 | struct Order { #[tabulary(partition_key)] id: String, #[tabulary(flatten)] state: State }
+  | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+ --> tests/ui/projection/variants.rs:6:43
+  |
+6 | struct Order { #[tabulary(partition_key)] id: String, #[tabulary(flatten)] state: State }
+  |                                           ^^                               ^^^^^ `tabulary::projection::SourceField<1, State, Attr<Order, StateTag, tabulary::Required, tabulary::DerivedOnly>>`
+  |                                           |
+  |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::decode`
+ --> src/projection.rs
+  |
+  | pub fn decode<S: SourceField<I, O, H>, const I: usize, O, H>(
+  |                  ^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+
+error[E0277]: the trait bound `Order: tabulary::projection::SourceField<1, StateTag, _>` is not satisfied
+ --> tests/ui/projection/variants.rs:8:21
+  |
+8 | #[tabulary(record = Order)]
+  |                     ^^^^^ unsatisfied trait bound
+  |
+help: the trait `tabulary::projection::SourceField<1, StateTag, _>` is not implemented for `Order`
+ --> tests/ui/projection/variants.rs:6:1
+  |
+6 | struct Order { #[tabulary(partition_key)] id: String, #[tabulary(flatten)] state: State }
+  | ^^^^^^^^^^^^
+help: `Order` implements trait `tabulary::projection::SourceField<I, Output, H>`
+ --> tests/ui/projection/variants.rs:6:43
+  |
+6 | struct Order { #[tabulary(partition_key)] id: String, #[tabulary(flatten)] state: State }
+  |                                           ^^                               ^^^^^ `tabulary::projection::SourceField<1, State, Attr<Order, StateTag, tabulary::Required, tabulary::DerivedOnly>>`
+  |                                           |
+  |                                           `tabulary::projection::SourceField<0, std::string::String, Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly>>`
+note: required by a bound in `tabulary::projection::take`
+ --> src/projection.rs
+  |
+  | pub fn take<S: SourceField<I, O, H>, const I: usize, O, H>(
+  |                ^^^^^^^^^^^^^^^^^^^^ required by this bound in `take`
+
+error[E0599]: no associated function or constant named `TRACKING` found for struct `OrderAttrs` in the current scope
+  --> tests/ui/projection/variants.rs:12:57
+   |
+ 4 | #[derive(tabulary::Record)]
+   |          ---------------- associated function or constant `TRACKING` not found for this struct
+...
+12 | struct PayloadOnly { #[tabulary(attribute = OrderAttrs::TRACKING)] tracking: String }
+   |                                                         ^^^^^^^^ associated function or constant not found in `OrderAttrs`

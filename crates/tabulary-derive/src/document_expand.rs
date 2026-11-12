@@ -118,6 +118,7 @@ pub fn implementation(
     let item = format_ident!("item", span = Span::mixed_site());
     let cx = format_ident!("cx", span = Span::mixed_site());
     let validation = crate::variants_flatten::validation(schema);
+    let projection_fields = crate::projection_source::fields(schema);
     let declaration = (schema.generics.params.is_empty()
         && schema.fields.iter().any(|f| f.flatten))
     .then(|| quote!(const _: () = { #validation };));
@@ -129,6 +130,7 @@ pub fn implementation(
         quote!(#path::__private::field::<Self, #ty, #presence, #access, #path::Native<#ty>>(#name, #i).descriptor())
     });
     quote! {
+        #projection_fields
         #declaration
         impl #ig #path::Document for #ident #tg #wc {
             const NAME: &'static str = ::core::stringify!(#ident);
