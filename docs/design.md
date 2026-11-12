@@ -344,8 +344,8 @@ which remain `KeyOnly`. Synthetic handles use the index identifier plus
 `PARTITION` or `SORT`, for example `ParcelAttrs::BY_COURIER_PARTITION`.
 Identical templates with the same physical name share one descriptor; a
 different template or an ordinary field with that name is a collision.
-Both stages reject `sparse` and optional index inputs explicitly until milestone
-17 supplies sparse encode/decode invariants. Key-condition builders arrive in
+Milestone 17 adds `sparse` and optional index inputs with membership checks on
+encode and full decode. Key-condition builders arrive in
 milestone 23; index markers in milestone 16 do not perform queries.
 Literal SET values and literal `if_not_exists` defaults targeting simple index
 keys use the same key-value checks as record encoding. Results computed from
@@ -358,6 +358,19 @@ partially present, which DynamoDB treats as a non-member. A present wrong-typed
 or malformed input is an error, never a reason to skip an index. Partial
 synthesized keys or keys inconsistent with present sources are corruption on
 read. Sparse membership is computed on encode and checked on full decode.
+Membership inputs are the ordinary fields used directly as index keys or as
+template components. Inputs cannot have defaults. Each present template component
+must satisfy its codec and separator rules even when another input is absent.
+Conditional synthesized handles have `Optional` presence and `DerivedOnly` access;
+their logical index codecs still accept the inner component types.
+
+When identical templates share a physical attribute, emit that attribute if any
+index using it has all inputs present, or if it is also a primary key. An absent
+input in another index does not remove a key that an active index needs. Full
+decode applies the same rule per physical attribute: a needed missing key is
+`Missing`, an unneeded present key is `IndexMismatch`, and a parsed source
+disagreement is `KeyMismatch`. This permits partial reused fields while rejecting
+partial synthesized keys that no other index needs.
 
 `project = all`, `project = keys_only`, and
 `project = include(field_a, field_b)` describe index storage. Include entries

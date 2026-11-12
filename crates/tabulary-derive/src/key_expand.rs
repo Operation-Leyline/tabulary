@@ -10,7 +10,7 @@ use crate::{
 pub fn local(field: usize) -> syn::Ident {
     format_ident!("__tabulary_field_{field}", span = Span::mixed_site())
 }
-fn parsed(key: usize, field: usize) -> syn::Ident {
+pub fn parsed(key: usize, field: usize) -> syn::Ident {
     format_ident!("__tabulary_key_{key}_{field}", span = Span::mixed_site())
 }
 pub fn template(record: &Record, index: usize) -> Option<&Template> {
@@ -93,7 +93,7 @@ pub fn bounds(record: &Record, generics: &mut syn::Generics) {
         }
     }
 }
-fn codec(codec: Codec, span: Span, path: &syn::Path) -> TokenStream {
+pub fn codec(codec: Codec, span: Span, path: &syn::Path) -> TokenStream {
     let name = syn::Ident::new(
         match codec {
             Codec::Hex => "Hex",
@@ -105,7 +105,7 @@ fn codec(codec: Codec, span: Span, path: &syn::Path) -> TokenStream {
     );
     quote_spanned!(span=> #path::key_component::#name)
 }
-fn boundary(parts: &[Part], position: usize) -> (usize, Option<char>) {
+pub fn boundary(parts: &[Part], position: usize) -> (usize, Option<char>) {
     let mut tail = 0;
     for part in &parts[position + 1..] {
         match part {
@@ -118,7 +118,7 @@ fn boundary(parts: &[Part], position: usize) -> (usize, Option<char>) {
     }
     (tail, None)
 }
-fn component_context(record: &Record, key: usize, field: Option<usize>) -> TokenStream {
+pub fn component_context(record: &Record, key: usize, field: Option<usize>) -> TokenStream {
     let path = &record.crate_path;
     let name = &record.fields[key].name;
     let context = format_ident!("cx", span = Span::mixed_site());
@@ -153,7 +153,7 @@ fn format(
         Part::Literal(s) => quote!(#output.push_str(#s);),
         Part::Component { field, codec: kind, .. } => {
             let f = &record.fields[*field]; let (id, ty) = (&f.ident, &f.ty);
-            let value = if receiver { quote!(&self.#id) } else { quote!(&#id) };
+            let value = if receiver && !f.optional { quote!(&self.#id) } else { quote!(&#id) };
             let cx = component_context(record, key, Some(*field)); let codec = codec(*kind, record.fields[*field].ident.span(), &record.crate_path);
             let reserved = if *kind == Codec::Text { boundary(full, position).1 } else { None };
             let reserve = reserved.map(|c| quote! {
@@ -180,9 +180,10 @@ pub fn encode(record: &Record, key: usize) -> TokenStream {
         &record.fields[key].name,
         record.fields[key].key_limit.unwrap(),
     );
-    quote! { { #format
+    let body = quote! { { #format
         #item.insert(#name.into(), #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), #max)?);
-    } }
+    } };
+    crate::sparse_expand::encode(record, key, body)
 }
 
 pub fn decode(record: &Record, key: usize) -> TokenStream {
@@ -235,7 +236,7 @@ pub fn checks(record: &Record, field: usize) -> TokenStream {
 fn checks_for(record: &Record, field: usize, primary_only: bool) -> TokenStream {
     let path = &record.crate_path;
     let local = local(field);
-    let checks = record.templates.iter().filter(|(key, t)| (!primary_only || primary(record, *key)) && components(&t.parts).any(|i| i == field)).map(|(key, _)| {
+    let checks = record.templates.iter().filter(|(key, t)| !crate::sparse_expand::conditional(record, *key) && (!primary_only || primary(record, *key)) && components(&t.parts).any(|i| i == field)).map(|(key, _)| {
         let parsed = parsed(*key, field); let cx = component_context(record, *key, Some(field));
         quote! { if #local != #parsed { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
     });
