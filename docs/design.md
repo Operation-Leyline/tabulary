@@ -1327,8 +1327,10 @@ Milestone 45's adapter uses `Table::batch_write(actions, budget)` to construct
 `input`, empty `expressions`, and `apply` follow the single-item adapters.
 `decode` consumes that prepared round into a Result that must be passed to
 `batch.accept(...)`, including on failure. It does not send anything. Returned
-unprocessed writes must match a complete issued put/delete payload exactly,
-including the action kind and put attributes; duplicates, changed payloads and
+unprocessed writes must match a complete issued put/delete payload, comparing
+numbers and number sets by parsed Decimal value, including inside maps/lists.
+Action kinds, attribute names and other values must match exactly; duplicates,
+changed payloads and
 foreign tables are protocol errors. Matching is independent of response order.
 Foreign or stale round results conservatively freeze the recipient batch too.
 
@@ -1347,6 +1349,9 @@ before using `Arc::try_unwrap` to recover owned pending actions. SDK/protocol
 failures and explicit aborts call `fail_round`; no indeterminate action is
 issued again. Finishing an outstanding call is also conservatively
 indeterminate, even if its decoded result was dropped before acceptance.
+Every SDK error, including modeled throttling and validation refusals, makes
+outstanding writes indeterminate because the adapter never infers "not applied"
+from an error.
 The second, stacked part of milestone 45 adds a conservative 16 MiB JSON wire
 gate at batch construction, separate from the core's 1..=25 action gate and
 400 KiB put-item gate. It counts UTF-8 names/strings with JSON escaping,
