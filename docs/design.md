@@ -1463,6 +1463,25 @@ There is no local object mutation after a write, no retry with a refreshed
 version, and no hidden GetItem. An application constructs the next value or
 requests ALL_NEW explicitly.
 
+Milestone 30 represents the version declaration with the existing required,
+number-wire `FieldAccess::VersionOnly` descriptor. The derive accepts a written
+`u64` or its `core::primitive`/`std::primitive` path, and rejects aliases,
+primary-key fields, and sources of primary or secondary composite keys.
+Document derives reject version annotations. The metadata-only `Record` trait
+and prepared write signatures stay unchanged.
+
+Missing policy on a versioned record, repeated policy calls (even identical
+ones), an incorrect proposed version, and successor overflow return
+`BuildError::VersionPolicy`. Delete does not compute a successor, so it accepts
+`expect_version(u64::MAX)`. An otherwise empty update with `expect_version`
+performs the version SET alone; an empty unchecked update is still invalid.
+Unversioned writes need no policy; put may use `expect_new()` to guard primary
+key absence. `expect_version` and `unchecked_version` require a version field.
+Policy expansion runs at build, joins caller conditions with AND, and appends
+the version SET before ordinary update validation and shared rendering.
+Transaction conversion uses these same prepared inputs; it adds no version
+policy of its own.
+
 ## 13. Item size and capacity boundaries
 
 `Record::billed_size(&self) -> Result<BilledSize, EncodeError>` encodes with

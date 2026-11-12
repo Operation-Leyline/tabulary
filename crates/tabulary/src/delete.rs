@@ -20,6 +20,7 @@ pub struct DeleteBuilder<R, K> {
     table: String,
     key: K,
     condition: Option<Condition<R>>,
+    version: crate::version::Policy,
     return_item: ReturnOld,
     old_item_mode: OldItemMode,
     capacity: Capacity,
@@ -31,6 +32,7 @@ impl<R: Record + Document> Table<R> {
             table: self.name.clone(),
             key,
             condition: None,
+            version: crate::version::Policy::Missing,
             return_item: ReturnOld::None,
             old_item_mode: OldItemMode::None,
             capacity: Capacity::None,
@@ -39,6 +41,17 @@ impl<R: Record + Document> Table<R> {
     }
 }
 impl<R: Record + Document, K: RecordKey<R>> DeleteBuilder<R, K> {
+    /// Guard the stored version without incrementing it.
+    pub fn expect_version(mut self, version: u64) -> Self {
+        self.version
+            .select(crate::version::Policy::Expected(version));
+        self
+    }
+    /// Explicit maintenance bypass; no version guard or increment is added.
+    pub fn unchecked_version(mut self) -> Self {
+        self.version.select(crate::version::Policy::Unchecked);
+        self
+    }
     /// AND this predicate with any existing inline condition.
     pub fn condition(mut self, condition: Condition<R>) -> Self {
         self.condition = Some(match self.condition {
@@ -65,7 +78,10 @@ impl<R: Record + Document, K: RecordKey<R>> DeleteBuilder<R, K> {
     }
     pub fn build(self) -> Result<PreparedDelete<R>, BuildError> {
         let key = self.key.encode_key()?;
-        let expressions = match self.condition {
+        let condition = self
+            .version
+            .expand(crate::version::Write::Delete, self.condition)?;
+        let expressions = match condition {
             Some(condition) => condition.build()?.render(),
             None => RenderedExpressions::default(),
         };
