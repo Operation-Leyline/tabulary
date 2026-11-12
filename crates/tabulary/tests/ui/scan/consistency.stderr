@@ -1,0 +1,31 @@
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+  --> tests/ui/scan/consistency.rs:12:19
+   |
+12 |     let _ = table.scan();
+   |                   ^^^^-- argument #1 of type `ReadConsistency` is missing
+   |
+note: method defined here
+  --> src/scan.rs
+   |
+   |     pub fn scan(&self, consistency: ReadConsistency) -> ScanBuilder<R> {
+   |            ^^^^
+help: provide the argument
+   |
+12 |     let _ = table.scan(/* ReadConsistency */);
+   |                        +++++++++++++++++++++
+
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+  --> tests/ui/scan/consistency.rs:13:46
+   |
+13 |     let _ = table.index(OrderIndexes::BY_ID).scan();
+   |                                              ^^^^-- argument #1 of type `ReadConsistency` is missing
+   |
+note: method defined here
+  --> src/scan.rs
+   |
+   |     pub fn scan(&self, consistency: ReadConsistency) -> ScanBuilder<R, I> {
+   |            ^^^^
+help: provide the argument
+   |
+13 |     let _ = table.index(OrderIndexes::BY_ID).scan(/* ReadConsistency */);
+   |                                                   +++++++++++++++++++++

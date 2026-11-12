@@ -1,14 +1,14 @@
 //! Prepare and decode exactly one Query; the caller alone sends requests.
 use std::{fmt, num::NonZeroU32};
 
-use crate::condition::{ConditionNode, Operand};
 use crate::cursor::CursorBinding;
 use crate::page::RawPage;
+use crate::read_selection::{validate_consistency, validate_selection, visit};
 use crate::{
     BuildError, Capacity, Condition, Cursor, DecodeContext, DecodeError, Document, IndexDefinition,
-    IndexKind, IndexProjection, IndexSchema, IndexTable, Item, KeyCondition, KeySchema, Page,
-    PageMetadata, PreparedRequest, PrimarySchema, Projection, QueryOrder, ReadConsistency,
-    ReadError, Record, RenderedExpressions, Table,
+    IndexSchema, IndexTable, Item, KeyCondition, KeySchema, Page, PageMetadata, PreparedRequest,
+    PrimarySchema, Projection, QueryOrder, ReadConsistency, ReadError, Record, RenderedExpressions,
+    Table,
 };
 use aws_sdk_dynamodb::{
     error::SdkError,
@@ -115,13 +115,7 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
         if keys != I::KEYS {
             return Err(BuildError::IncompatibleIndex);
         }
-        if self.consistency == ReadConsistency::Strong
-            && self
-                .index
-                .is_some_and(|index| index.kind == IndexKind::Global)
-        {
-            return Err(BuildError::UnsupportedConsistency);
-        }
+        validate_consistency(self.index, self.consistency)?;
         let limit = self
             .limit
             .map(|limit| {
@@ -145,48 +139,7 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
             })?;
         }
         let selection = self.selection.map(|select| select()).transpose()?;
-        if selection.as_ref().is_some_and(Vec::is_empty) {
-            return Err(BuildError::EmptyOperation);
-        }
-        if let Some(index) = self
-            .index
-            .filter(|index| index.projection != IndexProjection::All)
-        {
-            let mut available = Vec::new();
-            for keys in [R::SCHEMA.primary, index.keys] {
-                for position in [Some(keys.partition), keys.sort].into_iter().flatten() {
-                    available.push(
-                        R::SCHEMA
-                            .fields
-                            .get(position)
-                            .ok_or(BuildError::IncompatibleIndex)?
-                            .name,
-                    );
-                }
-            }
-            if let IndexProjection::Include(names) = index.projection {
-                available.extend_from_slice(names);
-            }
-            if selection
-                .as_ref()
-                .is_none_or(|names| names.iter().any(|name| !available.contains(name)))
-            {
-                return Err(BuildError::OperationConstraint {
-                    code: "projection_not_available",
-                });
-            }
-            if let Some(filter) = &filter {
-                visit(filter.root(), &mut |field| {
-                    if available.contains(&field.name) {
-                        Ok(())
-                    } else {
-                        Err(BuildError::OperationConstraint {
-                            code: "projection_not_available",
-                        })
-                    }
-                })?;
-            }
-        }
+        validate_selection::<R>(self.index, selection.as_deref(), filter.as_ref())?;
         let binding = CursorBinding::query(
             &self.table,
             self.index,
@@ -242,26 +195,6 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
             },
             binding,
         })
-    }
-}
-fn visit(
-    node: &ConditionNode,
-    check: &mut impl FnMut(&crate::FieldDescriptor) -> Result<(), BuildError>,
-) -> Result<(), BuildError> {
-    match node {
-        ConditionNode::Predicate { operands, .. } => {
-            for operand in operands {
-                if let Operand::Attribute(field) | Operand::Size(field) = operand {
-                    check(field)?;
-                }
-            }
-            Ok(())
-        }
-        ConditionNode::And(a, b) | ConditionNode::Or(a, b) => {
-            visit(a, check)?;
-            visit(b, check)
-        }
-        ConditionNode::Not(a) => visit(a, check),
     }
 }
 impl<R, I, P> PreparedQuery<R, I, P> {

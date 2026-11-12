@@ -1196,6 +1196,11 @@ out-of-range values before converting them to SDK integers. The boundary is
 defined by the [Scan API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html).
 `table.scan(consistency).segment(segment).resume(cursor).build()` prepares one
 page of one segment. An unsegmented scan has a distinct cursor binding.
+The Scan builder also accepts `filter`, `limit`, `select`, and `capacity`, with
+the same read rules as Query; Scan filters may include key attributes. While
+`Record` remains metadata-only, table scans use `Cursor<R, ()>` rather than the
+planned `Primary<R>` marker. Index scans use `Cursor<R, I>` with the generated
+index peer. Both retain the full schema and operation binding described above.
 Changing total or segment rejects the old cursor. Each segment keeps its own
 cursor; the application schedules concurrent calls and bounds memory.
 There is no automatic fan-out, merge order, or cross-segment progress storage.
