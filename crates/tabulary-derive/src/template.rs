@@ -55,14 +55,15 @@ pub fn declaration(meta: &ParseNestedMeta<'_>) -> syn::Result<Declaration> {
     })
 }
 
-/// Validate before the milestone-15 expansion gate; never silently ignore a key.
+/// Validate declarations before expansion; never silently ignore a key.
 pub fn declarations(
     partition: Option<&Declaration>,
     sort: Option<&Declaration>,
     fields: &FieldsNamed,
     rule: Option<&str>,
-) -> syn::Result<()> {
+) -> syn::Result<Vec<Template>> {
     let mut names = HashSet::new();
+    let mut templates = Vec::new();
     for (decl, is_partition) in [(partition, true), (sort, false)] {
         let Some(decl) = decl else { continue };
         if decl.name.value().is_empty() || !names.insert(decl.name.value()) {
@@ -71,7 +72,7 @@ pub fn declarations(
                 "empty or duplicate synthesized key name",
             ));
         }
-        parse(&decl.template, fields)?;
+        templates.push(parse(&decl.template, fields)?);
         for field in &fields.named {
             let opts = attributes::options(&field.attrs, false)?;
             if (is_partition && opts.partition_key) || (!is_partition && opts.sort_key) {
@@ -93,13 +94,7 @@ pub fn declarations(
             }
         }
     }
-    if let Some(decl) = partition.or(sort) {
-        return Err(syn::Error::new_spanned(
-            &decl.template,
-            "template validated; composite key expansion requires milestone 15",
-        ));
-    }
-    Ok(())
+    Ok(templates)
 }
 
 pub fn parse(value: &LitStr, fields: &FieldsNamed) -> syn::Result<Template> {

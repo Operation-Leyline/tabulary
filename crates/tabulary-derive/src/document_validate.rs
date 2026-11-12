@@ -11,7 +11,7 @@ pub fn bounds(schema: &crate::validate::Record) -> Generics {
     if generics.params.is_empty() {
         return generics;
     }
-    for field in &schema.fields {
+    for (i, field) in schema.fields.iter().enumerate() {
         let ty = &field.ty;
         // The implementation itself supplies recursive codecs. Requiring them in
         // its where clause would create a trait-solver cycle for Node<T>.
@@ -26,13 +26,14 @@ pub fn bounds(schema: &crate::validate::Record) -> Generics {
                 .predicates
                 .push(syn::parse_quote_spanned!(field.ident.span()=> #ty: #path::Value));
         }
-        if field.key_limit.is_some() {
+        if field.key_limit.is_some() || crate::key_expand::source(schema, i) {
             generics
                 .make_where_clause()
                 .predicates
                 .push(syn::parse_quote_spanned!(field.ident.span()=> #ty: ::core::clone::Clone));
         }
     }
+    crate::key_expand::bounds(schema, &mut generics);
     generics
 }
 

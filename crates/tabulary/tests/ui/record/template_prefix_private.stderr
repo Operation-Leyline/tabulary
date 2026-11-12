@@ -1,0 +1,11 @@
+error[E0451]: fields `value` and `marker` of struct `OrderSortPrefix` are private
+ --> tests/ui/record/template_prefix_private.rs:7:38
+  |
+7 |     let _ = model::OrderSortPrefix { value: "123".into(), marker: std::marker::PhantomData };
+  |                                      ^^^^^ private field  ^^^^^^ private field
+
+error[E0451]: fields `value` and `marker` of struct `OrderPartition` are private
+ --> tests/ui/record/template_prefix_private.rs:8:37
+  |
+8 |     let _ = model::OrderPartition { value: "123".into(), marker: std::marker::PhantomData };
+  |                                     ^^^^^ private field  ^^^^^^ private field
