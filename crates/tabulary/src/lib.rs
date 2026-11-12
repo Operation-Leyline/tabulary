@@ -3,6 +3,7 @@
 #[doc(hidden)]
 pub mod __private;
 mod attr;
+mod billed_size;
 mod collections;
 pub mod condition;
 pub mod convert;
@@ -29,6 +30,7 @@ pub use attr::Optional;
 pub use attr::PresenceMarker;
 pub use attr::Required;
 pub use attr::VersionOnly;
+pub use billed_size::BilledSize;
 pub use collections::{BinarySet, List, Map, NumberSet, StringSet};
 pub use condition::BuiltCondition;
 pub use condition::Condition;
