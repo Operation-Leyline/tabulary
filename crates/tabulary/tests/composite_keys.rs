@@ -40,6 +40,16 @@ fn path(segments: &[PathSegment], attribute: &str, component: &'static str) {
     assert_eq!(segments, expected);
 }
 
+fn key_round_trip<R: Record, K: RecordKey<R>>(key: K) -> tabulary::Item {
+    let item = key.encode_key().unwrap();
+    assert_eq!(K::decode_key(&item).unwrap().encode_key().unwrap(), item);
+    item
+}
+
+fn fault(item: &tabulary::Item) -> DecodeFault {
+    Parcel::from_item(item).unwrap_err().kind
+}
+
 #[test]
 fn exact_format_and_inverse_preserve_utf8_fixed_bytes_and_integer_bounds() {
     let record = parcel();
@@ -51,21 +61,10 @@ fn exact_format_and_inverse_preserve_utf8_fixed_bytes_and_integer_bounds() {
     );
     assert_eq!(item.len(), 7);
     assert_eq!(Parcel::from_item(&item).unwrap(), record);
-    let key = record.key().unwrap().encode_key().unwrap();
+    let key = key_round_trip(record.key().unwrap());
     assert_eq!(key.len(), 2);
-    assert_eq!(
-        ParcelKey::decode_key(&key).unwrap().encode_key().unwrap(),
-        key
-    );
-    let Parcel {
-        shop,
-        token,
-        number,
-        delta,
-        label,
-        ..
-    } = record;
-    let built = ParcelKey::new(shop, token, number, delta, label).unwrap();
+    let p = record;
+    let built = ParcelKey::new(p.shop, p.token, p.number, p.delta, p.label).unwrap();
     assert_eq!(built.encode_key().unwrap(), key);
     assert_eq!(ParcelAttrs::PARTITION.name(), "pk");
     assert_eq!(
@@ -101,10 +100,7 @@ fn corrupt_keys_are_typed_and_located_at_physical_key_and_component() {
     ] {
         let mut item = parcel().to_item().unwrap();
         item.insert("sk".into(), Av::S(wire.into()));
-        assert!(matches!(
-            Parcel::from_item(&item).unwrap_err().kind,
-            DecodeFault::KeyFormat(_)
-        ));
+        assert!(matches!(fault(&item), DecodeFault::KeyFormat(_)));
     }
 }
 
@@ -121,15 +117,9 @@ fn sources_are_required_and_must_agree_with_every_parsed_component() {
     assert_eq!(error.attribute(), Some("shop"));
     let mut item = parcel().to_item().unwrap();
     item.remove("pk");
-    assert_eq!(
-        Parcel::from_item(&item).unwrap_err().kind,
-        DecodeFault::Missing
-    );
+    assert_eq!(fault(&item), DecodeFault::Missing);
     item.insert("pk".into(), Av::Bool(false));
-    assert!(matches!(
-        Parcel::from_item(&item).unwrap_err().kind,
-        DecodeFault::WrongType { .. }
-    ));
+    assert!(matches!(fault(&item), DecodeFault::WrongType { .. }));
 }
 
 #[test]
@@ -184,30 +174,21 @@ fn adjacent_fixed_and_variable_runs_and_shared_sources_round_trip() {
         let prefix = Runs::primary().partition(text.into(), [255]).unwrap();
         assert_eq!(prefix.as_str(), item["pk"].as_s().unwrap());
         assert_eq!(Runs::from_item(&item).unwrap(), record);
-        let key = record.key().unwrap().encode_key().unwrap();
-        assert_eq!(
-            RunsKey::decode_key(&key).unwrap().encode_key().unwrap(),
-            key
-        );
+        key_round_trip(record.key().unwrap());
     }
 }
 
 #[derive(Debug, PartialEq, tabulary::Record)]
-#[tabulary(
-    rename_all = "snake_case",
-    partition(name = "pk", template = "constant")
-)]
-struct Constant {
-    value: String,
-}
+#[tabulary(partition(name = "pk", template = "constant"))]
+struct Constant {}
 
 #[test]
 fn literal_only_templates_are_valid_and_checked() {
-    let record = Constant { value: "v".into() };
+    let record = Constant {};
     let mut item = record.to_item().unwrap();
     assert_eq!(Constant::from_item(&item).unwrap(), record);
     assert_eq!(
-        ConstantKey::new().unwrap().encode_key().unwrap()["pk"],
+        key_round_trip(ConstantKey::new().unwrap())["pk"],
         Av::S("constant".into())
     );
     item.insert("pk".into(), Av::S("other".into()));
@@ -300,14 +281,7 @@ fn renamed_generic_records_keep_key_sources_and_nested_validation() {
     let decoded =
         Generic::<String>::decode_value(&value, &mut DecodeContext::new("Envelope")).unwrap();
     assert_eq!(decoded.to_item().unwrap(), record.to_item().unwrap());
-    let key = record.key().unwrap().clone();
-    assert_eq!(
-        key.encode_key().unwrap(),
-        GenericKey::<String>::decode_key(&record.to_item().unwrap())
-            .unwrap()
-            .encode_key()
-            .unwrap()
-    );
+    key_round_trip(record.key().unwrap().clone());
     let prefix = Generic::<String>::primary()
         .sort_prefix(("é".to_owned(), 7))
         .unwrap();

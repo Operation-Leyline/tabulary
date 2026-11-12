@@ -17,11 +17,10 @@ pub fn template(record: &Record, index: usize) -> Option<&Template> {
     record
         .templates
         .iter()
-        .find(|(i, _)| *i == index)
-        .map(|(_, t)| t)
+        .find_map(|(i, t)| (*i == index).then_some(t))
 }
-pub fn components(template: &Template) -> impl Iterator<Item = usize> + '_ {
-    template.parts.iter().filter_map(|p| match p {
+pub fn components(parts: &[Part]) -> impl Iterator<Item = usize> + '_ {
+    parts.iter().filter_map(|p| match p {
         Part::Component { field, .. } => Some(*field),
         _ => None,
     })
@@ -30,7 +29,7 @@ pub fn inputs(record: &Record) -> Vec<usize> {
     let mut result = Vec::new();
     for index in std::iter::once(record.partition).chain(record.sort) {
         for field in template(record, index)
-            .map(|t| components(t).collect())
+            .map(|t| components(&t.parts).collect())
             .unwrap_or_else(|| vec![index])
         {
             if !result.contains(&field) {
@@ -44,7 +43,7 @@ pub fn source(record: &Record, index: usize) -> bool {
     record
         .templates
         .iter()
-        .any(|(_, t)| components(t).any(|i| i == index))
+        .any(|(_, t)| components(&t.parts).any(|i| i == index))
 }
 pub fn bounds(record: &Record, generics: &mut syn::Generics) {
     let path = &record.crate_path;
@@ -66,10 +65,6 @@ pub fn bounds(record: &Record, generics: &mut syn::Generics) {
     }
 }
 fn codec(codec: Codec, span: Span, path: &syn::Path) -> TokenStream {
-    let mut path = path.clone();
-    for segment in &mut path.segments {
-        segment.ident.set_span(span);
-    }
     let name = syn::Ident::new(
         match codec {
             Codec::Hex => "Hex",
@@ -195,7 +190,7 @@ pub fn decode(record: &Record, key: usize) -> TokenStream {
     let cx = component_context(
         record,
         key,
-        components(template(record, key).unwrap()).last(),
+        components(&template(record, key).unwrap().parts).last(),
     );
     quote! {
         let #text: ::std::string::String = #path::__private::decode_key(#item.get(#name), &mut #context.at(#path::PathSegment::Attribute(#name.into())), #max)?;
@@ -208,7 +203,7 @@ pub fn decode(record: &Record, key: usize) -> TokenStream {
 pub fn checks(record: &Record, field: usize) -> TokenStream {
     let path = &record.crate_path;
     let local = local(field);
-    let checks = record.templates.iter().filter(|(_, t)| components(t).any(|i| i == field)).map(|(key, _)| {
+    let checks = record.templates.iter().filter(|(_, t)| components(&t.parts).any(|i| i == field)).map(|(key, _)| {
         let parsed = parsed(*key, field); let cx = component_context(record, *key, Some(field));
         quote! { if #local != #parsed { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
     });
@@ -219,9 +214,9 @@ pub fn key_bindings(record: &Record) -> TokenStream {
     let path = &record.crate_path;
     let bindings = inputs(record).into_iter().map(|field| {
         if record.fields[field].key_limit.is_some() { return checks(record, field); }
-        let key = record.templates.iter().find(|(_, t)| components(t).any(|i| i == field)).unwrap().0;
+        let key = record.templates.iter().find(|(_, t)| components(&t.parts).any(|i| i == field)).unwrap().0;
         let parsed = parsed(key, field); let local = local(field);
-        let checks = record.templates.iter().filter(|(i, t)| *i != key && components(t).any(|i| i == field)).map(|(other_key, _)| {
+        let checks = record.templates.iter().filter(|(i, t)| *i != key && components(&t.parts).any(|i| i == field)).map(|(other_key, _)| {
             let other = self::parsed(*other_key, field); let cx = component_context(record, *other_key, Some(field));
             quote! { if #parsed != #other { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
         });
@@ -252,7 +247,7 @@ pub fn helpers(record: &Record) -> TokenStream {
     };
     let partition_carrier = template(record, record.partition).map(|_| carrier(&partition_value));
     let partition = template(record, record.partition).map(|t| {
-        let args = components(t).map(|i| { let f = &record.fields[i]; let (id, ty) = (&f.ident, &f.ty); quote!(#id: #ty) });
+        let args = components(&t.parts).map(|i| { let f = &record.fields[i]; let (id, ty) = (&f.ident, &f.ty); quote!(#id: #ty) });
         let format = format(record, record.partition, &t.parts, false, &t.parts);
         let name = &record.fields[record.partition].name;
         quote! { #vis fn partition(&self, #(#args),*) -> ::core::result::Result<#partition_value #tg, #path::EncodeError> {
@@ -266,14 +261,14 @@ pub fn helpers(record: &Record) -> TokenStream {
         .sort
         .and_then(|i| template(record, i).map(|t| (i, t)))
     {
-        let positions: Vec<_> = t
+        for (end, _) in t
             .parts
             .iter()
             .enumerate()
-            .filter_map(|(p, part)| matches!(part, Part::Component { .. }).then_some(p))
-            .collect();
-        for end in positions.iter().skip(1) {
-            let parts = &t.parts[..*end];
+            .filter(|(_, p)| matches!(p, Part::Component { .. }))
+            .skip(1)
+        {
+            let parts = &t.parts[..end];
             // A variable endpoint needs its following literal. A fixed tail
             // cannot delimit a query prefix until that tail is supplied too.
             if parts
@@ -284,13 +279,7 @@ pub fn helpers(record: &Record) -> TokenStream {
             {
                 continue;
             }
-            let fields: Vec<_> = parts
-                .iter()
-                .filter_map(|p| match p {
-                    Part::Component { field, .. } => Some(&record.fields[*field]),
-                    _ => None,
-                })
-                .collect();
+            let fields: Vec<_> = components(parts).map(|i| &record.fields[i]).collect();
             let ids = fields.iter().map(|f| &f.ident);
             let types = fields.iter().map(|f| &f.ty);
             let format = format(record, key, parts, false, &t.parts);
