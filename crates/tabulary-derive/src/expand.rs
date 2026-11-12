@@ -49,19 +49,6 @@ pub fn record(record: &Record) -> TokenStream {
     let mut source_checks = Vec::new();
     let mut common_reads = Vec::new();
     let inputs = key_expand::inputs(record);
-    let index_limit = |i| {
-        record
-            .indexes
-            .iter()
-            .flat_map(|index| {
-                [
-                    (index.partition, 2048),
-                    (index.sort.unwrap_or(usize::MAX), 1024),
-                ]
-            })
-            .filter_map(|(key, max)| (key == i).then_some(max))
-            .min()
-    };
     for &i in &inputs {
         let f = &fields[i];
         let (id, ty, fv) = (&f.ident, &f.ty, &f.vis);
@@ -116,16 +103,23 @@ pub fn record(record: &Record) -> TokenStream {
             let write = key_expand::encode(record, i);
             let read = key_expand::decode(record, i);
             writes.push(write.clone());
-            key_writes.push(write);
+            if key_expand::primary(record, i) {
+                key_writes.push(write);
+            }
             reads.push(read.clone());
-            key_reads.push(read);
+            if key_expand::primary(record, i) {
+                key_reads.push(read);
+            }
             continue;
         }
         let cx = quote!(#context.at(#path::PathSegment::Attribute(#name.into())));
-        let (encode, decode) = if let ::core::option::Option::Some(max) =
-            f.key_limit.into_iter().chain(index_limit(i)).min()
+        let (encode, decode) = if let ::core::option::Option::Some(max) = f
+            .key_limit
+            .into_iter()
+            .chain(key_expand::index_limit(record, i))
+            .min()
         {
-            let key_message = if f.key_limit.is_some() {
+            let key_message = if key_expand::primary(record, i) {
                 "primary keys require S, N or B codecs"
             } else {
                 "index keys require S, N or B codecs"
@@ -177,12 +171,12 @@ pub fn record(record: &Record) -> TokenStream {
         } else {
             common_reads.push(read);
         }
-        if key_expand::source(record, i) {
+        if key_expand::source(record, i) || key_expand::index_source(record, i) {
             source_checks.push(key_expand::checks(record, i));
         }
     }
-    reads.extend(source_checks);
     reads.extend(common_reads);
+    reads.extend(source_checks);
     handles.sort_by_key(|(i, _)| *i);
     descriptors.sort_by_key(|(i, _)| *i);
     let handles = handles.iter().map(|(_, tokens)| tokens);
@@ -195,8 +189,8 @@ pub fn record(record: &Record) -> TokenStream {
     };
     let (checks, key_check) = if generic {
         // Associated constants may refer to generic field types; evaluate before key use.
-        let assertions = fields.iter().enumerate().filter(|(i, f)| f.key_limit.is_some() || index_limit(*i).is_some()).map(|(_, f)| {
-            let key_message = if f.key_limit.is_some() { "primary keys require S, N or B codecs" } else { "index keys require S, N or B codecs" };
+        let assertions = fields.iter().enumerate().filter(|(i, f)| f.key_limit.is_some() || key_expand::index_limit(record, *i).is_some()).map(|(i, f)| {
+            let key_message = if key_expand::primary(record, i) { "primary keys require S, N or B codecs" } else { "index keys require S, N or B codecs" };
             let ty = &f.ty;
             quote_spanned!(f.ident.span()=> ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
                 #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), #key_message);)

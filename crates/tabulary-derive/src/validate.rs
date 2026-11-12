@@ -108,7 +108,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
     let mut names = HashMap::new();
     let mut handles = HashSet::new();
     let mut flattened = false;
-    for (i, field) in fields.named.into_iter().enumerate() {
+    for (i, field) in fields.named.iter().cloned().enumerate() {
         let opts = options(&field.attrs, false)?;
         let ident = field
             .ident
@@ -225,7 +225,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
     if record {
         result.partition = partition
             .ok_or_else(|| error(&result.ident, "exactly one partition key is required"))?;
-        crate::index_validate::indexes(&mut result, opts.indexes)?;
+        crate::index_validate::indexes(&mut result, opts.indexes, &fields)?;
     }
     Ok(result)
 }

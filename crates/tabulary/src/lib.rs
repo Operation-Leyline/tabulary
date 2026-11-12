@@ -16,6 +16,7 @@ pub mod field;
 mod floats;
 mod get;
 mod index;
+mod index_attributes;
 pub mod key_component;
 mod nullable;
 mod numbers;

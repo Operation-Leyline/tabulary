@@ -1,0 +1,23 @@
+error: physical index key name collides with a field or different template
+ --> tests/ui/index/templates.rs:2:113
+  |
+2 | #[tabulary(rename_all = "snake_case", index(ident = ByValue, name = "by_value", kind = global, partition(name = "value", template = "...
+  |                                                                                                                 ^^^^^^^
+
+error: physical index key name collides with a field or different template
+ --> tests/ui/index/templates.rs:9:79
+  |
+9 |     index(ident = ByValue, name = "by_value", kind = global, partition(name = "pk", template = "{value:hex}"), project = all))]
+  |                                                                               ^^^^
+
+error: optional index inputs arrive with sparse indexes in milestone 17
+  --> tests/ui/index/templates.rs:18:5
+   |
+18 |     value: Option<String>,
+   |     ^^^^^
+
+error: duplicate generated attribute handle
+  --> tests/ui/index/templates.rs:21:53
+   |
+21 | #[tabulary(rename_all = "snake_case", index(ident = ByValue, name = "by_value", kind = global, partition(name = "gpk", template = "{...
+   |                                                     ^^^^^^^
