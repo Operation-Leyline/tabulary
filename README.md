@@ -1,6 +1,6 @@
 # tabulary
 
-**Status: implemented, with contract gaps listed in [the design](docs/design.md#16-test-contract-and-ci).**
+**Status: implemented, with verification limits listed in [the design](docs/design.md#16-test-contract-and-ci).**
 Record codecs and derives, typed expressions, prepared operations, cursors, batches,
 transactions, and table definitions have unit, compile-fail, SDK-fixture, and emulator
 tests. All seven [worked examples](docs/examples/README.md) compile as test modules;

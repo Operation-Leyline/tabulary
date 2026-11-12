@@ -48,6 +48,9 @@ pub fn transition(schema: &Record) -> TokenStream {
     let generics = crate::document_validate::bounds(schema);
     let (ig, tg, wc) = generics.split_for_impl();
     quote! {
+        impl #ig #path::VariantRecord for #id #tg #wc {
+            type Group = #ty;
+        }
         impl #ig #path::FlattenedVariants<#ty> for #id #tg #wc {
             const FIELD: usize = #i;
         }

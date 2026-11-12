@@ -89,7 +89,7 @@ pub fn variants(s: &Variants) -> TokenStream {
     let tag_id = format_ident!("{}Tag", s.prefix);
     let tags = format_ident!("{}Tags", s.prefix);
     let tag_variants = s.variants.iter().map(|v| &v.id);
-    let mut singleton_types = Vec::new();
+    let mut scoped = Vec::new();
     let constants = s.variants.iter().map(|v| {
         let name = format_ident!(
             "{}",
@@ -100,16 +100,53 @@ pub fn variants(s: &Variants) -> TokenStream {
         );
         let variant = &v.id;
         let singleton = format_ident!("{}{}Tag", s.prefix, variant.to_string().trim_start_matches("r#"));
-        let codec = crate::string_enum_expand::string_enum(&crate::string_enum_validate::StringEnum {
+        let payload = format_ident!("{}{}Attrs", s.prefix, variant.to_string().trim_start_matches("r#"));
+        let mut payload_generics = generics.clone();
+        let mut owner = format_ident!("__TabularyRecord");
+        while payload_generics.type_params().any(|p| p.ident == owner) {
+            owner = format_ident!("{}_", owner);
+        }
+        payload_generics.params.insert(0, syn::parse_quote!(#owner: #path::Record));
+        let (pig, ptg, pwc) = payload_generics.split_for_impl();
+        let mut marker = format_ident!("__tabulary_marker");
+        while v.fields.iter().any(|f| f.id == marker) {
+            marker = format_ident!("{}_", marker);
+        }
+        let fields = v.fields.iter().map(|f| {
+            let field = &f.id;
+            let (ty, codec) = (&f.ty, &f.codec);
+            let ty = payload_type(quote!(#ty), quote!(#id #tg));
+            let codec = payload_type(quote!(#codec), quote!(#id #tg));
+            quote!(#vis #field: #path::ScopedAttr<#owner, #ty, #codec>)
+        });
+        let initializers = v.fields.iter().map(|f| {
+            let (field, ty, codec, wire) = (&f.id, &f.ty, &f.codec, &f.name);
+            let ty = payload_type(quote!(#ty), quote!(#id #tg));
+            let codec = payload_type(quote!(#codec), quote!(#id #tg));
+            let presence = if f.optional { quote!(#path::Optional) } else { quote!(#path::Required) };
+            let tag = &v.name;
+            quote!(#field: #path::__private::scoped::<#owner, #tag_id, #ty, #presence, #codec>(group, #tag, #wire))
+        });
+        let singleton_codec = crate::string_enum_expand::string_enum(&crate::string_enum_validate::StringEnum {
             ident: singleton.clone(), generics: syn::Generics::default(), crate_path: path.clone(),
             variants: vec![(variant.clone(), v.name.clone())],
         });
-        singleton_types.push(quote! {
+        scoped.push(quote! {
             #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug, ::core::cmp::PartialEq, ::core::cmp::Eq)]
             #vis enum #singleton { #variant }
-            #codec
+            #singleton_codec
             impl ::core::convert::From<#singleton> for #tag_id {
                 fn from(_: #singleton) -> Self { Self::#variant }
+            }
+            #vis struct #payload #payload_generics #pwc {
+                #(#fields,)*
+                #marker: ::core::marker::PhantomData<fn(#owner) -> (#owner, #id #tg)>,
+            }
+            impl #pig #path::VariantScope<#owner, #id #tg> for #singleton #pwc {
+                type Payload = #payload #ptg;
+                fn scope(self, group: #path::Attr<#owner, #tag_id, #path::Required, #path::DerivedOnly>) -> Self::Payload {
+                    #payload { #(#initializers,)* #marker: ::core::marker::PhantomData }
+                }
             }
         });
         quote!(#vis const #name: #singleton = #singleton::#variant;)
@@ -142,7 +179,7 @@ pub fn variants(s: &Variants) -> TokenStream {
         #[allow(dead_code)]
         impl #tags { #(#constants)* }
         #tag_codec
-        #(#singleton_types)*
+        #(#scoped)*
         impl #ig #path::Variants for #id #tg #wc {
             type Tag = #tag_id;
             const TAG: &'static str = #tag;
@@ -180,4 +217,23 @@ pub fn variants(s: &Variants) -> TokenStream {
             }
         }
     }
+}
+
+// Payload peers live outside the enum's impl, where `Self` would name the peer.
+fn payload_type(tokens: TokenStream, owner: TokenStream) -> TokenStream {
+    tokens
+        .into_iter()
+        .flat_map(|token| match token {
+            proc_macro2::TokenTree::Ident(ref id) if id == "Self" => owner.clone(),
+            proc_macro2::TokenTree::Group(group) => {
+                let mut replaced = proc_macro2::Group::new(
+                    group.delimiter(),
+                    payload_type(group.stream(), owner.clone()),
+                );
+                replaced.set_span(group.span());
+                TokenStream::from(proc_macro2::TokenTree::Group(replaced))
+            }
+            token => TokenStream::from(token),
+        })
+        .collect()
 }

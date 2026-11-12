@@ -197,6 +197,8 @@ pub use update_path::Path;
 pub use validation::ValidationFault;
 pub use validation::ValidationPath;
 pub use value::Value;
+pub use variants::VariantRecord;
+pub use variants::VariantScope;
 pub use variants::Variants;
 pub use wire::WireType;
 pub use write::Failure;

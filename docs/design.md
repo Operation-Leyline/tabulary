@@ -1,12 +1,12 @@
 # tabulary design
 
-Status: **implemented library with documented contract gaps**. Record codecs and
+Status: **implemented library with documented verification limits**. Record codecs and
 derives, typed expressions, prepared operations, cursor bytes, batches,
 transactions, and table definitions have unit, compile-fail, and SDK-fixture
 coverage. CI runs the SDK/MSRV feature matrix and the discovered endpoint suite
 against a pinned dynoxide emulator. All seven [examples](examples/README.md)
 compile as real test modules and their public functions have result assertions.
-Section 16 lists remaining API and real-service verification gaps; passing these
+Section 16 lists API boundaries and real-service verification gaps; passing these
 tests does not establish exact DynamoDB equivalence.
 
 ## 1. Scope and design rules
@@ -736,19 +736,38 @@ condition. Variant payload handles are scoped through
 `DeliveryAttrs::STAGE.variant(DeliveryStageTags::SENT)`; their conditions
 include the tag guard. They cannot be used as unconditional update targets.
 
+Scoped payload access is available for a record's flattened group only. Nested
+variant maps retain whole-map handles; their existing nested `Path` API supports
+updates, not condition operands, so nested scoped predicates are deferred.
+A generated singleton type for each tag selects a peer such as
+`DeliveryStageSentAttrs<Delivery>`. Its named fields (for example,
+`.tracking_ref`) are read-only `ScopedAttr` handles with the declared logical
+type, field converter, and physical wire name. Shared fields retain the selected
+tag's guard. Unit variants return an empty payload peer. Generic enums and
+`generated_prefix` apply to these peers as to the other generated names.
 **Breaking change:** `DeliveryStageTags::SENT` and peers now have distinct
 per-variant singleton types rather than the shared `DeliveryStageTag` type.
 `DeliveryStageTag::from(DeliveryStageTags::SENT)` and `.into()` convert to the
 shared enum for mixed collections and exhaustive matches; `.is(..)` and
-`transition(..)` accept either form directly. Scoped payload selection follows
-in the dependent implementation pull request.
+`transition(..)` accept either form directly.
 
-The runtime supplies read-only `ScopedAttr` predicates for generated/manual
-bindings. A leaf retains `payload AND tag = selected`; AND/OR combine branches
-as written, and scoped negation becomes `NOT(payload) AND tag = selected`.
-De Morgan applies only to scoped subtrees, leaving unscoped rendering unchanged.
-Payload descriptors use the flattened group's real schema position for query
-screening and cursor fingerprints; their wire names and codecs remain distinct.
+A scoped leaf means `payload AND tag = selected`. AND and OR combine their
+children as written, so scopes of different variants form guarded disjuncts,
+and `scoped OR common` can match another variant through the common branch.
+Negating a scoped leaf means `NOT(payload) AND tag = selected`, including size
+predicates. Negation distributes inward by De Morgan only through subtrees
+containing scoped leaves; a scoped leaf retains its positive guard, and an
+unscoped subtree receives ordinary NOT without changing its internal rendering.
+Double negation of a scoped expression returns the original expression.
+Scoped handles expose no update target, update operand, or conversion to an
+unguarded attribute; replace payloads with `transition`.
+
+Flattened payload operands retain their containing group's real schema position,
+used by query key screening and cursor fingerprints, with their own physical
+name and codec metadata. Descriptor validation applies to the discriminator;
+the derive validates the payload namespace. Index projection availability checks
+use physical names, not positions. Scoped handles cannot enter the ordinary
+attribute, projection-handle, or mutation-target validation paths.
 
 `update.transition(DeliveryAttrs::STAGE, new_stage, expected_tag)` adds a
 condition for the expected tag, SETs the new tag and payload, and REMOVEs the
@@ -2110,14 +2129,13 @@ Typed projections and their `ProjectionSource` hooks are generated only; manual
 projection implementations are outside the supported API.
 The seven worked examples and README use no `__private` items.
 
-The review found larger gaps in the intended contract that remain unimplemented:
+Follow-up work implements the two missing-feature findings from this review:
+record/document validation hooks and flattened scoped variant payload conditions.
+Their acceptance coverage is in `tests/validation.rs` and
+`tests/scoped_variants.rs`, including compile-fail fixtures. Nested variant
+payload conditions remain deferred as stated in section 5.
 
-- Section 5's `.variant(tag)` payload handles and their implicit tag-guarded
-  conditions do not exist. Whole-group projections and guarded transitions do.
-  Scoped payload-condition acceptance remains unexecuted.
-
-These gaps require follow-up work; the final review does not claim the whole
-design is implemented. The metadata-only Record boundary and missing `Primary<R>`
+The metadata-only Record boundary and missing `Primary<R>`
 alias are stated in section 2. The small `Record::billed_size()` omission is fixed
 with a provided method constrained by `Document`, as described in section 13.
 

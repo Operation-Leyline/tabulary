@@ -11,6 +11,16 @@ pub trait Variants: Document {
 }
 
 impl<R: crate::Record, T: Value + 'static> crate::Attr<R, T, crate::Required, crate::DerivedOnly> {
+    /// Select the payload namespace of a single variant in a flattened group.
+    pub fn variant<S>(self, tag: S) -> S::Payload
+    where
+        R: VariantRecord,
+        R::Group: Variants<Tag = T>,
+        S: VariantScope<R, R::Group>,
+    {
+        tag.scope(self)
+    }
+
     /// Compare a read-only discriminator with one of its typed tags.
     pub fn is(self, tag: impl Into<T>) -> crate::Condition<R> {
         self.eq(tag.into())
@@ -46,4 +56,19 @@ const fn same(a: &[u8], b: &[u8]) -> bool {
         i += 1;
     }
     true
+}
+
+/// Implemented by generated singleton tags, binding a payload to its group.
+pub trait VariantScope<R, V: Variants> {
+    type Payload;
+    #[doc(hidden)]
+    fn scope(
+        self,
+        group: crate::Attr<R, V::Tag, crate::Required, crate::DerivedOnly>,
+    ) -> Self::Payload;
+}
+
+/// The single flattened group whose payloads may be scoped by a record.
+pub trait VariantRecord: crate::Record {
+    type Group: Variants;
 }
