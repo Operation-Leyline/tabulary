@@ -111,6 +111,7 @@ macro_rules! diagnostics {
             record: &'static str,
             document: &'static str,
             path: AttributePath,
+            depth: usize,
         }
         impl $context {
             pub fn new(record: &'static str) -> Self {
@@ -118,6 +119,7 @@ macro_rules! diagnostics {
                     record,
                     document: record,
                     path: AttributePath::default(),
+                    depth: 0,
                 }
             }
             /// Add exactly one segment; names are never parsed as dotted paths.
@@ -132,6 +134,16 @@ macro_rules! diagnostics {
                     document,
                     ..self.clone()
                 }
+            }
+            /// Enter one map or list; the top-level item is depth zero.
+            pub fn enter_container(&self) -> Result<Self, $error> {
+                if self.depth >= 32 {
+                    return Err(self.error($fault::DepthLimit));
+                }
+                Ok(Self {
+                    depth: self.depth + 1,
+                    ..self.clone()
+                })
             }
             pub fn error(&self, kind: $fault) -> $error {
                 $error {

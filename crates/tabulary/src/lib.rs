@@ -10,6 +10,7 @@ pub mod condition;
 mod condition_renderer;
 pub mod convert;
 mod decimal;
+mod document;
 mod errors;
 pub mod field;
 mod floats;
@@ -41,12 +42,15 @@ pub use condition::BuiltCondition;
 pub use condition::Condition;
 pub use convert::{Converter, Native};
 pub use decimal::Decimal;
+pub use document::Document;
 pub use errors::*;
 pub use nullable::{Nullable, NullableWire};
 pub use record::{Item, RecordKey};
 pub use rendered_expressions::RenderedExpressions;
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
 pub use secret::Secret;
+#[cfg(feature = "derive")]
+pub use tabulary_derive::Document;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Record;
 #[cfg(feature = "derive")]

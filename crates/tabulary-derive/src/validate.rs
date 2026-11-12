@@ -22,6 +22,8 @@ pub struct Field {
 
 pub struct Record {
     pub ident: Ident,
+    pub generics: syn::Generics,
+    pub crate_path: Path,
     pub vis: Visibility,
     pub prefix: Ident,
     pub fields: Vec<Field>,
@@ -31,13 +33,22 @@ pub struct Record {
 }
 
 pub fn record(input: DeriveInput) -> syn::Result<Record> {
-    if !input.generics.params.is_empty() {
+    structure(input, true)
+}
+
+pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
+    if input.generics.lifetimes().next().is_some() {
         return Err(error(
             input.generics,
-            "generic records require milestone 12",
+            "document and record types cannot have lifetime parameters",
         ));
     }
-    let opts = parse::options(&input.attrs, true)?;
+    let options = if record {
+        parse::options
+    } else {
+        crate::document_parse::options
+    };
+    let opts = options(&input.attrs, true)?;
     let allow_unknown = match opts
         .unknown
         .as_ref()
@@ -63,13 +74,18 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
         None => input.ident.clone(),
     };
     let Data::Struct(data) = input.data else {
-        return Err(error(input.ident, "Record requires a struct"));
+        return Err(error(input.ident, "Record and Document require a struct"));
     };
     let Fields::Named(fields) = data.fields else {
-        return Err(error(data.fields, "Record requires named fields"));
+        return Err(error(
+            data.fields,
+            "Record and Document require named fields",
+        ));
     };
     let mut result = Record {
         ident: input.ident,
+        generics: input.generics,
+        crate_path: crate::document_validate::crate_path(opts.crate_path)?,
         vis: input.vis,
         prefix,
         fields: Vec::new(),
@@ -81,7 +97,7 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
     let mut names = HashMap::new();
     let mut handles = HashSet::new();
     for (i, field) in fields.named.into_iter().enumerate() {
-        let opts = parse::options(&field.attrs, false)?;
+        let opts = options(&field.attrs, false)?;
         let ident = field
             .ident
             .ok_or_else(|| error(&field.ty, "expected a named field"))?;
@@ -129,9 +145,7 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
         if key_limit.is_some() && opts.default.is_some() {
             return Err(error(opts.default, "primary keys cannot have defaults"));
         }
-        if matches!(&field.ty, Type::Reference(_)) {
-            return Err(error(&field.ty, "record fields must be owned"));
-        }
+        crate::document_validate::owned(&field.ty)?;
         result.fields.push(Field {
             ident,
             vis: field.vis,
@@ -142,8 +156,10 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
             default: opts.default,
         });
     }
-    result.partition =
-        partition.ok_or_else(|| error(&result.ident, "exactly one partition key is required"))?;
+    if record {
+        result.partition = partition
+            .ok_or_else(|| error(&result.ident, "exactly one partition key is required"))?;
+    }
     Ok(result)
 }
 

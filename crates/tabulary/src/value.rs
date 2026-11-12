@@ -14,11 +14,7 @@ pub trait Value: Sized {
     fn decode_value(value: &AttributeValue, cx: &mut DecodeContext) -> Result<Self, DecodeError>;
 }
 
-pub(crate) fn wrong_type(
-    value: &AttributeValue,
-    expected: DynamoType,
-    cx: &DecodeContext,
-) -> DecodeError {
+pub fn wrong_type(value: &AttributeValue, expected: DynamoType, cx: &DecodeContext) -> DecodeError {
     let actual = match value {
         AttributeValue::B(_) => DynamoType::B,
         AttributeValue::Bool(_) => DynamoType::Bool,

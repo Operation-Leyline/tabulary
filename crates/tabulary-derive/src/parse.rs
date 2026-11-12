@@ -6,6 +6,7 @@ pub struct Options {
     pub rename_all: Option<LitStr>,
     pub generated_prefix: Option<LitStr>,
     pub unknown: Option<LitStr>,
+    pub crate_path: Option<LitStr>,
     pub default: Option<Path>,
     pub partition_key: bool,
     pub sort_key: bool,
@@ -24,6 +25,7 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                 (true, "rename_all") => &mut result.rename_all,
                 (true, "generated_prefix") => &mut result.generated_prefix,
                 (true, "unknown") => &mut result.unknown,
+                (true, "crate") => &mut result.crate_path,
                 (false, "rename") => &mut result.rename,
                 (false, "default") => {
                     if result.default.is_some() {

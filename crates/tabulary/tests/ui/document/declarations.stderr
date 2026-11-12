@@ -1,0 +1,29 @@
+error: Document fields cannot declare keys
+ --> tests/ui/document/declarations.rs:3:14
+  |
+3 | struct Key { #[tabulary(partition_key)] id: String }
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Record and Document require named fields
+ --> tests/ui/document/declarations.rs:6:13
+  |
+6 | struct Tuple(String);
+  |             ^^^^^^^^
+
+error: Record and Document require a struct
+ --> tests/ui/document/declarations.rs:9:6
+  |
+9 | enum Shape { Unit }
+  |      ^^^^^
+
+error: duplicate wire name `id`
+  --> tests/ui/document/declarations.rs:12:52
+   |
+12 | struct Duplicate { id: String, #[tabulary(rename = "id")] other: String }
+   |                                                    ^^^^
+
+error: first declared here
+  --> tests/ui/document/declarations.rs:12:20
+   |
+12 | struct Duplicate { id: String, #[tabulary(rename = "id")] other: String }
+   |                    ^^

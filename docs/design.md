@@ -1262,9 +1262,21 @@ policy: full record decode rejects unknown fields in sorted order unless
 `unknown = "allow"` is declared. Its compile-fail snapshots cover duplicate wire
 names at both declarations, optional/non-scalar primary keys, key defaults,
 invalid/duplicate policy options, and invalid default options/signatures.
-`Document`/nested `Value` expansion and generic bounds belong to milestone 12;
-query-facing primary interfaces belong to milestone 23. Primary/index peer
-types are currently markers. No builders, queries, or nested records are implied.
+Milestone 12 adds the public `Document` map trait and generates `Document` and
+map-wire `Value` implementations for both derives. `Document` emits only its
+`<Name>Attrs` peer and codecs; it rejects key annotations. Both derives share
+naming, explicit defaults, and unknown-field rules. Record item methods delegate
+to its document codec, retaining key validation when embedded as an `M`.
+The metadata-only `Record` trait remains unchanged; query-facing primary
+interfaces belong to milestone 23. Primary/index peers remain markers.
+
+Generic peers retain type and const parameters and caller predicates. Generated
+implementations require field codecs and owned key cloning, without requiring
+non-key values to implement `Clone`. Lifetime parameters and references inside
+field types are rejected. Both derives accept the explicit `crate` path override.
+The top-level map is depth zero; each nested `M` or `L`, including an empty
+container, consumes one of 32 levels. Scalars and sets consume no levels.
+Nested codecs preserve the outer record, current document, and physical path.
 
 Physical keys validate S/N/B categories at compile time and nonempty/byte limits
 on construction, encoding, and decoding. The existing decode taxonomy has no

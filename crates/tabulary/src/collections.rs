@@ -19,6 +19,7 @@ impl<T> From<Vec<T>> for List<T> {
 impl<T: Value> Value for List<T> {
     type Wire = wire::List;
     fn encode_value(&self, cx: &mut EncodeContext) -> Result<AttributeValue, EncodeError> {
+        let cx = cx.enter_container()?;
         self.0
             .iter()
             .enumerate()
@@ -30,6 +31,7 @@ impl<T: Value> Value for List<T> {
         let AttributeValue::L(values) = value else {
             return Err(wrong_type(value, DynamoType::L, cx));
         };
+        let cx = cx.enter_container()?;
         values
             .iter()
             .enumerate()
@@ -50,6 +52,7 @@ impl<T> From<BTreeMap<String, T>> for Map<T> {
 impl<T: Value> Value for Map<T> {
     type Wire = wire::Map;
     fn encode_value(&self, cx: &mut EncodeContext) -> Result<AttributeValue, EncodeError> {
+        let cx = cx.enter_container()?;
         self.0
             .iter()
             .map(|(key, value)| {
@@ -64,6 +67,7 @@ impl<T: Value> Value for Map<T> {
         let AttributeValue::M(values) = value else {
             return Err(wrong_type(value, DynamoType::M, cx));
         };
+        let cx = cx.enter_container()?;
         values
             .iter()
             .collect::<BTreeMap<_, _>>()
