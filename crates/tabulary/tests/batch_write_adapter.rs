@@ -91,7 +91,7 @@ impl tabulary::Document for NumericOrder {
 
 #[test]
 fn echoed_string_and_binary_sets_ignore_order_but_reject_changed_members() {
-    for changed in 0..3 {
+    for (string_member, binary_member) in [("a", 1), ("b", 1), ("a", 2), ("c", 1), ("a", 3)] {
         let sets = vec![
             Av::Ss(vec!["a".into(), "b".into()]),
             Av::Bs(vec![vec![1].into(), vec![2].into()]),
@@ -115,19 +115,16 @@ fn echoed_string_and_binary_sets_ignore_order_but_reject_changed_members() {
         write.put_request.as_mut().unwrap().item.insert(
             "sets".into(),
             Av::L(vec![
-                Av::Ss(vec![
-                    "b".into(),
-                    if changed == 1 { "b" } else { "a" }.into(),
-                ]),
-                Av::Bs(vec![
-                    vec![2].into(),
-                    vec![if changed == 2 { 2 } else { 1 }].into(),
-                ]),
+                Av::Ss(vec!["b".into(), string_member.into()]),
+                Av::Bs(vec![vec![2].into(), vec![binary_member].into()]),
             ]),
         );
         let result = batch.accept(request.decode(Ok(output(vec![write], None))));
-        if changed != 0 {
-            assert!(result.is_err());
+        if string_member != "a" || binary_member != 1 {
+            assert!(matches!(
+                result.unwrap_err().kind,
+                BatchWriteErrorKind::State(BatchStateError::InvalidResponse)
+            ));
         } else {
             result.unwrap();
             assert_eq!(batch.next_request().unwrap().unwrap().positions(), &[0]);

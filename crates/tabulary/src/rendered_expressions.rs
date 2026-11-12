@@ -251,4 +251,56 @@ mod tests {
             })
         );
     }
+
+    #[cfg(feature = "derive")]
+    #[test]
+    fn builder_rendered_operators_and_functions_have_exact_counts() {
+        #[derive(crate::Record)]
+        #[tabulary(crate = "crate", rename_all = "snake_case")]
+        struct Order {
+            #[tabulary(partition_key)]
+            id: String,
+            quantity: u64,
+            note: String,
+            lines: crate::List<u64>,
+        }
+        type A = OrderAttrs;
+        fn assert_count(rendered: RenderedExpressions, expected: usize) {
+            rendered.validate().unwrap();
+            let update = rendered.update().is_some();
+            let text = rendered.update().or(rendered.condition()).unwrap();
+            // Add a known 300-operator prefix only to observe the counter through
+            // its existing error. The fragment itself comes entirely from builders.
+            assert_eq!(
+                expression(&format!("{}{text}", "NOT ".repeat(300)), update),
+                Err(BuildError::RequestLimit {
+                    max: 300,
+                    actual: 300 + expected
+                })
+            );
+        }
+        for (condition, expected) in [
+            (A::NOTE.exists(), 1),
+            (A::NOTE.not_exists(), 1),
+            (A::NOTE.begins_with("a".into()), 1),
+            (A::NOTE.contains("b".into()), 1),
+            (A::NOTE.size().eq(2), 2),
+            (A::QUANTITY.in_values(vec![1, 2, 3]), 1),
+            (A::QUANTITY.between(1, 3), 1),
+        ] {
+            assert_count(condition.build().unwrap().render(), expected);
+        }
+        for (action, expected) in [
+            (A::QUANTITY.set_expr(A::QUANTITY.operand().plus(2)), 1),
+            (A::QUANTITY.set_expr(A::QUANTITY.operand().minus(2)), 1),
+            (A::QUANTITY.set_expr(A::QUANTITY.if_not_exists(0)), 1),
+            (A::LINES.list_append(crate::List(vec![1, 2])), 1),
+            (A::LINES.append_or_empty(crate::List(vec![1, 2])), 2),
+        ] {
+            assert_count(
+                crate::Update::new().and(action).build().unwrap().render(),
+                expected,
+            );
+        }
+    }
 }
