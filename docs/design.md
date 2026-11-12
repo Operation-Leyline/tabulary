@@ -1488,6 +1488,16 @@ requiring a hundred tuple implementations. Flattening order is depth-first,
 left-to-right; decoding rebuilds that exact shape. There is no erased record
 object, unchecked token, or downcast.
 
+Milestone 41 extends the same sealed `TxActions` implementations recursively:
+each tuple member may itself be an action, tuple, or `Vec<TxAction<R>>`.
+A vector maps to `Vec<Failure<R>>` with its original length and order; vectors
+of tuples or mixed record types are not part of this surface. Empty vectors
+contribute zero request actions and zero reasons, including inside tuples.
+Only the final flattened request must be nonempty and contain at most 100
+actions; duplicate-target and size checks run over that same flattened order.
+Missing or malformed reason vectors still rebuild every tuple and vector,
+with `Unavailable` failures for each leaf and no inferred alignment.
+
 `TxError::Cancelled(Cancellation<C>)` contains:
 
 - `reasons: C`, preserving every action's typed old item.
