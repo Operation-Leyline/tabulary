@@ -14,6 +14,8 @@ mod nullable;
 mod numbers;
 mod scalar;
 mod schema;
+mod secret;
+mod time;
 mod value;
 pub mod wire;
 
@@ -34,5 +36,7 @@ pub use decimal::Decimal;
 pub use errors::*;
 pub use nullable::{Nullable, NullableWire};
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
+pub use secret::Secret;
+pub use time::{TimeError, TimestampMicros, TimestampMillis, TimestampSeconds, TtlSeconds};
 pub use value::Value;
 pub use wire::WireType;
