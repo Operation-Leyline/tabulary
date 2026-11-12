@@ -244,6 +244,16 @@ and `{field:codec}` components. Built-in component codecs are:
 | `dec20` | `u64` | Exactly twenty decimal digits, preserving unsigned lexical order. |
 | `text` | String | UTF-8 with template separators forbidden in the component. |
 
+Milestone 15a supplies these runtime codecs in `key_component`, implementing
+`KeyComponentCodec<T>` with `format(&T) -> Result<String, KeyFormatFault>` and
+`parse(&str) -> Result<T, KeyFormatFault>`. Invalid spellings are structured
+faults, without retaining input values. The runtime also defines record-owned
+`KeyPrefix<R>` and the `PrefixParts<R>` integration trait; milestone 15b
+generates their complete-component implementations and validates reserved text
+separators. Generated key expansion and source comparison remain in 15b.
+Custom template declaration syntax and delimiter metadata are unspecified and
+deferred; the parser continues to recognize only the four built-in names.
+
 Every codec is injective within its accepted domain and implements an inverse.
 Adjacent variable-width components, ambiguous boundaries, duplicate component
 references, unknown fields, and separators admitted by a variable component's
