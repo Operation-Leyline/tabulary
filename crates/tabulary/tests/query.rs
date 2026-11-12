@@ -78,6 +78,22 @@ fn request() -> tabulary::PreparedQuery<Order, OrderPrimary> {
 }
 
 #[test]
+fn repeated_filters_keep_both_predicates_and_bindings() {
+    let prepared = table()
+        .query(partition(), Eventual)
+        .filter(OrderAttrs::LABEL.eq("ready".into()))
+        .filter(OrderAttrs::QUANTITY.gt(2))
+        .build()
+        .unwrap();
+    let expressions = prepared.expressions();
+    assert_eq!(expressions.filter(), Some("(#n1 = :v1 AND #n2 > :v2)"));
+    assert_eq!(expressions.names()["#n1"], "label");
+    assert_eq!(expressions.names()["#n2"], "quantity");
+    assert_eq!(expressions.values()[":v1"], Av::S("ready".into()));
+    assert_eq!(expressions.values()[":v2"], Av::N("2".into()));
+}
+
+#[test]
 fn empty_filtered_page_retains_continuation_and_resumes_with_a_different_limit() {
     let make = || {
         table()

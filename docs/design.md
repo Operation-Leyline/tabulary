@@ -970,6 +970,8 @@ Milestone 28 adds `Table<R>::delete(key)` for `R: Record + Document` and
 `K: RecordKey<R>`. `DeleteBuilder<R, K>` owns the table name and key, encoding
 the key and validating its optional `Condition<R>` at `build()`.
 Repeated `.condition(...)` calls AND their predicates, matching UpdateItem.
+Query and Scan follow the same rule for repeated `.filter(...)` calls:
+every supplied predicate is ANDed with the preceding filters.
 Callers can also combine predicates with `.and(...)` or `.or(...)`.
 `PreparedDelete<R>` aliases
 `PreparedRequest<DeleteItemInput, R>`, copies every SDK input field, and derives

@@ -89,9 +89,12 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
         self.segment = Some(segment);
         self
     }
-    /// Scan filters may include primary and index keys.
+    /// AND this predicate with existing filters. Scan filters may include keys.
     pub fn filter(mut self, filter: Condition<R>) -> Self {
-        self.filter = Some(filter);
+        self.filter = Some(match self.filter {
+            Some(existing) => existing.and(filter),
+            None => filter,
+        });
         self
     }
     pub fn resume(mut self, cursor: Cursor<R, I>) -> Self {

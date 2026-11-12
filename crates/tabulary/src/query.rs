@@ -87,8 +87,12 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
         self.limit = Some(limit);
         self
     }
+    /// AND this predicate with any existing filter.
     pub fn filter(mut self, filter: Condition<R>) -> Self {
-        self.filter = Some(filter);
+        self.filter = Some(match self.filter {
+            Some(existing) => existing.and(filter),
+            None => filter,
+        });
         self
     }
     pub fn resume(mut self, cursor: Cursor<R, I>) -> Self {

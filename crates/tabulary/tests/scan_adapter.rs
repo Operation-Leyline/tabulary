@@ -50,6 +50,22 @@ fn output(items: Vec<Item>, key: Option<Item>) -> ScanOutput {
 }
 
 #[test]
+fn repeated_filters_keep_both_predicates_and_bindings() {
+    let prepared = table()
+        .scan(Eventual)
+        .filter(OrderAttrs::ID.eq("order-lime".into()))
+        .filter(OrderAttrs::LABEL.eq("ready".into()))
+        .build()
+        .unwrap();
+    let expressions = prepared.expressions();
+    assert_eq!(expressions.filter(), Some("(#n0 = :v0 AND #n1 = :v1)"));
+    assert_eq!(expressions.names()["#n0"], "id");
+    assert_eq!(expressions.names()["#n1"], "label");
+    assert_eq!(expressions.values()[":v0"], Av::S("order-lime".into()));
+    assert_eq!(expressions.values()[":v1"], Av::S("ready".into()));
+}
+
+#[test]
 fn inputs_are_explicit_and_limit_counts_evaluated_items() {
     let prepared = table()
         .scan(Strong)
