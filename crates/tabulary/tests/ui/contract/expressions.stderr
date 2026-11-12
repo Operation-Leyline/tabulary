@@ -1,0 +1,152 @@
+error[E0308]: mismatched types
+ --> tests/ui/contract/expressions.rs:4:18
+  |
+3 | fn owner<R: Record, S: Record>(left: Attr<R, u64>, right: Attr<S, u64>) {
+  |          -          - found type parameter
+  |          |
+  |          expected type parameter
+4 |     left.eq_path(right);
+  |          ------- ^^^^^ expected `Attr<R, u64, _, _>`, found `Attr<S, u64>`
+  |          |
+  |          arguments to this method are incorrect
+  |
+  = note: expected struct `Attr<R, u64, _, _>`
+             found struct `Attr<S, u64, tabulary::Required, tabulary::Mutable>`
+  = note: a type parameter was expected, but a different one was found; you might be missing a type parameter or trait bound
+  = note: for more information, visit https://doc.rust-lang.org/book/ch10-02-traits.html#traits-as-parameters
+note: method defined here
+ --> src/condition.rs
+  |
+  |     pub fn eq_path<P2: PresenceMarker, A2: AccessMarker>(
+  |            ^^^^^^^
+
+error[E0308]: mismatched types
+ --> tests/ui/contract/expressions.rs:5:20
+  |
+3 | fn owner<R: Record, S: Record>(left: Attr<R, u64>, right: Attr<S, u64>) {
+  |          -          - found type parameter
+  |          |
+  |          expected type parameter
+4 |     left.eq_path(right);
+5 |     left.eq(1).and(right.eq(1));
+  |                --- ^^^^^^^^^^^ expected `Condition<R>`, found `Condition<S>`
+  |                |
+  |                arguments to this method are incorrect
+  |
+  = note: expected struct `Condition<R>`
+             found struct `Condition<S>`
+  = note: a type parameter was expected, but a different one was found; you might be missing a type parameter or trait bound
+  = note: for more information, visit https://doc.rust-lang.org/book/ch10-02-traits.html#traits-as-parameters
+note: method defined here
+ --> src/condition.rs
+  |
+  |     pub fn and(self, other: Self) -> Self {
+  |            ^^^
+
+error[E0308]: mismatched types
+ --> tests/ui/contract/expressions.rs:6:28
+  |
+3 | fn owner<R: Record, S: Record>(left: Attr<R, u64>, right: Attr<S, u64>) {
+  |          -          - found type parameter
+  |          |
+  |          expected type parameter
+...
+6 |     Update::<R>::new().and(right.set(1));
+  |                        --- ^^^^^^^^^^^^ expected `Action<R>`, found `Action<S>`
+  |                        |
+  |                        arguments to this method are incorrect
+  |
+  = note: expected struct `Action<R>`
+             found struct `Action<S>`
+  = note: a type parameter was expected, but a different one was found; you might be missing a type parameter or trait bound
+  = note: for more information, visit https://doc.rust-lang.org/book/ch10-02-traits.html#traits-as-parameters
+note: method defined here
+ --> src/update.rs
+  |
+  |     pub fn and(mut self, action: Action<R>) -> Self {
+  |            ^^^
+
+error[E0277]: the trait bound `SetExpression<R, u64>: From<SetOperand<S, u64>>` is not satisfied
+ --> tests/ui/contract/expressions.rs:7:19
+  |
+7 |     left.set_expr(right.operand());
+  |          -------- ^^^^^^^^^^^^^^^ the trait `From<SetOperand<S, u64>>` is not implemented for `SetExpression<R, u64>`
+  |          |
+  |          required by a bound introduced by this call
+  |
+  = note: required for `SetOperand<S, u64>` to implement `Into<SetExpression<R, u64>>`
+note: required by a bound in `update::<impl Attr<R, T, P, tabulary::Mutable, C>>::set_expr`
+ --> src/update.rs
+  |
+  |     pub fn set_expr(self, expression: impl Into<SetExpression<R, T, C>>) -> Action<R> {
+  |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `update::<impl Attr<R, T, P, Mutable, C>>::set_expr`
+help: consider introducing a `where` clause, but there might be an alternative better way to express this requirement
+  |
+3 | fn owner<R: Record, S: Record>(left: Attr<R, u64>, right: Attr<S, u64>) where SetExpression<R, u64>: From<SetOperand<S, u64>> {
+  |                                                                         +++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+error[E0308]: mismatched types
+  --> tests/ui/contract/expressions.rs:11:14
+   |
+11 |     field.eq("3".to_owned());
+   |           -- ^^^^^^^^^^^^^^ expected `u64`, found `String`
+   |           |
+   |           arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/condition.rs
+   |
+   |     comparisons!(T; eq => Eq, ne => Ne);
+   |                     ^^
+
+error[E0308]: mismatched types
+  --> tests/ui/contract/expressions.rs:12:15
+   |
+12 |     field.set("3".to_owned());
+   |           --- ^^^^^^^^^^^^^^ expected `u64`, found `String`
+   |           |
+   |           arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/update.rs
+   |
+   |     pub fn set(self, value: T) -> Action<R> {
+   |            ^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/contract/expressions.rs:19:18
+   |
+15 | fn codec<R: Record, C: Converter<u64, Wire = wire::Number> + 'static>(
+   |                     - found this type parameter
+...
+19 |     left.eq_path(right);
+   |          ------- ^^^^^ expected `Attr<R, u64, _, _>`, found `Attr<R, u64, Required, Mutable, C>`
+   |          |
+   |          arguments to this method are incorrect
+   |
+   = note: expected struct `Attr<R, u64, _, _, Native<u64>>`
+              found struct `Attr<R, u64, tabulary::Required, tabulary::Mutable, C>`
+note: method defined here
+  --> src/condition.rs
+   |
+   |     pub fn eq_path<P2: PresenceMarker, A2: AccessMarker>(
+   |            ^^^^^^^
+
+error[E0277]: the trait bound `SetExpression<R, u64>: From<SetOperand<R, u64, C>>` is not satisfied
+  --> tests/ui/contract/expressions.rs:20:19
+   |
+20 |     left.set_expr(right.if_not_exists(0));
+   |          -------- ^^^^^^^^^^^^^^^^^^^^^^ the trait `From<SetOperand<R, u64, C>>` is not implemented for `SetExpression<R, u64>`
+   |          |
+   |          required by a bound introduced by this call
+   |
+   = note: required for `SetOperand<R, u64, C>` to implement `Into<SetExpression<R, u64>>`
+note: required by a bound in `update::<impl Attr<R, T, P, tabulary::Mutable, C>>::set_expr`
+  --> src/update.rs
+   |
+   |     pub fn set_expr(self, expression: impl Into<SetExpression<R, T, C>>) -> Action<R> {
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `update::<impl Attr<R, T, P, Mutable, C>>::set_expr`
+help: consider introducing a `where` clause, but there might be an alternative better way to express this requirement
+   |
+18 | ) where SetExpression<R, u64>: From<SetOperand<R, u64, C>> {
+   |   ++++++++++++++++++++++++++++++++++++++++++++++++++++++++

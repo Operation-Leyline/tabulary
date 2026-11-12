@@ -1335,6 +1335,7 @@ dependencies = [
  "aws-sdk-dynamodb",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
+ "serde_json",
  "tabulary-derive",
  "tokio",
  "trybuild",

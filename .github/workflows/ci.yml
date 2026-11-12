@@ -63,7 +63,7 @@ jobs:
         run: cargo +1.97.1 tree -p aws-sdk-dynamodb --depth 0 | grep -Fx 'aws-sdk-dynamodb v1.130.0'
       - name: Check the workspace and SDK fixtures on MSRV
         run: cargo +1.97.1 check --workspace --all-targets --locked --${{ matrix.features }}
-      - name: Exercise the SDK fixtures
+      - name: Run every workspace test target and doctest
         run: cargo +1.97.1 test --workspace --locked --${{ matrix.features }}
 
   endpoint:
@@ -89,7 +89,7 @@ jobs:
         run: python -m unittest discover -s scripts -p test_run_endpoint.py
       - name: Verify the typed missing-endpoint precondition in an isolated process
         run: cargo test -p tabulary --test endpoint --locked -- support::missing_endpoint_fails_before_aws_configuration --exact
-      - name: Run isolated table lifecycle, CRUD and conditional old-item tests
+      - name: Run every discovered endpoint test
         shell: bash
         run: |
           set -o pipefail

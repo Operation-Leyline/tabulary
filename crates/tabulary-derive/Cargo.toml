@@ -1,6 +1,6 @@
 [package]
 name = "tabulary-derive"
-description = "Derives for tabulary (design skeleton)"
+description = "Derives for tabulary records, documents, variants, and projections"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
