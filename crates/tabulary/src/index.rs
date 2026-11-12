@@ -48,23 +48,21 @@ impl RecordSchema {
     /// Only physical primary/index keys are DynamoDB AttributeDefinitions.
     /// Included and ordinary attributes are deliberately excluded.
     pub fn attribute_definitions(self) -> Result<Vec<AttributeDefinition>, BuildError> {
-        let keys = std::iter::once(self.primary).chain(self.indexes.iter().map(|i| i.keys));
-        let mut positions = Vec::new();
-        for key in keys {
-            for position in std::iter::once(key.partition).chain(key.sort) {
-                if self.fields.get(position).is_none() {
+        let positions: std::collections::BTreeSet<_> = std::iter::once(self.primary)
+            .chain(self.indexes.iter().map(|i| i.keys))
+            .flat_map(|k| std::iter::once(k.partition).chain(k.sort))
+            .collect();
+        let mut names = std::collections::BTreeSet::new();
+        positions
+            .into_iter()
+            .map(|position| {
+                let field = self
+                    .fields
+                    .get(position)
+                    .ok_or(BuildError::IncompatibleIndex)?;
+                if !names.insert(field.name) {
                     return Err(BuildError::IncompatibleIndex);
                 }
-                if !positions.contains(&position) {
-                    positions.push(position);
-                }
-            }
-        }
-        self.fields
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| positions.contains(i))
-            .map(|(_, field)| {
                 let wire = match field.wire {
                     DynamoType::S => ScalarAttributeType::S,
                     DynamoType::N => ScalarAttributeType::N,

@@ -4,7 +4,7 @@ use crate::{
     validate::{Field, Record},
 };
 use std::collections::HashSet;
-use syn::{Ident, LitStr};
+use syn::{Ident, LitStr, ext::IdentExt};
 
 pub struct Index {
     pub ident: Ident,
@@ -71,6 +71,14 @@ pub fn indexes(record: &mut Record, declarations: Vec<Declaration>) -> syn::Resu
             }
             for entry in entries {
                 let field = field(record, &entry)?;
+                if [Some(record.partition), record.sort, Some(partition), sort]
+                    .contains(&Some(field))
+                {
+                    return Err(syn::Error::new_spanned(
+                        entry,
+                        "include accepts only non-key attributes",
+                    ));
+                }
                 if names.contains(&record.fields[field].name) {
                     return Err(syn::Error::new_spanned(entry, "duplicate include field"));
                 }
@@ -99,8 +107,7 @@ fn field(record: &Record, ident: &Ident) -> syn::Result<usize> {
         .iter()
         .enumerate()
         .find(|(i, f)| {
-            f.ident.to_string().trim_start_matches("r#")
-                == ident.to_string().trim_start_matches("r#")
+            f.ident.unraw() == ident.unraw()
                 && !f.flatten
                 && key_expand::template(record, *i).is_none()
         })
@@ -121,19 +128,14 @@ fn key(record: &Record, key: Key) -> syn::Result<usize> {
     }
 }
 fn required(field: &Field) -> syn::Result<()> {
-    if field.optional {
-        return Err(syn::Error::new_spanned(
-            &field.ident,
-            "optional index inputs arrive with sparse indexes in milestone 17",
-        ));
-    }
-    if field.default.is_some() {
-        return Err(syn::Error::new_spanned(
-            &field.ident,
-            "index key inputs cannot have defaults",
-        ));
-    }
-    Ok(())
+    let message = if field.optional {
+        "optional index inputs arrive with sparse indexes in milestone 17"
+    } else if field.default.is_some() {
+        "index key inputs cannot have defaults"
+    } else {
+        return Ok(());
+    };
+    Err(syn::Error::new_spanned(&field.ident, message))
 }
 
 #[cfg(test)]
@@ -148,10 +150,10 @@ mod tests {
             "ident = ByValue, name = \"by_value\", kind = global, partition = value, sort = value, project = all",
             "ident = ByValue, name = \"by_value\", kind = global, partition = value, project = include()",
             "ident = ByValue, name = \"by_value\", kind = global, partition = value, project = include(absent)",
-            "ident = ByValue, name = \"by_value\", kind = global, partition = value, project = include(value, value)",
+            "ident = ByValue, name = \"by_value\", kind = global, partition = value, project = include(note, note)",
             "ident = ByValue, name = \"by_value\", kind = global, kind = local, partition = value, project = all",
         ] {
-            let input = syn::parse_str(&format!("#[tabulary(rename_all = \"snake_case\", index({index}))] struct Order {{ #[tabulary(partition_key)] id: String, value: String }}")).unwrap();
+            let input = syn::parse_str(&format!("#[tabulary(rename_all = \"snake_case\", index({index}))] struct Order {{ #[tabulary(partition_key)] id: String, value: String, note: String }}")).unwrap();
             assert!(crate::validate::record(input).is_err(), "{index}");
         }
     }
