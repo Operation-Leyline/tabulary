@@ -91,7 +91,13 @@ pub fn variants(s: &Variants) -> TokenStream {
     let tag_variants = s.variants.iter().map(|v| &v.id);
     let mut scoped = Vec::new();
     let constants = s.variants.iter().map(|v| {
-        let name = format_ident!("{}", crate::parse::rename(v.id.to_string().trim_start_matches("r#"), "SCREAMING_SNAKE_CASE"));
+        let name = format_ident!(
+            "{}",
+            crate::parse::rename(
+                v.id.to_string().trim_start_matches("r#"),
+                "SCREAMING_SNAKE_CASE"
+            )
+        );
         let variant = &v.id;
         let singleton = format_ident!("{}{}Tag", s.prefix, variant.to_string().trim_start_matches("r#"));
         let payload = format_ident!("{}{}Attrs", s.prefix, variant.to_string().trim_start_matches("r#"));

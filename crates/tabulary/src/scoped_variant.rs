@@ -2,7 +2,10 @@
 use crate::{
     Attr, BuildError, Condition, Converter, DerivedOnly, FieldDescriptor, Native, PresenceMarker,
     Record, Required, Value,
-    condition::{self, Contains, Operator, Ordered, Prefix, Size, SizedWire},
+    condition::{
+        self, Contains, Operator, Ordered, Prefix, Size, SizedWire, comparisons,
+        ordered_comparisons,
+    },
 };
 use std::marker::PhantomData;
 
@@ -23,8 +26,11 @@ pub fn scoped<R: Record, G: Value, T, P: PresenceMarker, C: Converter<T>>(
     tag: &'static str,
     name: &'static str,
 ) -> ScopedAttr<R, T, C> {
+    // Flattened payloads share the group's schema position, but keep their own
+    // wire name/type; query screening and cursor fingerprints read this position.
     ScopedAttr {
-        field: crate::__private::field::<R, T, P, DerivedOnly, C>(name, usize::MAX).descriptor(),
+        field: crate::__private::field::<R, T, P, DerivedOnly, C>(name, group.descriptor().index)
+            .descriptor(),
         group: group.validate(),
         tag,
         types: PhantomData,
@@ -58,12 +64,7 @@ impl<R: Record, T: 'static, C: Converter<T> + 'static> ScopedAttr<R, T, C> {
         condition::predicate::<R, T, C>(Ok(self.field), false, operator, values)
             .guarded(self.guard())
     }
-    pub fn eq(self, value: T) -> Condition<R> {
-        self.predicate(Operator::Eq, vec![value])
-    }
-    pub fn ne(self, value: T) -> Condition<R> {
-        self.predicate(Operator::Ne, vec![value])
-    }
+    comparisons!(T; eq => Eq, ne => Ne);
     pub fn exists(self) -> Condition<R> {
         self.predicate(Operator::Exists, vec![])
     }
@@ -120,19 +121,5 @@ impl<R: Record, T: 'static, C: Converter<T> + 'static> ScopedAttr<R, T, C>
 where
     C::Wire: Ordered,
 {
-    pub fn lt(self, value: T) -> Condition<R> {
-        self.predicate(Operator::Lt, vec![value])
-    }
-    pub fn le(self, value: T) -> Condition<R> {
-        self.predicate(Operator::Le, vec![value])
-    }
-    pub fn gt(self, value: T) -> Condition<R> {
-        self.predicate(Operator::Gt, vec![value])
-    }
-    pub fn ge(self, value: T) -> Condition<R> {
-        self.predicate(Operator::Ge, vec![value])
-    }
-    pub fn between(self, lo: T, hi: T) -> Condition<R> {
-        self.predicate(Operator::Between, vec![lo, hi])
-    }
+    ordered_comparisons!(T);
 }

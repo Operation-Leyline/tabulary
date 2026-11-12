@@ -14,9 +14,8 @@ enum Stage {
         #[tabulary(with = tabulary::convert::u128_string)]
         external: u128,
     },
-    Failed {
-        note: Option<String>,
-    },
+    #[tabulary(rename = "deliveryFailed")]
+    Failed { note: Option<String> },
 }
 #[derive(tabulary::Record)]
 #[tabulary(rename_all = "snake_case")]
@@ -81,6 +80,11 @@ fn predicates_use_payload_wire_names_types_and_codecs_with_a_guard() {
             s("ar"),
         ),
         (sent().tracking.size().ge(3), "size(#n0) >= :v0", n("3")),
+        (
+            sent().tracking.size().ge(3).not(),
+            "NOT (size(#n0) >= :v0)",
+            n("3"),
+        ),
     ] {
         check(
             condition,
@@ -125,7 +129,7 @@ fn predicates_use_payload_wire_names_types_and_codecs_with_a_guard() {
             .exists(),
         "(attribute_exists(#n0) AND #n1 = :v0)",
         &["note", "delivery.stage"],
-        vec![s("failed")],
+        vec![s("deliveryFailed")],
     );
 }
 
@@ -142,9 +146,9 @@ fn composition_never_negates_or_bypasses_the_scope() {
             .variant(StageTags::FAILED)
             .note
             .exists()),
-        "(((attribute_exists(#n0) OR attribute_exists(#n0)) AND #n1 = :v0) AND #n1 = :v1)",
+        "((attribute_exists(#n0) AND #n1 = :v0) OR (attribute_exists(#n0) AND #n1 = :v1))",
         &["note", "delivery.stage"],
-        vec![s("sent"), s("failed")],
+        vec![s("sent"), s("deliveryFailed")],
     );
     check(
         sent().tracking.eq("parcel".into()).not(),
@@ -154,9 +158,37 @@ fn composition_never_negates_or_bypasses_the_scope() {
     );
     check(
         sent().note.exists().or(DeliveryAttrs::QUANTITY.eq(1)).not(),
-        "(NOT ((attribute_exists(#n0) OR #n1 = :v0)) AND #n2 = :v1)",
-        &["note", "quantity", "delivery.stage"],
-        vec![n("1"), s("sent")],
+        "((NOT (attribute_exists(#n0)) AND #n1 = :v0) AND NOT (#n2 = :v1))",
+        &["note", "delivery.stage", "quantity"],
+        vec![s("sent"), n("1")],
+    );
+    check(
+        sent().note.exists().or(DeliveryAttrs::QUANTITY.eq(1)),
+        "((attribute_exists(#n0) AND #n1 = :v0) OR #n2 = :v1)",
+        &["note", "delivery.stage", "quantity"],
+        vec![s("sent"), n("1")],
+    );
+    check(
+        sent()
+            .note
+            .exists()
+            .and(DeliveryAttrs::QUANTITY.eq(1))
+            .not(),
+        "((NOT (attribute_exists(#n0)) AND #n1 = :v0) OR NOT (#n2 = :v1))",
+        &["note", "delivery.stage", "quantity"],
+        vec![s("sent"), n("1")],
+    );
+    check(
+        sent()
+            .note
+            .exists()
+            .or(DeliveryAttrs::QUANTITY
+                .eq(1)
+                .and(DeliveryAttrs::QUANTITY.eq(2)))
+            .not(),
+        "((NOT (attribute_exists(#n0)) AND #n1 = :v0) AND NOT ((#n2 = :v1 AND #n2 = :v2)))",
+        &["note", "delivery.stage", "quantity"],
+        vec![s("sent"), n("1"), n("2")],
     );
     check(
         DeliveryAttrs::QUANTITY
@@ -164,15 +196,15 @@ fn composition_never_negates_or_bypasses_the_scope() {
             .and(sent().note.exists())
             .not()
             .not(),
-        "(NOT (NOT ((#n0 = :v0 AND attribute_exists(#n1)))) AND #n2 = :v1)",
+        "(#n0 = :v0 AND (attribute_exists(#n1) AND #n2 = :v1))",
         &["quantity", "note", "delivery.stage"],
         vec![n("1"), s("sent")],
     );
     check(
         sent().note.exists().and(sent().count.gt(2)),
-        "(((attribute_exists(#n0) AND #n1 > :v0) AND #n2 = :v1) AND #n2 = :v2)",
-        &["note", "count", "delivery.stage"],
-        vec![n("2"), s("sent"), s("sent")],
+        "((attribute_exists(#n0) AND #n1 = :v0) AND (#n2 > :v1 AND #n1 = :v2))",
+        &["note", "delivery.stage", "count"],
+        vec![s("sent"), n("2"), s("sent")],
     );
 }
 
@@ -189,10 +221,57 @@ fn scoped_conditions_feed_write_query_and_scan_builders() {
     assert_eq!(write.expressions().condition(), expected.condition());
     assert_eq!(write.expressions().names(), expected.names());
     assert_eq!(write.expressions().values(), expected.values());
+    let action = table
+        .check(DeliveryKey::new("parcel".into()).unwrap(), predicate())
+        .into_tx()
+        .unwrap();
+    let check = action.input().condition_check.as_ref().unwrap();
+    assert_eq!(
+        check.condition_expression.as_str(),
+        "(NOT (attribute_exists(#n0)) AND #n1 = :v0)"
+    );
+    assert_eq!(
+        check.expression_attribute_names.as_ref(),
+        Some(expected.names())
+    );
+    assert_eq!(
+        check.expression_attribute_values.as_ref(),
+        Some(expected.values())
+    );
     let scan = table.scan(Strong).filter(predicate()).build().unwrap();
     assert_eq!(scan.expressions().filter(), expected.condition());
     assert_eq!(scan.expressions().names(), expected.names());
     assert_eq!(scan.expressions().values(), expected.values());
+    let key = [("id".into(), s("parcel"))].into();
+    let page = scan
+        .decode(Ok(aws_sdk_dynamodb::operation::scan::ScanOutput::builder()
+            .set_last_evaluated_key(Some(key))
+            .build()))
+        .unwrap();
+    let bytes = page.next.unwrap().to_bytes().unwrap();
+    let cursor = tabulary::Cursor::<Delivery, ()>::from_bytes(&bytes).unwrap();
+    assert!(
+        table
+            .scan(Strong)
+            .filter(predicate())
+            .resume(cursor)
+            .build()
+            .is_ok()
+    );
+    let node = predicate().build().unwrap().into_root();
+    let tabulary::condition::ConditionNode::And(payload, _) = node else {
+        panic!("guarded leaf")
+    };
+    let tabulary::condition::ConditionNode::Not(payload) = *payload else {
+        panic!("negated payload")
+    };
+    let tabulary::condition::ConditionNode::Predicate { operands, .. } = *payload else {
+        panic!("payload")
+    };
+    let tabulary::condition::Operand::Attribute(field) = operands[0] else {
+        panic!("field")
+    };
+    assert_eq!(field.index, DeliveryAttrs::STAGE.descriptor().index);
     let query = table
         .query(Delivery::primary().partition("parcel".into()), Strong)
         .filter(predicate())
@@ -274,6 +353,17 @@ fn generics_renamed_runtime_recursive_self_and_marker_names_work() {
     };
     assert_eq!(error.kind, tabulary::EncodeFault::NonFiniteFloat);
     assert_eq!((error.record, error.attribute()), ("Parcel", Some("value")));
+    let mixed: Vec<StageTag> = vec![StageTag::from(StageTags::SENT), StageTags::FAILED.into()];
+    assert_eq!(
+        mixed
+            .into_iter()
+            .map(|tag| match tag {
+                StageTag::Sent => "sent",
+                StageTag::Failed => "failed",
+            })
+            .collect::<Vec<_>>(),
+        ["sent", "failed"]
+    );
     assert!(
         ParcelAttrs::<String>::STATE
             .is(PayloadTag::Active)

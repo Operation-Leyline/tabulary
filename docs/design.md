@@ -745,20 +745,29 @@ A generated singleton type for each tag selects a peer such as
 type, field converter, and physical wire name. Shared fields retain the selected
 tag's guard. Unit variants return an empty payload peer. Generic enums and
 `generated_prefix` apply to these peers as to the other generated names.
-The singleton tags convert into the group's ordinary `DeliveryStageTag` enum;
-`.is(..)` and `transition(..)` accept either form. Use that enum for collections
-of different tags.
+**Breaking change:** `DeliveryStageTags::SENT` and peers now have distinct
+per-variant singleton types rather than the shared `DeliveryStageTag` type.
+`DeliveryStageTag::from(DeliveryStageTags::SENT)` and `.into()` convert to the
+shared enum for mixed collections and exhaustive matches; `.is(..)` and
+`transition(..)` accept either form directly.
 
-Scope guards are requirements on the complete condition: composing predicates
-with AND, OR, or NOT composes their payload expressions while retaining every
-scope guard as an outer AND requirement. In particular, `NOT(scoped)` means
-`NOT(payload) AND tag = selected`, and `scoped OR common` still requires the
-selected tag. Combining scopes of different tags in one condition requires both
-tags and therefore matches no item; use discriminator `.is(..)` conditions when
-expressing alternatives across variants. Guards are retained in encounter
-order without deduplication. Scoped handles expose no update target, update
-operand, or conversion to an unguarded attribute; replace payloads with
-`transition`.
+A scoped leaf means `payload AND tag = selected`. AND and OR combine their
+children as written, so scopes of different variants form guarded disjuncts,
+and `scoped OR common` can match another variant through the common branch.
+Negating a scoped leaf means `NOT(payload) AND tag = selected`, including size
+predicates. Negation distributes inward by De Morgan only through subtrees
+containing scoped leaves; a scoped leaf retains its positive guard, and an
+unscoped subtree receives ordinary NOT without changing its internal rendering.
+Double negation of a scoped expression returns the original expression.
+Scoped handles expose no update target, update operand, or conversion to an
+unguarded attribute; replace payloads with `transition`.
+
+Flattened payload operands retain their containing group's real schema position,
+used by query key screening and cursor fingerprints, with their own physical
+name and codec metadata. Descriptor validation applies to the discriminator;
+the derive validates the payload namespace. Index projection availability checks
+use physical names, not positions. Scoped handles cannot enter the ordinary
+attribute, projection-handle, or mutation-target validation paths.
 
 `update.transition(DeliveryAttrs::STAGE, new_stage, expected_tag)` adds a
 condition for the expected tag, SETs the new tag and payload, and REMOVEs the

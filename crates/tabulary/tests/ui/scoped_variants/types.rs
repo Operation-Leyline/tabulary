@@ -30,7 +30,16 @@ struct Nested {
     id: String,
     stage: Stage,
 }
+#[derive(tabulary::Record)]
+#[tabulary(rename_all = "snake_case")]
+struct OtherRecord {
+    #[tabulary(partition_key)]
+    id: String,
+    #[tabulary(flatten)]
+    stage: Stage,
+}
 fn main() {
+    DeliveryAttrs::ID.exists().and(OtherRecordAttrs::STAGE.variant(StageTags::SENT).note.exists());
     DeliveryAttrs::STAGE.variant(OtherTags::SENT);
     DeliveryAttrs::STAGE.variant(StageTags::SENT).failure.exists();
     DeliveryAttrs::STAGE.variant(StageTags::FAILED).tracking.exists();
