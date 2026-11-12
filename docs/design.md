@@ -1123,6 +1123,18 @@ the same codecs as a put. `BilledSize::of_item(&Item)` sizes an already encoded
 item without cloning. It includes physical names, synthetic keys, and only
 attributes actually present.
 
+Milestone 09 provides the standalone estimator; the `Record::billed_size`
+convenience method follows when record encoding is introduced. `of_item`
+accepts a borrowed SDK `HashMap<String, AttributeValue>` (the planned `Item`
+alias) and returns `Result<BilledSize, EncodeError>`. Its diagnostic root is
+`Item`, with physical attribute/index paths. It validates numeric domain and
+document depth, but is not a general schema or set-uniqueness validator.
+Invalid numeric syntax/domain returns `NumberRange`; malformed NULL and future
+SDK variants use `Custom` codes `invalid_null` and `unsupported_type`, because
+the encode fault taxonomy has no dedicated variants for these cases.
+`ensure_at_most` returns `BuildError::RequestLimit { max, actual }` on excess,
+where `actual` is the conservative count; equality succeeds.
+
 `BilledSize` exposes `estimated_item_bytes()` and
 `conservative_item_bytes()`. “Item bytes” means the item size relevant to
 capacity rounding and item limits, not JSON wire bytes or total storage billing.
@@ -1134,7 +1146,10 @@ overhead, and scalar member sums for sets. A top-level item has no map wrapper
 overhead. Omitted options contribute nothing. Estimated numbers use normalized
 significant digits: ceil(digits/2)+1, with an extra byte reserved for negatives.
 The conservative model reserves 21 bytes per valid native number, even zero.
-All sums use checked arithmetic.
+All sums use checked arithmetic. List/map overhead is three bytes per container
+and one byte per child; sets have neither overhead. Zero has one significant
+digit and no negative sign after normalization. Remote billing equivalence
+remains **unverified** until live-service boundary experiments are run.
 
 AWS describes number sizes as approximate, so these are a documented estimate
 and conservative model, not a service-certified exact byte count.
