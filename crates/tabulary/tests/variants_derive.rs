@@ -200,3 +200,47 @@ fn nested_paths_and_map_depth_match_documents() {
 fn variants_diagnostics() {
     trybuild::TestCases::new().compile_fail("tests/ui/variants/*.rs");
 }
+
+#[test]
+fn recursive_generic_payloads_and_caller_default_names_work() {
+    #[derive(Debug, PartialEq, tabulary::Variants)]
+    #[tabulary(tag = "kind", rename_all = "snake_case")]
+    enum Node<T> {
+        Leaf { value: T },
+        Branch { children: tabulary::List<Node<T>> },
+    }
+    let node = Node::Branch {
+        children: vec![Node::Leaf { value: true }].into(),
+    };
+    assert_eq!(decode::<Node<bool>>(&encode(&node)).unwrap(), node);
+    fn tag() -> u64 {
+        1
+    }
+    fn item() -> u64 {
+        2
+    }
+    fn cx() -> u64 {
+        3
+    }
+    #[derive(Debug, PartialEq, tabulary::Variants)]
+    #[tabulary(tag = "kind", rename_all = "snake_case")]
+    enum Defaults {
+        Named {
+            #[tabulary(default = tag)]
+            first: u64,
+            #[tabulary(default = item)]
+            second: u64,
+            #[tabulary(default = cx)]
+            third: u64,
+        },
+    }
+    let item = [("kind".into(), Av::S("named".into()))].into();
+    assert_eq!(
+        decode::<Defaults>(&item).unwrap(),
+        Defaults::Named {
+            first: 1,
+            second: 2,
+            third: 3
+        }
+    );
+}

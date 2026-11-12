@@ -161,3 +161,12 @@ pub fn variants(input: DeriveInput) -> syn::Result<Variants> {
         names,
     })
 }
+
+/// Recursive payload codecs are supplied by this same implementation.
+pub fn references_self(tokens: proc_macro2::TokenStream, name: &Ident) -> bool {
+    tokens.into_iter().any(|token| match token {
+        proc_macro2::TokenTree::Ident(id) => id == *name || id == "Self",
+        proc_macro2::TokenTree::Group(group) => references_self(group.stream(), name),
+        _ => false,
+    })
+}
