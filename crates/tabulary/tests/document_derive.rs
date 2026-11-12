@@ -158,11 +158,13 @@ fn documents_keep_explicit_defaults_and_unknown_policy() {
 
 #[derive(Debug, PartialEq, tabulary::Document)]
 #[tabulary(rename_all = "snake_case")]
-struct Node {
-    children: List<Node>,
+struct Node<T> {
+    payload: T,
+    children: List<Node<T>>,
 }
-fn chain(depth: usize) -> Node {
+fn chain(depth: usize) -> Node<bool> {
     Node {
+        payload: true,
         children: List(if depth == 0 {
             vec![]
         } else {
@@ -176,19 +178,19 @@ fn maximum_nesting_counts_maps_and_lists_but_not_the_top_level_item() {
     let node = chain(15);
     let item = node.encode_map(&mut EncodeContext::new("Node")).unwrap(); // 31
     assert_eq!(
-        Node::decode_map(&item, &mut DecodeContext::new("Node")).unwrap(),
+        Node::<bool>::decode_map(&item, &mut DecodeContext::new("Node")).unwrap(),
         node
     );
     let value = node
         .encode_value(&mut EncodeContext::new("Envelope"))
         .unwrap(); // 32
     assert_eq!(
-        Node::decode_value(&value, &mut DecodeContext::new("Envelope")).unwrap(),
+        Node::<bool>::decode_value(&value, &mut DecodeContext::new("Envelope")).unwrap(),
         node
     );
     let value = Av::L(vec![value]); // 33
     let error =
-        List::<Node>::decode_value(&value, &mut DecodeContext::new("Envelope")).unwrap_err();
+        List::<Node<bool>>::decode_value(&value, &mut DecodeContext::new("Envelope")).unwrap_err();
     assert_eq!(error.kind, DecodeFault::DepthLimit);
     assert_eq!(error.document, "Node");
     let error = List(vec![node])

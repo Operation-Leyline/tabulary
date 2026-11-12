@@ -13,10 +13,14 @@ pub fn bounds(schema: &crate::validate::Record) -> Generics {
     }
     for field in &schema.fields {
         let ty = &field.ty;
-        generics
-            .make_where_clause()
-            .predicates
-            .push(syn::parse_quote_spanned!(field.ident.span()=> #ty: #path::Value));
+        // The implementation itself supplies recursive codecs. Requiring them in
+        // its where clause would create a trait-solver cycle for Node<T>.
+        if !references_self(quote::quote!(#ty), &schema.ident) {
+            generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote_spanned!(field.ident.span()=> #ty: #path::Value));
+        }
         if field.key_limit.is_some() {
             generics
                 .make_where_clause()
@@ -64,4 +68,12 @@ pub fn owned(ty: &Type) -> syn::Result<()> {
 
 pub fn crate_path(path: Option<syn::LitStr>) -> syn::Result<Path> {
     path.map_or_else(|| Ok(syn::parse_quote!(::tabulary)), |path| path.parse())
+}
+
+fn references_self(tokens: proc_macro2::TokenStream, name: &syn::Ident) -> bool {
+    tokens.into_iter().any(|token| match token {
+        proc_macro2::TokenTree::Ident(ident) => ident == *name || ident == "Self",
+        proc_macro2::TokenTree::Group(group) => references_self(group.stream(), name),
+        _ => false,
+    })
 }
