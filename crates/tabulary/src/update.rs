@@ -162,6 +162,7 @@ impl<R> fmt::Debug for BuiltUpdate<R> {
 pub struct Update<R> {
     actions: Vec<Action<R>>,
     condition: Option<crate::Condition<R>>,
+    reindexes: Vec<crate::reindex::Request>,
 }
 impl<R> Default for Update<R> {
     fn default() -> Self {
@@ -173,6 +174,7 @@ impl<R> Update<R> {
         Self {
             actions: vec![],
             condition: None,
+            reindexes: vec![],
         }
     }
     pub fn and(mut self, action: Action<R>) -> Self {
@@ -180,12 +182,19 @@ impl<R> Update<R> {
         self
     }
     pub fn build(self) -> Result<BuiltUpdate<R>, BuildError> {
-        if self.actions.is_empty() {
-            return Err(BuildError::EmptyOperation);
-        }
+        self.build_for_key(None)
+    }
+    pub(crate) fn build_for_key(
+        self,
+        key: Option<&crate::Item>,
+    ) -> Result<BuiltUpdate<R>, BuildError> {
         let mut actions = Vec::new();
         for action in self.actions {
             actions.extend((action.build)()?);
+        }
+        actions.extend(crate::reindex::expand(self.reindexes, key)?);
+        if actions.is_empty() {
+            return Err(BuildError::EmptyOperation);
         }
         crate::update_renderer::validate_targets(&actions)?;
         Ok(BuiltUpdate {
@@ -196,6 +205,15 @@ impl<R> Update<R> {
     }
 }
 impl<R: Record> Update<R> {
+    /// Replace every logical input of an index, recomputing its synthesized keys.
+    /// Shared dependencies require complete, agreeing inputs for every affected index.
+    pub fn reindex<I: crate::ReindexSchema<R>>(mut self, _index: I, inputs: I::Inputs) -> Self
+    where
+        I::Inputs: 'static,
+    {
+        self.reindexes.push(crate::reindex::request::<R, I>(inputs));
+        self
+    }
     /// Replace a whole flattened group, guarded by its expected old discriminator.
     /// Encoding is deferred to build; omitted optional payload fields are removed.
     pub fn transition<V: crate::Variants + 'static>(

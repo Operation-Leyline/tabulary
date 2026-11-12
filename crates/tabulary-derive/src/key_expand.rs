@@ -172,6 +172,9 @@ fn format(
 }
 
 pub fn encode(record: &Record, key: usize) -> TokenStream {
+    crate::sparse_expand::encode(record, key, encode_body(record, key))
+}
+pub fn encode_body(record: &Record, key: usize) -> TokenStream {
     let path = &record.crate_path;
     let context = format_ident!("cx", span = Span::mixed_site());
     let item = format_ident!("item", span = Span::mixed_site());
@@ -182,10 +185,9 @@ pub fn encode(record: &Record, key: usize) -> TokenStream {
         &record.fields[key].name,
         record.fields[key].key_limit.unwrap(),
     );
-    let body = quote! { { #format
+    quote! { { #format
         #item.insert(#name.into(), #path::__private::encode_key(&#output, &mut #context.at(#path::PathSegment::Attribute(#name.into())), #max)?);
-    } };
-    crate::sparse_expand::encode(record, key, body)
+    } }
 }
 
 pub fn decode(record: &Record, key: usize) -> TokenStream {

@@ -67,6 +67,7 @@ pub fn expand(record: &Record) -> TokenStream {
         );
         let definition = definition(record, index);
         let helpers = key_expand::helpers_for(record, index.partition, index.sort, &peer);
+        let reindex = crate::reindex_expand::expand(record, index, &peer);
         handles.push(quote!(#vis const #handle: #peer #tg = #peer(::core::marker::PhantomData);));
         peers.push(quote! {
             #vis struct #peer #generics (::core::marker::PhantomData<fn() -> #owner #tg>) #wc;
@@ -84,7 +85,7 @@ pub fn expand(record: &Record) -> TokenStream {
                 type Sort = <Self as #path::IndexSchema<#owner #tg>>::Sort;
                 const KEYS: #path::KeyDefinition = <Self as #path::IndexSchema<#owner #tg>>::DEFINITION.keys;
             }
-            #(#codecs)* #helpers
+            #(#codecs)* #helpers #reindex
         });
     }
     quote!(impl #ig #indexes #tg #wc { #(#handles)* } #(#peers)*)

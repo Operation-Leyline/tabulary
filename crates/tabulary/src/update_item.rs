@@ -89,7 +89,7 @@ impl<R: Record + Document, K: RecordKey<R>> UpdateBuilder<R, K> {
         let condition = self
             .version
             .expand(crate::version::Write::Update(&mut changes), self.condition)?;
-        let changes = changes.build()?;
+        let changes = changes.build_for_key(Some(&key))?;
         let expressions = match condition {
             Some(condition) => changes.render_with_condition(&condition.build()?),
             None => changes.render(),
