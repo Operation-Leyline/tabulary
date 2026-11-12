@@ -12,6 +12,8 @@ pub fn projection(s: &Projection) -> TokenStream {
         selections.push(quote_spanned!(name.span()=> #path::projection::append(&mut names, #path::projection::select::<#source, #index>(#handle)?)?;));
         let decode = if field.nested {
             let view = crate::validate::optional(ty).unwrap_or_else(|| ty.clone());
+            selections
+                .push(quote_spanned!(name.span()=> #path::projection::nested_field(#handle);));
             selections.push(
                 quote_spanned!(name.span()=> let _ = <#view as #path::Projection>::attributes()?;),
             );

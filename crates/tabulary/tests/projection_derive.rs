@@ -290,3 +290,41 @@ fn a_source_codec_is_inherited_without_redeclaration() {
         DecodeFault::WrongType { .. }
     ));
 }
+
+#[test]
+fn composite_keys_keep_access_markers_and_validate_selected_wire_values() {
+    #[derive(tabulary::Record)]
+    #[tabulary(
+        rename_all = "snake_case",
+        partition(name = "pk", template = "ORDER#{tenant:hex}")
+    )]
+    struct Entry {
+        tenant: String,
+        payload: String,
+    }
+    #[derive(tabulary::Projection)]
+    #[tabulary(record = Entry)]
+    struct Source {
+        #[tabulary(attribute = EntryAttrs::TENANT)]
+        tenant: String,
+    }
+    #[derive(tabulary::Projection)]
+    #[tabulary(record = Entry)]
+    struct Physical {
+        #[tabulary(attribute = EntryAttrs::PARTITION)]
+        key: String,
+    }
+    assert_eq!(
+        Source::from_item(&[("tenant".into(), Av::S("a".into()))].into())
+            .unwrap()
+            .tenant,
+        "a"
+    );
+    let mut item: Item = [("pk".into(), Av::S("ORDER#61".into()))].into();
+    assert_eq!(Physical::from_item(&item).unwrap().key, "ORDER#61");
+    item.insert("pk".into(), Av::S("OTHER#61".into()));
+    assert_eq!(
+        Physical::from_item(&item).err().unwrap().kind,
+        DecodeFault::KeyFormat(tabulary::KeyFormatFault::InvalidPrefix)
+    );
+}

@@ -83,6 +83,11 @@ pub trait NestedValue<P: Projection, Presence>: Sized {
     -> Result<Self::Output, DecodeError>;
     fn default_view(self, cx: &mut DecodeContext) -> Result<Self::Output, DecodeError>;
 }
+#[doc(hidden)]
+pub fn nested_field<R, T: Document + crate::Value<Wire = crate::wire::Map>, P, A>(
+    _: Attr<R, T, P, A>,
+) {
+}
 fn nested<P: Projection>(value: &AttributeValue, cx: &mut DecodeContext) -> Result<P, DecodeError> {
     let cx = cx.in_document(P::Source::NAME);
     let AttributeValue::M(item) = value else {

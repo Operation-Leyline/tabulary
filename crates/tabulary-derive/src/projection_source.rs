@@ -12,12 +12,17 @@ pub fn fields(s: &Record) -> TokenStream {
     let fields = s.fields.iter().enumerate().map(|(i, f)| {
         let (ty, name) = (&f.ty, &f.name);
         let presence = if f.optional { quote!(#path::Optional) } else { quote!(#path::Required) };
-        let access = if f.flatten { quote!(#path::DerivedOnly) } else if f.key_limit.is_some() { quote!(#path::KeyOnly) } else { quote!(#path::Mutable) };
+        let access = if f.flatten { quote!(#path::DerivedOnly) } else { crate::key_expand::access(s, i) };
         let logical = if f.flatten { quote!(<#ty as #path::Variants>::Tag) } else { quote!(#ty) };
         let output = if f.optional { quote!(::core::option::Option<#ty>) } else { quote!(#ty) };
         let names = if f.flatten { quote!(<#ty as #path::Variants>::ATTRIBUTES) } else { quote!(&[#name]) };
         let child = quote!(#cx.at(#path::PathSegment::Attribute(#name.into())));
-        let decode = if f.flatten { quote!(<#ty as #path::Variants>::decode_flattened(#item, &mut #cx.clone())) }
+        let decode = if crate::key_expand::template(s, i).is_some() {
+            let parse = crate::key_expand::decode(s, i);
+            let text = format_ident!("__tabulary_text_{i}", span = Span::mixed_site());
+            quote!({ #parse ::core::result::Result::Ok(#text) })
+        }
+        else if f.flatten { quote!(<#ty as #path::Variants>::decode_flattened(#item, &mut #cx.clone())) }
         else if let Some(max) = f.key_limit { quote!(#path::__private::decode_key(#item.get(#name), &mut #child, #max)) }
         else if f.optional { quote!(#path::field::decode_optional::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #child)) }
         else { quote!(#path::field::decode_required::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #child)) };
