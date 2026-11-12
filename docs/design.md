@@ -1282,6 +1282,33 @@ error wrapping and freezing belong to milestone 43's adapter below. The adapter
 must consume the core into a partial result on terminal failure; the low-level
 core's nonmutating rejection is not permission to retry a failed SDK call.
 
+Milestone 43 stages the SDK adapter separately from projection selection.
+`Table::batch_get(keys, consistency, budget)` validates immediately and returns
+`BatchGet<R, K>`. `next_request()` prepares an immutable `PreparedBatchGet<P>`
+using the shared prepared-request storage; `input()`, `expressions()` and `apply`
+expose/copy the complete SDK input. `decode` returns an opaque `BatchGetRound<P>`
+containing its issued identity and either decoded values or a typed fault.
+`accept` validates that identity before accounting or changing progress.
+`BatchGetError<K, P> { kind, partial }` boxes its owned partial; the kind is
+`BatchGetFailure::{State, Sdk, Decode, Aborted}`. Budget exhaustion is
+`State(BatchStateError::BudgetExhausted)`, rather than a separate batch enum.
+The complete and partial core result types now have `capacity` vectors; pure
+core operations leave them empty. The SDK adapter preserves one complete vector
+per accepted round, including an empty vector when the SDK supplies no accounting.
+A malformed or unexpected physical key, wrong table, duplicate or overlapping
+response is `State(InvalidResponse)`: none of that round's item states is trusted.
+Once all keys correlate, decoding retains every valid record from that round;
+failed positions remain Pending and `Decode { failures }` lists every malformed
+item as its original input position paired with its structured decode error,
+including the attribute path. The vector follows response order; it distinguishes
+these corrupt items from the service's unprocessed keys in the partial, and
+`source()` exposes its first error. Prior progress and all received capacities
+survive both paths. A terminal error transfers ownership to its partial and
+subsequent operations return Frozen (their partial is empty, already transferred).
+`abort_round(Cancelled | Deadline)` freezes an outstanding round; `finish` returns
+the abort cause and all owned progress. Aborting with no outstanding round is
+WrongRound. An aborted round adds no capacity vector, since no result was accepted.
+
 The design resolves two requirements together: unprocessed items cannot
 disappear, and tabulary cannot retry or hide calls. Batch state prepares the
 next request only when the caller asks. It performs no I/O and does not sleep.
@@ -1332,6 +1359,28 @@ is `Missing`. Unprocessed keys remain `Pending`, never missing. Successful
 in original input order. A malformed returned item causes a typed decode error
 with input position and path; accumulated successes and unprocessed keys remain
 available in the error's partial result.
+
+Milestone 44 adds the table-independent `BatchWriteProgress<R>` core alongside
+BatchGet. `BatchAction::put(&record)?` freezes the same encoded item and item-size
+gate as prepared put; `BatchAction::delete(key)?` freezes the prepared-delete key
+encoding. Target identity is extracted from these payloads without running a
+second codec, validates both physical key fields, and normalizes numeric spelling.
+`new(actions, budget)` requires 1..=25 actions and rejects duplicate targets.
+The later adapter binds this homogeneous action list to one table.
+`next_round()` reserves a call and returns an immutable `BatchWriteChunk` of
+original positions. The corresponding actions remain available through
+`entries()`. `accept_round(&chunk, pending)` validates identity, round and the
+entire unprocessed subset before marking all other issued positions `Processed`.
+Only `Pending` actions can appear in another round; budget and lifecycle errors
+reuse `BatchStateError`. `finish()` returns ordered actions on completion, or
+ordered action/state entries and issued-call count on incomplete work.
+`fail_round(&chunk)` marks outstanding actions `Indeterminate` and freezes the
+core: further rounds and completion return `BatchStateError::Indeterminate`.
+Consuming an outstanding core through `into_partial()` or incomplete `finish()`
+also conservatively marks its pending writes indeterminate. Already processed
+actions retain their state. The adapter in milestone 45 retains SDK and abort
+causes, validates raw unprocessed responses, and records capacity vectors; none
+of those SDK/error-wrapper surfaces are introduced by this pure core.
 
 Batch write accepts only `BatchAction::put(&record)?` and
 `BatchAction::delete(key)?`. No conditions, updates, version-controlled
@@ -1503,7 +1552,7 @@ numeric spelling privately and treating a table name and its ARN as aliases.
 Explicit DynamoDB ARNs must agree on partition, region, and account. The known
 aggregate contribution checked here is the conservative size of put items;
 existing item sizes and complete wire-size accounting remain service checks
-and milestone 46 work, respectively. No decoder is provided before milestone 40.
+and milestone 46 work, respectively. Decoding is added by milestone 40 below.
 
 ### 11.3 Typed cancellation results without reflection
 
@@ -1520,6 +1569,16 @@ and tuples supports mixed transactions up to the service action cap without
 requiring a hundred tuple implementations. Flattening order is depth-first,
 left-to-right; decoding rebuilds that exact shape. There is no erased record
 object, unchecked token, or downcast.
+
+Milestone 41 extends the same sealed `TxActions` implementations recursively:
+each tuple member may itself be an action, tuple, or `Vec<TxAction<R>>`.
+A vector maps to `Vec<Failure<R>>` with its original length and order; vectors
+of tuples or mixed record types are not part of this surface. Empty vectors
+contribute zero request actions and zero reasons, including inside tuples.
+Only the final flattened request must be nonempty and contain at most 100
+actions; duplicate-target and size checks run over that same flattened order.
+Missing or malformed reason vectors still rebuild every tuple and vector,
+with `Unavailable` failures for each leaf and no inferred alignment.
 
 `TxError::Cancelled(Cancellation<C>)` contains:
 
@@ -1542,6 +1601,24 @@ retain the raw vector, and mark completeness malformed. Do not parse the message
 to reconstruct missing reasons. The entire transaction failed, but its detailed
 cause may be unknowable. Non-cancellation SDK failures are `TxError::Sdk`.
 Transport failures can have an indeterminate commit outcome.
+
+Milestone 40 supplies `PreparedTransaction::decode` for single actions and flat
+tuples of arity one through twelve. Nested tuples and vectors remain milestone
+41. `ReasonCompleteness` names the three completeness states above. An absent
+SDK vector is `Missing`; a present empty vector is `MalformedLength` for a
+nonempty request. Missing or misaligned vectors supply no old items to any
+decoder. Each action independently honors its frozen failure-return option:
+unrequested old data stays `NotRequested`, even when detailed reasons are
+unavailable, and requested but absent old data is `Unavailable`.
+
+`Cancellation<C>` exposes `source: Box<SdkError<TransactWriteItemsError>>` and
+`raw_reasons()` preserves absent versus present vectors. `TxError::sdk_error()`
+and standard error sources retain the original SDK error. Wrapper formatting
+redacts reasons, items, messages, and SDK sources without requiring record
+`Debug` implementations. `TxResult` preserves the SDK's optional capacity vector
+as `capacity` and optional per-table `item_collection_metrics` unchanged. The
+decoder uses each frozen action's stored full-record decoder, with no reflection
+or type bounds on the record beyond those already checked during preparation.
 
 The application decides what conflicts, throttles, and failed conditions mean
 to its business operation. There is no prioritized summary that discards other

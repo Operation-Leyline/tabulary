@@ -1,0 +1,19 @@
+error[E0308]: mismatched types
+ --> tests/ui/transaction_composition/record_alignment.rs:8:38
+  |
+8 |     let _ = transaction((vec![order, invoice],));
+  |                                      ^^^^^^^ expected `TxAction<Order>`, found `TxAction<Invoice>`
+  |
+  = note: expected struct `TxAction<Order>`
+             found struct `TxAction<Invoice>`
+
+error[E0308]: mismatched types
+  --> tests/ui/transaction_composition/record_alignment.rs:15:61
+   |
+15 |         let _: (Vec<Failure<Invoice>>, (Failure<Order>,)) = cancelled.reasons;
+   |                ------------------------------------------   ^^^^^^^^^^^^^^^^^ expected `(Vec<Failure<Invoice>>, (Failure<...>,))`, found `(Vec<Failure<Order>>, (Failure<...>,))`
+   |                |
+   |                expected due to this
+   |
+   = note: expected tuple `(Vec<Failure<Invoice>>, (Failure<Order>,))`
+              found tuple `(Vec<Failure<Order>>, (Failure<Invoice>,))`
