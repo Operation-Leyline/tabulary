@@ -950,6 +950,24 @@ Both return enums default to `None` and convert to the SDK's `ReturnValue`;
 `WriteResult<R>` retains the optional full record, complete consumed capacity,
 and item-collection metrics supplied by the SDK, without inventing accounting.
 
+Milestone 29 adds `Table<R>::update(key)` for `R: Record + Document` and
+`K: RecordKey<R>`. `changes(Update<R>)` replaces the complete mutation set;
+missing or empty changes fail at build. Repeated `condition(Condition<R>)`
+calls AND their predicates. Build uses milestone 22's validated update and
+shared condition renderer, then owns the complete `UpdateItemInput` in
+`PreparedUpdate<R>`, an alias for `PreparedRequest<UpdateItemInput, R>`.
+`apply` replaces every modeled input field, including absent legacy options.
+SDK failures use milestone 26's classifier with the requested `OldItemMode`.
+
+Update success returns must agree with the selected mode. `AllNew` requires
+attributes; `AllOld` permits absence when the update created an item; `None`
+rejects any present attributes, including an empty map. Every present full
+return is decoded strictly. Mode/shape mismatches are committed-write
+`WriteError::Decode` faults with `DecodeFault::Validation` codes
+`missing_returned_attributes` or `unexpected_returned_attributes` at the record
+root. `WriteDecodeError` preserves capacity and collection metrics unchanged;
+its raw map is empty when no attributes were supplied. No follow-up read occurs.
+
 An absent GetItem item is `None`. A nonempty or explicitly present item that
 fails decoding is an error, never “not found.” An SDK response with an empty item
 map decodes as an item and fails on required keys; only an absent item is missing.

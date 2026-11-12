@@ -1,0 +1,39 @@
+error[E0308]: mismatched types
+ --> tests/ui/update_item/returns.rs:5:35
+  |
+5 |     table.update(key).return_item(ReturnValue::UpdatedNew);
+  |                       ----------- ^^^^^^^^^^^^^^^^^^^^^^^ expected `ReturnItem`, found `ReturnValue`
+  |                       |
+  |                       arguments to this method are incorrect
+  |
+note: method defined here
+ --> src/update_item.rs
+  |
+  |     pub fn return_item(mut self, choice: ReturnItem) -> Self {
+  |            ^^^^^^^^^^^
+
+error[E0308]: mismatched types
+ --> tests/ui/update_item/returns.rs:8:35
+  |
+8 |     table.update(key).return_item(ReturnValue::UpdatedOld);
+  |                       ----------- ^^^^^^^^^^^^^^^^^^^^^^^ expected `ReturnItem`, found `ReturnValue`
+  |                       |
+  |                       arguments to this method are incorrect
+  |
+note: method defined here
+ --> src/update_item.rs
+  |
+  |     pub fn return_item(mut self, choice: ReturnItem) -> Self {
+  |            ^^^^^^^^^^^
+
+error[E0599]: no variant, associated function, or constant named `UpdatedNew` found for enum `ReturnItem` in the current scope
+  --> tests/ui/update_item/returns.rs:11:25
+   |
+11 |     let _ = ReturnItem::UpdatedNew;
+   |                         ^^^^^^^^^^ variant, associated function, or constant not found in `ReturnItem`
+
+error[E0599]: no variant, associated function, or constant named `UpdatedOld` found for enum `ReturnItem` in the current scope
+  --> tests/ui/update_item/returns.rs:12:25
+   |
+12 |     let _ = ReturnItem::UpdatedOld;
+   |                         ^^^^^^^^^^ variant, associated function, or constant not found in `ReturnItem`
