@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 
 use aws_sdk_dynamodb::{error::SdkError, types::ConsumedCapacity};
 
-use crate::{DecodeError, Item};
+use crate::{DecodeError, Item, PageMetadata};
 
 /// Every read must explicitly choose its consistency; there is no default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,6 +24,8 @@ pub struct ReadDecodeError {
     pub position: usize,
     pub source: DecodeError,
     pub capacity: Option<ConsumedCapacity>,
+    /// Page response metadata; absent for GetItem. Page-level faults use position zero.
+    pub page: Option<PageMetadata>,
     pub(crate) raw_items: Vec<Item>,
 }
 impl ReadDecodeError {
@@ -38,6 +40,7 @@ impl fmt::Debug for ReadDecodeError {
             .field("position", &self.position)
             .field("source", &self.source)
             .field("capacity", &self.capacity)
+            .field("page", &self.page)
             .field("raw_items", &"[redacted]")
             .finish()
     }
