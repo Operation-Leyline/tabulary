@@ -39,3 +39,17 @@ pub fn known(schema: &Record) -> TokenStream {
         |ty| quote!(<#ty as #path::Variants>::ATTRIBUTES.contains(&name.as_str())),
     )
 }
+
+pub fn transition(schema: &Record) -> TokenStream {
+    let Some((i, field)) = schema.fields.iter().enumerate().find(|(_, f)| f.flatten) else {
+        return quote!();
+    };
+    let (id, ty, path) = (&schema.ident, &field.ty, &schema.crate_path);
+    let generics = crate::document_validate::bounds(schema);
+    let (ig, tg, wc) = generics.split_for_impl();
+    quote! {
+        impl #ig #path::FlattenedVariants<#ty> for #id #tg #wc {
+            const FIELD: usize = #i;
+        }
+    }
+}

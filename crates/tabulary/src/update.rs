@@ -78,12 +78,17 @@ pub enum ActionNode {
 /// A validated, record-owned sequence with nonoverlapping targets.
 pub struct BuiltUpdate<R> {
     actions: Vec<ActionNode>,
+    condition: Option<crate::BuiltCondition<R>>,
     owner: PhantomData<fn(R) -> R>,
 }
 impl<R> BuiltUpdate<R> {
     pub fn actions(&self) -> &[ActionNode] {
         &self.actions
     }
+    pub fn condition(&self) -> Option<&crate::BuiltCondition<R>> {
+        self.condition.as_ref()
+    }
+    /// Extract the inspectable action tree, discarding any built guard.
     pub fn into_actions(self) -> Vec<ActionNode> {
         self.actions
     }
@@ -156,6 +161,7 @@ impl<R> fmt::Debug for BuiltUpdate<R> {
 /// ```
 pub struct Update<R> {
     actions: Vec<Action<R>>,
+    condition: Option<crate::Condition<R>>,
 }
 impl<R> Default for Update<R> {
     fn default() -> Self {
@@ -164,7 +170,10 @@ impl<R> Default for Update<R> {
 }
 impl<R> Update<R> {
     pub fn new() -> Self {
-        Self { actions: vec![] }
+        Self {
+            actions: vec![],
+            condition: None,
+        }
     }
     pub fn and(mut self, action: Action<R>) -> Self {
         self.actions.push(action);
@@ -174,25 +183,51 @@ impl<R> Update<R> {
         if self.actions.is_empty() {
             return Err(BuildError::EmptyOperation);
         }
-        let actions: Vec<_> = self
-            .actions
-            .into_iter()
-            .map(|action| (action.build)())
-            .collect::<Result<_, _>>()?;
+        let mut actions = Vec::new();
+        for action in self.actions {
+            actions.extend((action.build)()?);
+        }
         crate::update_renderer::validate_targets(&actions)?;
         Ok(BuiltUpdate {
             actions,
+            condition: self.condition.map(crate::Condition::build).transpose()?,
             owner: PhantomData,
         })
     }
 }
+impl<R: Record> Update<R> {
+    /// Replace a whole flattened group, guarded by its expected old discriminator.
+    /// Encoding is deferred to build; omitted optional payload fields are removed.
+    pub fn transition<V: crate::Variants + 'static>(
+        mut self,
+        field: Attr<R, V::Tag, crate::Required, crate::DerivedOnly>,
+        value: V,
+        expected_tag: V::Tag,
+    ) -> Self
+    where
+        R: crate::FlattenedVariants<V>,
+        V::Tag: 'static,
+    {
+        let guard = field.is(expected_tag);
+        self.condition = Some(match self.condition {
+            Some(previous) => previous.and(guard),
+            None => guard,
+        });
+        self.and(crate::transition::expand(field, value))
+    }
+}
 /// A single deferred action, constructed only through typed handles.
 pub struct Action<R> {
-    build: Box<dyn FnOnce() -> Result<ActionNode, BuildError>>,
+    build: Box<dyn FnOnce() -> Result<Vec<ActionNode>, BuildError>>,
     owner: PhantomData<fn(R) -> R>,
 }
 impl<R> Action<R> {
     pub(crate) fn new(build: impl FnOnce() -> Result<ActionNode, BuildError> + 'static) -> Self {
+        Self::expand(move || build().map(|node| vec![node]))
+    }
+    pub(crate) fn expand(
+        build: impl FnOnce() -> Result<Vec<ActionNode>, BuildError> + 'static,
+    ) -> Self {
         Self {
             build: Box::new(build),
             owner: PhantomData,
