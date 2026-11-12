@@ -4,8 +4,8 @@ error[E0308]: mismatched types
 2 | #[tabulary(rename_all = "snake_case", validate = wrong_input)]
   |                                                  ^^^^^^^^^^^ expected fn pointer, found fn item
   |
-  = note: expected fn pointer `for<'a> fn(&'a WrongInput) -> Result<(), ValidationFault>`
-                found fn item `for<'a> fn(&'a str) -> Result<(), ValidationFault> {wrong_input}`
+  = note: expected fn pointer `for<'a> fn(&'a WrongInput) -> Result<(), ValidationFault<WrongInput>>`
+                found fn item `for<'a> fn(&'a str) -> Result<(), ValidationFault<WrongInput>> {wrong_input}`
 
 error[E0308]: mismatched types
  --> tests/ui/validation/signatures.rs:7:50
@@ -13,7 +13,7 @@ error[E0308]: mismatched types
 7 | #[tabulary(rename_all = "snake_case", validate = wrong_output)]
   |                                                  ^^^^^^^^^^^^ expected fn pointer, found fn item
   |
-  = note: expected fn pointer `for<'a> fn(&'a WrongOutput) -> Result<(), ValidationFault>`
+  = note: expected fn pointer `for<'a> fn(&'a WrongOutput) -> Result<(), ValidationFault<WrongOutput>>`
                 found fn item `for<'a> fn(&'a WrongOutput) -> Result<(), &'static str> {wrong_output}`
 
 error[E0308]: mismatched types
@@ -22,8 +22,8 @@ error[E0308]: mismatched types
 12 | #[tabulary(rename_all = "snake_case", validate = mutable)]
    |                                                  ^^^^^^^ types differ in mutability
    |
-   = note: expected fn pointer `for<'a> fn(&'a Mutable) -> Result<(), ValidationFault>`
-                 found fn item `for<'a> fn(&'a mut Mutable) -> Result<(), ValidationFault> {mutable}`
+   = note: expected fn pointer `for<'a> fn(&'a Mutable) -> Result<(), ValidationFault<Mutable>>`
+                 found fn item `for<'a> fn(&'a mut Mutable) -> Result<(), ValidationFault<Mutable>> {mutable}`
 
 error[E0308]: mismatched types
   --> tests/ui/validation/signatures.rs:17:50
@@ -31,5 +31,5 @@ error[E0308]: mismatched types
 17 | #[tabulary(rename_all = "snake_case", validate = asynchronous)]
    |                                                  ^^^^^^^^^^^^ expected fn pointer, found fn item
    |
-   = note: expected fn pointer `for<'a> fn(&'a Async) -> Result<(), ValidationFault>`
-                 found fn item `for<'a> fn(&'a Async) -> impl Future<Output = Result<(), ValidationFault>> {asynchronous}`
+   = note: expected fn pointer `for<'a> fn(&'a Async) -> Result<(), ValidationFault<Async>>`
+                 found fn item `for<'a> fn(&'a Async) -> impl Future<Output = Result<(), ValidationFault<Async>>> {asynchronous}`

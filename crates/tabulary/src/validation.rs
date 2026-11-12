@@ -35,21 +35,22 @@ impl<R, T: Document> ValidationPath<R, T> {
 
 /// A structured, value-free refusal. Codes must be static identifiers, never values.
 /// All handles must be relative to the document whose hook returns this fault.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ValidationFault {
+pub struct ValidationFault<R> {
     path: AttributePath,
     code: &'static str,
     additional_paths: Vec<AttributePath>,
+    owner: Invariant<R>,
 }
-impl ValidationFault {
-    pub fn new<R, T, C>(handle: impl Into<ValidationPath<R, T, C>>, code: &'static str) -> Self {
+impl<R> ValidationFault<R> {
+    pub fn new<T, C>(handle: impl Into<ValidationPath<R, T, C>>, code: &'static str) -> Self {
         Self {
             path: handle.into().path,
             code,
             additional_paths: Vec::new(),
+            owner: PhantomData,
         }
     }
-    pub fn with_path<R, T, C>(mut self, handle: impl Into<ValidationPath<R, T, C>>) -> Self {
+    pub fn with_path<T, C>(mut self, handle: impl Into<ValidationPath<R, T, C>>) -> Self {
         self.additional_paths.push(handle.into().path);
         self
     }
@@ -63,16 +64,25 @@ impl ValidationFault {
         &self.additional_paths
     }
 }
-impl fmt::Display for ValidationFault {
+impl<R> fmt::Debug for ValidationFault<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ValidationFault")
+            .field("path", &self.path)
+            .field("code", &self.code)
+            .field("additional_paths", &self.additional_paths)
+            .finish()
+    }
+}
+impl<R> fmt::Display for ValidationFault<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "validation {} at {}", self.code, self.path)
     }
 }
-impl Error for ValidationFault {}
+impl<R> Error for ValidationFault<R> {}
 
 macro_rules! conversion {
     ($method:ident, $cx:ident, $error:ident, $kind:ident) => {
-        impl ValidationFault {
+        impl<R> ValidationFault<R> {
             #[doc(hidden)]
             pub fn $method(self, cx: &$cx) -> $error {
                 let at = |path: &AttributePath| {

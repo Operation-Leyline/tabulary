@@ -122,7 +122,7 @@ pub fn implementation(
     let validation = crate::variants_flatten::validation(schema);
     let hook = schema.validate.as_ref().map(|hook| {
         quote_spanned!(hook.span()=>
-            let __tabulary_validate: fn(&Self) -> ::core::result::Result<(), #path::ValidationFault> = #hook;
+            let __tabulary_validate: fn(&Self) -> ::core::result::Result<(), #path::ValidationFault<Self>> = #hook;
         )
     });
     let encode_hook = schema.validate.as_ref().map(|_| {

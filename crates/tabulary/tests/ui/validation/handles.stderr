@@ -1,7 +1,51 @@
-error[E0277]: the trait bound `ValidationPath<_, _, _>: From<&str>` is not satisfied
-  --> tests/ui/validation/handles.rs:11:34
+error[E0277]: the trait bound `ValidationPath<Order, _, _>: From<Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly>>` is not satisfied
+  --> tests/ui/validation/handles.rs:16:76
    |
-11 |     let _ = ValidationFault::new("count", "invalid");
+16 | fn wrong_owner() -> ValidationFault<Order> { ValidationFault::<Order>::new(InvoiceAttrs::ID, "invalid") }
+   |                                              ----------------------------- ^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                                              |
+   |                                              required by a bound introduced by this call
+   |
+help: the trait `From<Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>>` is not implemented for `ValidationPath<Order, _, _>`
+      but trait `From<Attr<Order, _, _, _, _>>` is implemented for it
+  --> src/validation.rs
+   |
+   | impl<R, T, P, A, C> From<Attr<R, T, P, A, C>> for ValidationPath<R, T, C> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Order`, found `Invoice`
+   = note: required for `Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly>` to implement `Into<ValidationPath<Order, _, _>>`
+note: required by a bound in `ValidationFault::<R>::new`
+  --> src/validation.rs
+   |
+   |     pub fn new<T, C>(handle: impl Into<ValidationPath<R, T, C>>, code: &'static str) -> Self {
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ValidationFault::<R>::new`
+
+error[E0277]: the trait bound `ValidationPath<Order, _, _>: From<Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly>>` is not satisfied
+  --> tests/ui/validation/handles.rs:17:115
+   |
+17 | fn wrong_additional_owner() -> ValidationFault<Order> { ValidationFault::new(OrderAttrs::ID, "invalid").with_path(InvoiceAttrs::ID) }
+   |                                                                                                         --------- ^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                                                                                                         |
+   |                                                                                                         required by a bound introduced by this call
+   |
+help: the trait `From<Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>>` is not implemented for `ValidationPath<Order, _, _>`
+      but trait `From<Attr<Order, _, _, _, _>>` is implemented for it
+  --> src/validation.rs
+   |
+   | impl<R, T, P, A, C> From<Attr<R, T, P, A, C>> for ValidationPath<R, T, C> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Order`, found `Invoice`
+   = note: required for `Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly>` to implement `Into<ValidationPath<Order, _, _>>`
+note: required by a bound in `ValidationFault::<R>::with_path`
+  --> src/validation.rs
+   |
+   |     pub fn with_path<T, C>(mut self, handle: impl Into<ValidationPath<R, T, C>>) -> Self {
+   |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ValidationFault::<R>::with_path`
+
+error[E0277]: the trait bound `ValidationPath<_, _, _>: From<&str>` is not satisfied
+  --> tests/ui/validation/handles.rs:20:34
+   |
+20 |     let _ = ValidationFault::new("count", "invalid");
    |             -------------------- ^^^^^^^ the trait `From<&str>` is not implemented for `ValidationPath<_, _, _>`
    |             |
    |             required by a bound introduced by this call
@@ -14,16 +58,16 @@ help: the trait `From<&str>` is not implemented for `ValidationPath<_, _, _>`
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `Attr<_, _, _, _, _>`, found `&str`
    = note: required for `&str` to implement `Into<ValidationPath<_, _, _>>`
-note: required by a bound in `ValidationFault::new`
+note: required by a bound in `ValidationFault::<R>::new`
   --> src/validation.rs
    |
-   |     pub fn new<R, T, C>(handle: impl Into<ValidationPath<R, T, C>>, code: &'static str) -> Self {
-   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ValidationFault::new`
+   |     pub fn new<T, C>(handle: impl Into<ValidationPath<R, T, C>>, code: &'static str) -> Self {
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ValidationFault::<R>::new`
 
 error[E0308]: mismatched types
-  --> tests/ui/validation/handles.rs:12:59
+  --> tests/ui/validation/handles.rs:21:59
    |
-12 |     let _ = ValidationPath::from(ParcelAttrs::LINE).field(ParcelAttrs::LINE);
+21 |     let _ = ValidationPath::from(ParcelAttrs::LINE).field(ParcelAttrs::LINE);
    |                                                     ----- ^^^^^^^^^^^^^^^^^ expected `Attr<Line, _, _, _, _>`, found `Attr<Parcel, Line>`
    |                                                     |
    |                                                     arguments to this method are incorrect

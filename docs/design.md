@@ -622,12 +622,12 @@ for corruption. Required lists, maps, sets, integers, and booleans have no
 implicit empty/zero/false defaults.
 
 `#[tabulary(validate = validate_order)]` adds a pure
-`fn(&Order) -> Result<(), ValidationFault>` after construction and before
+`fn(&Order) -> Result<(), ValidationFault<Order>>` after construction and before
 encoding. A validation fault uses an attribute handle, structured code, and
 optional additional handle paths. It never calls a service or reads a clock.
 
 Both `Record` and `Document` accept this container option at most once. The path
-must coerce to exactly `fn(&Self) -> Result<(), tabulary::ValidationFault>`;
+must coerce to exactly `fn(&Self) -> Result<(), tabulary::ValidationFault<Self>>`;
 async, mutable, and differently typed functions are rejected at the option.
 Purity is the application's contract; Rust cannot prevent a hook from doing I/O
 or reading a clock. The library invokes it synchronously and never retries it.
@@ -635,13 +635,15 @@ Encoding invokes it before any field codec or item allocation. Decoding first
 decodes fields and checks key/index/variant invariants, constructs the value,
 then runs the hook before checking unknown attributes. Records without this
 option retain their existing codec behavior.
+On encode the outer hook runs before nested document hooks; on decode nested
+document hooks run while fields are read, before the outer hook.
 
 `ValidationFault::new(handle, code)` accepts a typed attribute handle;
 `with_path(handle)` appends another implicated path. `ValidationPath::from(handle)`
 supports `.field(child_handle)` through native nested documents, including
 optional documents. Paths use physical names, with literal dots kept intact.
-All supplied paths must be relative to the document whose hook returns the
-fault; the fault erases the handle owner and stores no values. `path()`, `code()`,
+`ValidationFault<R>` accepts only paths owned by `R`, relative to the document
+whose hook returns the fault, and stores no values. `path()`, `code()`,
 and `additional_paths()` expose the diagnostic. Codes are static structured
 identifiers, never field values or formatted messages. Debug and Display expose
 only these identifiers and paths.

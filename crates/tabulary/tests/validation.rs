@@ -1,13 +1,20 @@
 #![cfg(feature = "derive")]
 
 use aws_sdk_dynamodb::{
-    operation::{get_item::GetItemOutput, query::QueryOutput, scan::ScanOutput},
-    types::AttributeValue as Av,
+    error::SdkError,
+    operation::{
+        batch_get_item::BatchGetItemOutput, get_item::GetItemOutput, put_item::PutItemError,
+        query::QueryOutput, scan::ScanOutput, transact_write_items::TransactWriteItemsError,
+    },
+    types::{
+        AttributeValue as Av, CancellationReason,
+        error::{ConditionalCheckFailedException, TransactionCanceledException},
+    },
 };
 use tabulary::{
-    BatchAction, BuildError, DecodeContext, DecodeFault, Document, EncodeFault, Item, List,
-    OldItem, OldItemMode, PathSegment, Projection, ReadConsistency::Strong, ReadError, Table,
-    ValidationFault, ValidationPath,
+    BatchAction, BatchBudget, BatchGetFailure, BuildError, DecodeContext, DecodeFault, Document,
+    EncodeContext, EncodeFault, Item, List, OldItem, OldItemMode, PathSegment, Projection,
+    ReadConsistency::Strong, ReadError, Table, ValidationFault, ValidationPath, Value,
 };
 
 #[derive(Debug, PartialEq, tabulary::Variants)]
@@ -30,7 +37,7 @@ struct Order {
     queue: Option<String>,
 }
 
-fn validate_order(order: &Order) -> Result<(), ValidationFault> {
+fn validate_order(order: &Order) -> Result<(), ValidationFault<Order>> {
     if matches!(order.status, Status::Waiting) != order.queue.is_some() {
         return Err(
             ValidationFault::new(OrderAttrs::QUEUE, "status_queue").with_path(OrderAttrs::STATUS)
@@ -45,6 +52,10 @@ fn order() -> Order {
         status: Status::Waiting,
         queue: Some("queue-secret".into()),
     }
+}
+
+fn table() -> Table<Order> {
+    Table::new("orders").unwrap()
 }
 
 fn invalid_item() -> Item {
@@ -133,7 +144,7 @@ fn write_adapters_share_the_hook() {
         queue: None,
         ..order()
     };
-    let table = Table::<Order>::new("orders").unwrap();
+    let table = table();
     for error in [
         table.put(&invalid).build().unwrap_err(),
         table.put(&invalid).into_tx().unwrap_err(),
@@ -152,8 +163,8 @@ fn write_adapters_share_the_hook() {
 }
 
 #[test]
-fn read_adapters_and_conditional_old_items_share_the_hook() {
-    let table = Table::<Order>::new("orders").unwrap();
+fn read_adapters_share_the_hook() {
+    let table = table();
     let get = table
         .get(OrderKey::new("order-secret".into()).unwrap(), Strong)
         .build()
@@ -192,12 +203,89 @@ fn read_adapters_and_conditional_old_items_share_the_hook() {
             .build()))
             .unwrap_err(),
     );
-    let OldItem::<Order>::Invalid { error, .. } =
-        OldItem::decode(OldItemMode::All, Some(invalid_item()))
-    else {
+}
+
+fn sdk_error<E>(error: E) -> SdkError<E> {
+    use aws_smithy_runtime_api::{client::orchestrator::HttpResponse, http::StatusCode};
+    SdkError::service_error(
+        error,
+        HttpResponse::new(
+            StatusCode::try_from(400).unwrap(),
+            aws_smithy_types::body::SdkBody::empty(),
+        ),
+    )
+}
+fn assert_old(old: OldItem<Order>) {
+    let OldItem::Invalid { error, .. } = old else {
         panic!("expected invalid old item")
     };
     assert_decode(&error);
+}
+
+#[test]
+fn conditional_put_decodes_validation_in_all_old_refusal() {
+    let request = table()
+        .put(&order())
+        .condition(OrderAttrs::ID.exists())
+        .on_condition_failure(OldItemMode::All)
+        .build()
+        .unwrap();
+    let error = PutItemError::ConditionalCheckFailedException(
+        ConditionalCheckFailedException::builder()
+            .set_item(Some(invalid_item()))
+            .build(),
+    );
+    let tabulary::WriteError::Refused { failure, .. } =
+        request.decode(Err(sdk_error(error))).unwrap_err()
+    else {
+        panic!("expected refusal")
+    };
+    assert_old(failure.old);
+}
+
+#[test]
+fn transaction_cancellation_decodes_validation_in_old_item() {
+    let action = table()
+        .put(&order())
+        .on_condition_failure(OldItemMode::All)
+        .into_tx()
+        .unwrap();
+    let request = tabulary::transaction(action).build().unwrap();
+    let reason = CancellationReason::builder()
+        .code("ConditionalCheckFailed")
+        .set_item(Some(invalid_item()))
+        .build();
+    let error = TransactWriteItemsError::TransactionCanceledException(
+        TransactionCanceledException::builder()
+            .cancellation_reasons(reason)
+            .build(),
+    );
+    let tabulary::TxError::Cancelled(error) = request.decode(Err(sdk_error(error))).unwrap_err()
+    else {
+        panic!("expected cancellation")
+    };
+    assert_old(error.reasons.old);
+}
+
+#[test]
+fn batch_get_decodes_validation_in_returned_item() {
+    let mut batch = table()
+        .batch_get(
+            vec![OrderKey::new("order-secret".into()).unwrap()],
+            Strong,
+            BatchBudget::new(1).unwrap(),
+        )
+        .unwrap();
+    let request = batch.next_request().unwrap().unwrap();
+    let output = BatchGetItemOutput::builder()
+        .responses("orders", vec![invalid_item()])
+        .build();
+    let error = batch.accept(request.decode(Ok(output))).unwrap_err();
+    let BatchGetFailure::Decode { failures } = error.kind else {
+        panic!("expected decode fault")
+    };
+    assert_eq!(failures.len(), 1);
+    assert_decode(&failures[0].1);
 }
 
 #[derive(Debug, PartialEq, tabulary::Document)]
@@ -205,7 +293,7 @@ fn read_adapters_and_conditional_old_items_share_the_hook() {
 struct Line {
     unit_count: u64,
 }
-fn validate_line(line: &Line) -> Result<(), ValidationFault> {
+fn validate_line(line: &Line) -> Result<(), ValidationFault<Line>> {
     if line.unit_count == 0 {
         return Err(ValidationFault::new(LineAttrs::UNIT_COUNT, "positive")
             .with_path(LineAttrs::UNIT_COUNT));
@@ -214,11 +302,30 @@ fn validate_line(line: &Line) -> Result<(), ValidationFault> {
 }
 
 #[derive(Debug, tabulary::Record)]
-#[tabulary(rename_all = "snake_case")]
+#[tabulary(rename_all = "snake_case", validate = validate_invoice)]
 struct Invoice {
     #[tabulary(partition_key)]
     id: String,
     lines: List<Line>,
+}
+fn validate_invoice(invoice: &Invoice) -> Result<(), ValidationFault<Invoice>> {
+    if invoice.id == "invalid" {
+        return Err(ValidationFault::new(InvoiceAttrs::ID, "invoice"));
+    }
+    Ok(())
+}
+
+fn invoice_item(id: &str) -> Item {
+    Item::from([
+        ("id".into(), Av::S(id.into())),
+        (
+            "lines".into(),
+            Av::L(vec![Av::M(Item::from([(
+                "unitCount".into(),
+                Av::N("0".into()),
+            )]))]),
+        ),
+    ])
 }
 
 #[test]
@@ -236,16 +343,7 @@ fn nested_document_hook_keeps_root_document_and_list_path() {
     assert_eq!((error.record, error.document), ("Invoice", "Line"));
     assert_eq!(error.path.segments(), expected);
     assert_eq!(error.additional_paths[0].segments(), expected);
-    let item = Item::from([
-        ("id".into(), Av::S("invoice".into())),
-        (
-            "lines".into(),
-            Av::L(vec![Av::M(Item::from([(
-                "unitCount".into(),
-                Av::N("0".into()),
-            )]))]),
-        ),
-    ]);
+    let item = invoice_item("invoice");
     let error = Invoice::from_item(&item).unwrap_err();
     assert_eq!((error.record, error.document), ("Invoice", "Line"));
     assert_eq!(error.kind, DecodeFault::Validation { code: "positive" });
@@ -253,9 +351,37 @@ fn nested_document_hook_keeps_root_document_and_list_path() {
     assert_eq!(error.additional_paths[0].segments(), expected);
     assert!(
         Line { unit_count: 2 }
-            .encode_map(&mut tabulary::EncodeContext::new("Line"))
+            .encode_map(&mut EncodeContext::new("Line"))
             .is_ok()
     );
+}
+
+#[test]
+fn outer_hook_precedes_inner_on_encode_and_follows_it_on_decode() {
+    let invoice = Invoice {
+        id: "invalid".into(),
+        lines: List(vec![Line { unit_count: 0 }]),
+    };
+    let error = invoice.to_item().unwrap_err();
+    assert_eq!(error.kind, EncodeFault::Validation { code: "invoice" });
+    assert_eq!(error.path.to_string(), "[\"id\"]");
+    let item = invoice_item("invalid");
+    let error = Invoice::from_item(&item).unwrap_err();
+    assert_eq!(error.kind, DecodeFault::Validation { code: "positive" });
+    assert_eq!(error.path.to_string(), "[\"lines\"][0][\"unitCount\"]");
+}
+
+#[test]
+fn documents_inside_maps_validate_before_encoding_their_fields() {
+    let map = tabulary::Map(std::collections::BTreeMap::from([(
+        "entry".into(),
+        Line { unit_count: 0 },
+    )]));
+    let error = map
+        .encode_value(&mut EncodeContext::new("Invoice"))
+        .unwrap_err();
+    assert_eq!(error.kind, EncodeFault::Validation { code: "positive" });
+    assert_eq!(error.path.to_string(), "[\"entry\"][\"unitCount\"]");
 }
 
 #[derive(Debug, tabulary::Document)]
@@ -264,7 +390,7 @@ struct Parcel {
     #[tabulary(rename = "line.detail")]
     line: Option<Line>,
 }
-fn validate_parcel(_: &Parcel) -> Result<(), ValidationFault> {
+fn validate_parcel(_: &Parcel) -> Result<(), ValidationFault<Parcel>> {
     Err(ValidationFault::new(
         ValidationPath::from(ParcelAttrs::LINE).field(LineAttrs::UNIT_COUNT),
         "parcel_count",
@@ -281,23 +407,16 @@ fn fault_handles_descend_through_physical_document_paths_without_values() {
     assert_eq!(fault.code(), "parcel_count");
     assert!(fault.additional_paths().is_empty());
     assert!(!format!("{fault:?} {fault}").contains('5'));
-    assert_eq!(
-        parcel
-            .encode_map(&mut tabulary::EncodeContext::new("Parcel"))
-            .unwrap_err()
-            .path,
-        *fault.path()
-    );
+    let encode = parcel
+        .encode_map(&mut EncodeContext::new("Parcel"))
+        .unwrap_err();
+    assert_eq!(encode.path, *fault.path());
     let item = Item::from([(
         "line.detail".into(),
         Av::M(Item::from([("unitCount".into(), Av::N("5".into()))])),
     )]);
-    assert_eq!(
-        Parcel::decode_map(&item, &mut DecodeContext::new("Parcel"))
-            .unwrap_err()
-            .path,
-        *fault.path()
-    );
+    let decode = Parcel::decode_map(&item, &mut DecodeContext::new("Parcel")).unwrap_err();
+    assert_eq!(decode.path, *fault.path());
 }
 
 #[derive(Debug, PartialEq, tabulary::Projection)]
@@ -339,7 +458,7 @@ struct Quantity<T> {
 mod checks {
     pub fn quantity<T: tabulary::Value>(
         _: &super::Quantity<T>,
-    ) -> Result<(), tabulary::ValidationFault> {
+    ) -> Result<(), tabulary::ValidationFault<super::Quantity<T>>> {
         Err(tabulary::ValidationFault::new(
             super::QuantityAttrs::<T>::VALUE,
             "quantity",
@@ -350,20 +469,12 @@ mod checks {
 #[test]
 fn qualified_generic_hooks_use_the_instantiated_document_type() {
     let quantity = Quantity { value: 3u64 };
-    assert_eq!(
-        quantity
-            .encode_map(&mut tabulary::EncodeContext::new("Quantity"))
-            .unwrap_err()
-            .kind,
-        EncodeFault::Validation { code: "quantity" }
-    );
-    assert_eq!(
-        Quantity::<u64>::decode_map(
-            &Item::from([("value".into(), Av::N("3".into()))]),
-            &mut DecodeContext::new("Quantity")
-        )
-        .unwrap_err()
-        .kind,
-        DecodeFault::Validation { code: "quantity" }
-    );
+    let encode = quantity
+        .encode_map(&mut EncodeContext::new("Quantity"))
+        .unwrap_err();
+    assert_eq!(encode.kind, EncodeFault::Validation { code: "quantity" });
+    let item = Item::from([("value".into(), Av::N("3".into()))]);
+    let decode =
+        Quantity::<u64>::decode_map(&item, &mut DecodeContext::new("Quantity")).unwrap_err();
+    assert_eq!(decode.kind, DecodeFault::Validation { code: "quantity" });
 }
