@@ -160,9 +160,14 @@ macro_rules! operation_suite {
                         .build(),
                 ))
             };
-            for raw in [None, Some(item())] {
+            for raw in [None, Some(item()), Some(Item::new())] {
                 let error =
-                    WriteError::<Order, $error>::from_sdk(conditional(raw), OldItemMode::None);
+                    WriteError::<Order, $error>::from_sdk(conditional(raw.clone()), OldItemMode::None);
+                let service = error.sdk_error().unwrap().as_service_error().unwrap();
+                let $error::ConditionalCheckFailedException(source) = service else {
+                    panic!("original conditional source")
+                };
+                assert_eq!(source.item(), raw.as_ref());
                 let WriteError::Refused { failure, .. } = error else {
                     panic!("refused")
                 };
@@ -181,6 +186,8 @@ macro_rules! operation_suite {
                     .extra("request_id"),
                 Some("request-123")
             );
+            assert!(error.sdk_error().unwrap().as_service_error().unwrap()
+                .is_conditional_check_failed_exception());
             let WriteError::Refused { failure, .. } = error else {
                 panic!("refused")
             };
@@ -266,6 +273,51 @@ macro_rules! operation_suite {
 operation_suite!(put_refusals, PutItemError);
 operation_suite!(delete_refusals, DeleteItemError);
 operation_suite!(update_refusals, UpdateItemError);
+
+#[test]
+fn old_items_use_the_complete_record_codec_including_sparse_index_invariants() {
+    #[derive(tabulary::Record)]
+    #[tabulary(rename_all = "snake_case",
+        index(ident = ByStatus, name = "by_status", kind = global, sparse,
+            partition(name = "gpk", template = "status!{status:hex}"), project = all))]
+    struct Shipment {
+        #[tabulary(partition_key)]
+        id: String,
+        status: Option<String>,
+    }
+    let raw = Shipment {
+        id: "private-order".into(),
+        status: Some("pending".into()),
+    }
+    .to_item()
+    .unwrap();
+    assert!(
+        matches!(OldItem::<Shipment>::decode(OldItemMode::All, Some(raw.clone())),
+        OldItem::Decoded(Shipment { status: Some(status), .. }) if status == "pending")
+    );
+    let mut malformed = raw;
+    malformed.insert("gpk".into(), Av::S("status!73686970706564".into()));
+    let error = WriteError::<Shipment, PutItemError>::from_sdk(
+        sdk(PutItemError::ConditionalCheckFailedException(
+            ConditionalCheckFailedException::builder()
+                .set_item(Some(malformed.clone()))
+                .build(),
+        )),
+        OldItemMode::All,
+    );
+    assert_redacted(&error);
+    let WriteError::Refused { failure, .. } = error else {
+        panic!("refused")
+    };
+    assert_eq!(failure.kind, FailureKind::ConditionFailed);
+    let OldItem::Invalid { error, raw } = failure.old else {
+        panic!("invalid full record")
+    };
+    assert_eq!(error.record, "Shipment");
+    assert_eq!(error.attribute(), Some("gpk"));
+    assert_eq!(error.kind, DecodeFault::KeyMismatch);
+    assert_eq!(raw.expose(), &malformed);
+}
 
 #[test]
 fn transport_and_construction_failures_are_never_refusals() {
