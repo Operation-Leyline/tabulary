@@ -27,6 +27,7 @@ pub mod update;
 mod update_path;
 mod update_renderer;
 mod value;
+mod variants;
 pub mod wire;
 
 pub use attr::AccessMarker;
@@ -59,6 +60,8 @@ pub use tabulary_derive::Document;
 pub use tabulary_derive::Record;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::StringEnum;
+#[cfg(feature = "derive")]
+pub use tabulary_derive::Variants;
 pub use time::{TimeError, TimestampMicros, TimestampMillis, TimestampSeconds, TtlSeconds};
 pub use update::BuiltUpdate;
 pub use update::Update;
@@ -66,4 +69,5 @@ pub use update_path::Element;
 pub use update_path::MapKey;
 pub use update_path::Path;
 pub use value::Value;
+pub use variants::Variants;
 pub use wire::WireType;
