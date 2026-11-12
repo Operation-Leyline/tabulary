@@ -171,6 +171,7 @@ impl<R: Record> Table<R> {
         budget: BatchBudget,
     ) -> Result<BatchWriteBatch<R>, BuildError> {
         let core = BatchWriteProgress::new(actions, budget)?;
+        crate::batch_write_size::check(&self.name, core.entries().iter().map(|e| &e.action))?;
         Ok(BatchWriteBatch {
             core: Some(core),
             table: self.name.clone(),

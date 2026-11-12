@@ -285,6 +285,30 @@ fn request_and_action_caps_are_checked_before_issuing_a_round() {
 }
 
 #[test]
+fn wire_cap_counts_escaped_payloads_independently_of_item_size() {
+    for payload in ["a".repeat(300_000), "\0".repeat(300_000)] {
+        let actions = (0..25)
+            .map(|i| {
+                BatchAction::put(&Order {
+                    id: i.to_string(),
+                    payload: payload.clone(),
+                })
+                .unwrap()
+            })
+            .collect();
+        let result = table().batch_write(actions, BatchBudget::new(1).unwrap());
+        if payload.starts_with('\0') {
+            assert!(
+                matches!(result, Err(BuildError::RequestLimit { max, actual })
+                if max == 16 * 1024 * 1024 && actual > max)
+            );
+        } else {
+            assert!(result.is_ok());
+        }
+    }
+}
+
+#[test]
 fn foreign_results_freeze_only_the_recipient_and_outstanding_finish_is_indeterminate() {
     let mut left = batch(1, 1);
     let mut right = batch(1, 1);
