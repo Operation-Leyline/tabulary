@@ -1314,7 +1314,8 @@ Milestone 27 adds `Table<R>::put(&record)` for `R: Record + Document`.
 The builder borrows the record until `build()`, which encodes through its
 document codec, validates the conservative 400 KiB item bound, and owns the
 result in `PreparedPut<R>` (`PreparedRequest<PutItemInput, R>`). Conditions
-are validated and rendered at build. Refusal decoding derives `OldItemMode`
+are validated and rendered at build; repeated `condition` calls AND their
+predicates. Refusal decoding derives `OldItemMode`
 from the immutable input's failure-return option and uses the shared classifier.
 The registered `01_simple.rs` compile test uses `BilledSize::of_item` directly;
 the sketched record-level `billed_size()` convenience is not yet implemented.

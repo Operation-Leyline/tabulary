@@ -86,7 +86,8 @@ fn conditional_put_owns_encoded_item_and_exact_inspectable_maps() {
         Table::<Order>::new("orders")
             .unwrap()
             .put(&order)
-            .condition(OrderAttrs::ID.not_exists().and(OrderAttrs::QUANTITY.eq(7)))
+            .condition(OrderAttrs::ID.not_exists())
+            .condition(OrderAttrs::QUANTITY.eq(7))
             .on_condition_failure(OldItemMode::All)
             .return_item(ReturnOld::AllOld)
             .capacity(Capacity::Indexes)
@@ -417,6 +418,7 @@ fn put_reuses_strict_record_encoding_and_conservative_item_limit() {
         table
             .put(&order())
             .condition(OrderAttrs::QUANTITY.in_values(vec![]))
+            .condition(OrderAttrs::ID.not_exists())
             .build(),
         Err(BuildError::EmptyOperation)
     ));

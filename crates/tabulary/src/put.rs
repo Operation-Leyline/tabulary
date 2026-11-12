@@ -39,8 +39,12 @@ impl<R: Record + Document> Table<R> {
     }
 }
 impl<R: Record + Document> PutBuilder<'_, R> {
+    /// AND this predicate with any existing inline condition.
     pub fn condition(mut self, condition: Condition<R>) -> Self {
-        self.condition = Some(condition);
+        self.condition = Some(match self.condition {
+            Some(existing) => existing.and(condition),
+            None => condition,
+        });
         self
     }
     pub fn on_condition_failure(mut self, mode: OldItemMode) -> Self {
