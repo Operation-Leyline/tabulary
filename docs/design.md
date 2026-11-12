@@ -681,6 +681,20 @@ values; empty input returns `EmptyOperation`, and excess input returns
 inspectable tree and redacted Debug. This build step validates descriptors and
 values; textual rendering and expression-size validation belong to later stages.
 
+Update actions similarly encode only at `Update::build`, returning a record-owned
+`BuiltUpdate` with inspectable actions and redacted Debug. Milestone 21 covers
+top-level actions and SET operands; nested paths, overlap checks, and canonical
+rendering arrive in milestone 22. `operand()` reads a typed path on the SET right
+side, including protected fields, while only mutable handles provide targets.
+`SetOperand` supports one `.plus(T)` or `.minus(T)`, returning a `SetExpression`
+that cannot chain arithmetic, matching DynamoDB's SET grammar. Both preserve the
+owner, logical type, and codec of the source; `set_expr` requires these to match
+the target. `update::Numeric` is the opt-in wire capability for SET arithmetic.
+ADD and DELETE remain restricted to `Native<T>` codecs with `update::Addable`
+and `SetWire` wire categories. `update::Append<T>` is an explicit list-codec
+capability that supplies the logical empty value for `append_or_empty`; native
+lists implement it. Ordinary `list_append` never inserts a missing-list default.
+
 Nested updates do not create missing parent maps. DynamoDB can reject such a
 path; the caller must create the map explicitly or choose a put.
 The builder rejects duplicate and ancestor/descendant target paths, including

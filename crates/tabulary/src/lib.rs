@@ -17,6 +17,7 @@ mod scalar;
 mod schema;
 mod secret;
 mod time;
+pub mod update;
 mod value;
 pub mod wire;
 
@@ -41,5 +42,7 @@ pub use nullable::{Nullable, NullableWire};
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
 pub use secret::Secret;
 pub use time::{TimeError, TimestampMicros, TimestampMillis, TimestampSeconds, TtlSeconds};
+pub use update::BuiltUpdate;
+pub use update::Update;
 pub use value::Value;
 pub use wire::WireType;
