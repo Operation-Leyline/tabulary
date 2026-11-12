@@ -39,9 +39,12 @@ impl<R: Record + Document> Table<R> {
     }
 }
 impl<R: Record + Document, K: RecordKey<R>> DeleteBuilder<R, K> {
-    /// Replace the inline condition. Compose predicates explicitly with `and`/`or`.
+    /// AND this predicate with any existing inline condition.
     pub fn condition(mut self, condition: Condition<R>) -> Self {
-        self.condition = Some(condition);
+        self.condition = Some(match self.condition {
+            Some(existing) => existing.and(condition),
+            None => condition,
+        });
         self
     }
     pub fn return_item(mut self, choice: ReturnOld) -> Self {

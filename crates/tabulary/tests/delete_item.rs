@@ -154,18 +154,24 @@ fn key_only_input_and_inline_condition_have_exact_inspectable_maps() {
         Some(ReturnItemCollectionMetrics::Size)
     );
     assert!(!format!("{request:?}").contains("private-order"));
-    let replaced = table
+    let combined = table
         .delete(key())
         .condition(OrderAttrs::QUANTITY.eq(7))
         .condition(OrderAttrs::ID.exists())
         .build()
         .unwrap();
     assert_eq!(
-        replaced.expressions().condition(),
-        Some("attribute_exists(#n0)")
+        combined.expressions().condition(),
+        request.expressions().condition()
     );
-    assert_eq!(replaced.expressions().names()["#n0"], "id");
-    assert!(replaced.input().expression_attribute_values.is_none());
+    assert_eq!(
+        combined.expressions().names(),
+        request.expressions().names()
+    );
+    assert_eq!(
+        combined.expressions().values(),
+        request.expressions().values()
+    );
 }
 
 #[test]

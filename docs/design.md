@@ -953,14 +953,33 @@ and item-collection metrics supplied by the SDK, without inventing accounting.
 Milestone 28 adds `Table<R>::delete(key)` for `R: Record + Document` and
 `K: RecordKey<R>`. `DeleteBuilder<R, K>` owns the table name and key, encoding
 the key and validating its optional `Condition<R>` at `build()`.
-Each `.condition(...)` replaces the previous condition; combine predicates
-explicitly with `.and(...)` or `.or(...)`. `PreparedDelete<R>` aliases
+Repeated `.condition(...)` calls AND their predicates, matching UpdateItem.
+Callers can also combine predicates with `.and(...)` or `.or(...)`.
+`PreparedDelete<R>` aliases
 `PreparedRequest<DeleteItemInput, R>`, copies every SDK input field, and derives
 failure-side old-item mode from its immutable input. Success attributes are
 strictly decoded as the complete record: absent attributes mean `None`, while a
 present empty or malformed map yields `WriteError::Decode` with unchanged raw
 attributes, capacity, and collection metrics. Refusals use the milestone 26
 classifier without changing their kind when an old item is absent or invalid.
+
+Milestone 29 adds `Table<R>::update(key)` for `R: Record + Document` and
+`K: RecordKey<R>`. `changes(Update<R>)` replaces the complete mutation set;
+missing or empty changes fail at build. Repeated `condition(Condition<R>)`
+calls AND their predicates. Build uses milestone 22's validated update and
+shared condition renderer, then owns the complete `UpdateItemInput` in
+`PreparedUpdate<R>`, an alias for `PreparedRequest<UpdateItemInput, R>`.
+`apply` replaces every modeled input field, including absent legacy options.
+SDK failures use milestone 26's classifier with the requested `OldItemMode`.
+
+Update success returns must agree with the selected mode. `AllNew` requires
+attributes; `AllOld` permits absence when the update created an item; `None`
+rejects any present attributes, including an empty map. Every present full
+return is decoded strictly. Mode/shape mismatches are committed-write
+`WriteError::Decode` faults with `DecodeFault::Validation` codes
+`missing_returned_attributes` or `unexpected_returned_attributes` at the record
+root. `WriteDecodeError` preserves capacity and collection metrics unchanged;
+its raw map is empty when no attributes were supplied. No follow-up read occurs.
 
 An absent GetItem item is `None`. A nonempty or explicitly present item that
 fails decoding is an error, never “not found.” An SDK response with an empty item
