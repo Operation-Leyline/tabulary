@@ -87,7 +87,7 @@ pub fn decode(record: &Record, field: usize) -> TokenStream {
     }
 }
 /// Validate each present component even when a different input prevents membership.
-fn validate_sources(record: &Record, field: usize, receiver: bool) -> TokenStream {
+pub fn validate_sources(record: &Record, field: usize, receiver: bool) -> TokenStream {
     let path = &record.crate_path;
     let fault = if receiver {
         quote!(#path::EncodeFault)

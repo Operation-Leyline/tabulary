@@ -1,0 +1,61 @@
+error[E0063]: missing field `position` in initializer of `ParcelByRouteInputs`
+  --> tests/ui/reindex/inputs.rs:13:13
+   |
+13 |     let _ = ParcelByRouteInputs { route: "r".into() };
+   |             ^^^^^^^^^^^^^^^^^^^ missing `position`
+
+error[E0308]: mismatched types
+  --> tests/ui/reindex/inputs.rs:14:50
+   |
+14 |     let _ = ParcelByRouteInputs::new("r".into(), "wrong".to_owned());
+   |             ------------------------             ^^^^^^^^^^^^^^^^^^ expected `u64`, found `String`
+   |             |
+   |             arguments to this function are incorrect
+   |
+note: associated function defined here
+  --> tests/ui/reindex/inputs.rs:1:10
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ^^^^^^^^^^^^^^^^
+...
+ 7 |     position: u64,
+   |     -------------
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ParcelByRoute: ReindexSchema<Other>` is not satisfied
+  --> tests/ui/reindex/inputs.rs:15:54
+   |
+15 |     let _ = tabulary::Update::<Other>::new().reindex(ParcelIndexes::BY_ROUTE,
+   |                                              ------- ^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                                              |
+   |                                              required by a bound introduced by this call
+   |
+help: the trait `ReindexSchema<Other>` is not implemented for `ParcelByRoute`
+      but trait `ReindexSchema<Parcel>` is implemented for it
+  --> tests/ui/reindex/inputs.rs:1:10
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Parcel`, found `Other`
+note: required by a bound in `Update::<R>::reindex`
+  --> src/update.rs
+   |
+   |     pub fn reindex<I: crate::ReindexSchema<R>>(mut self, _index: I, inputs: I::Inputs) -> Self
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Update::<R>::reindex`
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `set` found for struct `Attr<Parcel, std::string::String, tabulary::Required, tabulary::IndexSourceOnly>` in the current scope
+  --> tests/ui/reindex/inputs.rs:17:32
+   |
+17 |     let _ = ParcelAttrs::ROUTE.set("stale".into());
+   |                                ^^^ method not found in `Attr<Parcel, std::string::String, tabulary::Required, tabulary::IndexSourceOnly>`
+   |
+   = note: the method was found for `Attr<R, T, P, tabulary::Mutable, C>`
+
+error[E0599]: no method named `remove` found for struct `Attr<Parcel, std::string::String, tabulary::Required, tabulary::DerivedOnly>` in the current scope
+  --> tests/ui/reindex/inputs.rs:18:45
+   |
+18 |     let _ = ParcelAttrs::BY_ROUTE_PARTITION.remove();
+   |                                             ^^^^^^ method not found in `Attr<Parcel, std::string::String, tabulary::Required, tabulary::DerivedOnly>`
+   |
+   = note: the method was found for `Attr<R, T, tabulary::Optional, tabulary::Mutable, C>`

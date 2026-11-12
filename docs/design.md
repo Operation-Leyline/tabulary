@@ -416,6 +416,24 @@ the operation's key and is not emitted as a SET target. Synthesized-index source
 handles use `IndexSourceOnly`; simple field indexes need no extra protection
 unless that field also feeds a synthesized key.
 
+Milestone 32 generates `<Record><Index>Inputs`, retaining source field names,
+types, presence and visibility. Its `new(...)` takes each distinct logical input
+in partition-then-sort component order, including explicit `None` inputs. Generic
+inputs use this constructor to initialize their private record marker. Encoding
+is deferred until build and reuses record key formatting and sparse validation.
+Reindex actions follow ordinary actions in schema field order; shared source
+targets appear once, and a shared synthetic attribute is retained if any supplied
+index needs it. All indexes sharing a mutable input or synthetic target must be
+supplied, even when the new value might equal the stored value. Disagreement on
+a shared source, or supplying an index twice, is `ConflictingReindex`.
+
+Primary inputs are compared with logical values decoded from the operation key;
+a mismatch is `OperationConstraint { code: "primary_source_mutation" }`. They
+are never mutation targets. Standalone `Update::build()` has no operation key,
+so a reindex containing primary inputs fails with `reindex_requires_key`; the
+ordinary UpdateItem build supplies that key, including transaction conversion.
+`ReindexSchema<R>` supports manual bindings using the same expansion path.
+
 ## 4. Value mapping and validation
 
 No numeric value passes through `f64` unless its declared Rust type is `f64`.
