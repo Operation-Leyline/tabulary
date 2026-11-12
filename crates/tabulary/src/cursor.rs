@@ -231,6 +231,12 @@ enum CanonicalOperand {
 }
 impl CanonicalNode {
     fn new(node: &ConditionNode) -> Result<Self, BuildError> {
+        Self::at_depth(node, 0)
+    }
+    fn at_depth(node: &ConditionNode, depth: usize) -> Result<Self, BuildError> {
+        if depth > 32 {
+            return Err(BuildError::InvalidCursor);
+        }
         Ok(match node {
             ConditionNode::Predicate { operator, operands } => Self::Predicate(
                 *operator,
@@ -247,9 +253,15 @@ impl CanonicalNode {
                     })
                     .collect::<Result<_, BuildError>>()?,
             ),
-            ConditionNode::And(a, b) => Self::And(Box::new(Self::new(a)?), Box::new(Self::new(b)?)),
-            ConditionNode::Or(a, b) => Self::Or(Box::new(Self::new(a)?), Box::new(Self::new(b)?)),
-            ConditionNode::Not(a) => Self::Not(Box::new(Self::new(a)?)),
+            ConditionNode::And(a, b) => Self::And(
+                Box::new(Self::at_depth(a, depth + 1)?),
+                Box::new(Self::at_depth(b, depth + 1)?),
+            ),
+            ConditionNode::Or(a, b) => Self::Or(
+                Box::new(Self::at_depth(a, depth + 1)?),
+                Box::new(Self::at_depth(b, depth + 1)?),
+            ),
+            ConditionNode::Not(a) => Self::Not(Box::new(Self::at_depth(a, depth + 1)?)),
         })
     }
 }

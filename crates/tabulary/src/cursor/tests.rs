@@ -716,3 +716,29 @@ fn parser_bounds_ast_and_document_depth_and_rejects_untrusted_inner_counts() {
         ));
     }
 }
+
+#[test]
+fn canonicalization_checks_depth_before_recursing_or_cloning() {
+    let leaf = || ConditionNode::Predicate {
+        operator: Operator::Exists,
+        operands: vec![],
+    };
+    for depth in [32, 33] {
+        for branch in 0..3 {
+            let mut node = leaf();
+            for _ in 0..depth {
+                node = match branch {
+                    0 => ConditionNode::Not(Box::new(node)),
+                    1 => ConditionNode::And(Box::new(node), Box::new(leaf())),
+                    _ => ConditionNode::Or(Box::new(node), Box::new(leaf())),
+                };
+            }
+            let result = CanonicalNode::new(&node);
+            if depth == 32 {
+                assert!(result.is_ok());
+            } else {
+                assert!(matches!(result, Err(BuildError::InvalidCursor)));
+            }
+        }
+    }
+}
