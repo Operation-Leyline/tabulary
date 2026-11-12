@@ -70,6 +70,13 @@ faults! {
     }
 }
 
+impl fmt::Display for DecodeFault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+impl Error for DecodeFault {}
+
 macro_rules! diagnostics {
     ($error:ident, $context:ident, $fault:ident) => {
         #[derive(Clone, PartialEq, Eq)]

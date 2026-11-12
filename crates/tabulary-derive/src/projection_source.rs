@@ -53,6 +53,7 @@ pub fn fields(s: &Record) -> TokenStream {
     }
     let fields = s.fields.iter().enumerate().map(|(i, f)| {
         let (ty, name) = (&f.ty, &f.name);
+        let codec = if f.flatten { quote!(#path::Native<<#ty as #path::Variants>::Tag>) } else { f.codec(path) };
         let presence = if f.optional { quote!(#path::Optional) } else { quote!(#path::Required) };
         let access = if f.flatten { quote!(#path::DerivedOnly) } else { crate::key_expand::access(s, i) };
         let logical = if f.flatten { quote!(<#ty as #path::Variants>::Tag) } else { quote!(#ty) };
@@ -70,9 +71,9 @@ pub fn fields(s: &Record) -> TokenStream {
             } else { quote!({ #parse ::core::result::Result::Ok(#text) }) }
         }
         else if f.flatten { quote!(<#ty as #path::Variants>::decode_flattened(#item, &mut #cx.clone())) }
-        else if let Some(max) = f.key_limit { quote!(#path::__private::decode_key(#item.get(#name), &mut #child, #max)) }
-        else if f.optional { quote!(#path::field::decode_optional::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #child)) }
-        else { quote!(#path::field::decode_required::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #child)) };
+        else if let Some(max) = f.key_limit { quote!(#path::__private::decode_key_with::<#ty, #codec>(#item.get(#name), &mut #child, #max)) }
+        else if f.optional { quote!(#path::field::decode_optional::<#ty, #codec>(#item.get(#name), &mut #child)) }
+        else { quote!(#path::field::decode_required::<#ty, #codec>(#item.get(#name), &mut #child)) };
         let decode = if let Some(default) = &f.default {
             quote!(if !#item.contains_key(#name) { let default: fn() -> #output = #default; return ::core::result::Result::Ok(default()); } #decode)
         } else { decode };
@@ -84,7 +85,7 @@ pub fn fields(s: &Record) -> TokenStream {
             })))
         } else { quote!(::core::result::Result::Ok(value)) };
         quote_spanned!(f.ident.span()=>
-            impl #ig #path::projection::SourceField<#i, #output, #path::Attr<Self, #logical, #presence, #access>> for #id #tg #wc {
+            impl #ig #path::projection::SourceField<#i, #output, #path::Attr<Self, #logical, #presence, #access, #codec>> for #id #tg #wc {
                 const ATTRIBUTES: &'static [&'static str] = #names;
                 fn decode(#item: &#path::Item, #cx: &mut #path::DecodeContext) -> ::core::result::Result<#output, #path::DecodeError> {
                     let #cx = #cx.in_document(<Self as #path::Document>::NAME);

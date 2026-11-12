@@ -313,8 +313,9 @@ pub fn helpers_for(
         } }
     }).unwrap_or_else(|| {
         let ty = &record.fields[partition_key].ty;
+        let codec = record.fields[partition_key].codec(path);
         quote! { #vis fn partition(&self, value: #ty) -> #path::KeyCondition<#ident #tg, Self> where #ty: 'static {
-            #path::__private::partition::<#ident #tg, Self, #ty, #path::Native<#ty>>(::core::result::Result::Ok(value))
+            #path::__private::partition::<#ident #tg, Self, #ty, #codec>(::core::result::Result::Ok(value))
         } }
     });
     let mut implementations = Vec::new();

@@ -1,0 +1,13 @@
+error: shared payload fields require identical types, converters and presence/default rules
+ --> tests/ui/converters/shared.rs:6:38
+  |
+6 |     Sent { #[tabulary(with = alias)] total: u128 },
+  |                                      ^^^^^
+
+warning: unused import: `tabulary::convert::u128_string as alias`
+ --> tests/ui/converters/shared.rs:1:5
+  |
+1 | use tabulary::convert::u128_string as alias;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

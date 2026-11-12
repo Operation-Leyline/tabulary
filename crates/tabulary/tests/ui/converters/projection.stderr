@@ -1,0 +1,16 @@
+error[E0308]: mismatched types
+  --> tests/ui/converters/projection.rs:25:28
+   |
+22 | #[derive(tabulary::Projection)]
+   |          -------------------- arguments to this function are incorrect
+...
+25 |     #[tabulary(attribute = OrderAttrs::ADDRESS, nested)] address: City,
+   |                            ^^^^^^^^^^^^^^^^^^^ expected `Attr<_, _, _, _>`, found `Attr<Order, Address, Required, ..., ...>`
+   |
+   = note: expected struct `Attr<_, _, _, _, Native<_>>`
+              found struct `Attr<Order, Address, tabulary::Required, tabulary::Mutable, custom::Codec>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn nested_field<R, T: Document + crate::Value<Wire = crate::wire::Map>, P, A>(
+   |        ^^^^^^^^^^^^

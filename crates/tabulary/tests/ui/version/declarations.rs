@@ -61,7 +61,7 @@ struct Nested {
 struct Converter {
     #[tabulary(partition_key)]
     id: String,
-    #[tabulary(version, with = "tabulary::Native<u64>")]
+    #[tabulary(version, with = tabulary::convert::u128_string)]
     revision: u64,
 }
 fn main() {}

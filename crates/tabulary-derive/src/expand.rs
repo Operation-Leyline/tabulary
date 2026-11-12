@@ -69,6 +69,7 @@ pub fn record(record: &Record) -> TokenStream {
     for i in order {
         let f = &fields[i];
         let (id, ty, name, fv) = (&f.ident, &f.ty, &f.name, &f.vis);
+        let codec = f.codec(path);
         let local = format_ident!("__tabulary_field_{i}", span = Span::mixed_site());
         let synthetic = key_expand::template(record, i).is_some();
         if !synthetic {
@@ -97,7 +98,7 @@ pub fn record(record: &Record) -> TokenStream {
         }
         let access = key_expand::access(record, i);
         handles.push((i, quote_spanned! {id.span()=>
-            #fv const #handle: #path::Attr<#ident #tg, #ty, #presence, #access> = #path::__private::field(#name, #i);
+            #fv const #handle: #path::Attr<#ident #tg, #ty, #presence, #access, #codec> = #path::__private::field(#name, #i);
         }));
         descriptors.push((i, quote!(<#attrs #tg>::#handle.descriptor())));
         if synthetic {
@@ -130,17 +131,17 @@ pub fn record(record: &Record) -> TokenStream {
                 "index keys require S, N or B codecs"
             };
             checks.push(quote_spanned! {id.span()=>
-                const _: () = ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
+                const _: () = ::core::assert!(::core::matches!(<<#codec as #path::Converter<#ty>>::Wire as #path::WireType>::DYNAMO_TYPE,
                     #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), #key_message);
             });
             let (encode, decode) = (
-                quote!(::core::option::Option::Some(#path::__private::encode_key(&self.#id, &mut #cx, #max)?)),
-                quote!(#path::__private::decode_key(#item.get(#name), &mut #cx, #max)?),
+                quote!(::core::option::Option::Some(#path::__private::encode_key_with::<#ty, #codec>(&self.#id, &mut #cx, #max)?)),
+                quote!(#path::__private::decode_key_with::<#ty, #codec>(#item.get(#name), &mut #cx, #max)?),
             );
             if f.optional {
                 (
                     quote!(match &self.#id {
-                        ::core::option::Option::Some(value) => ::core::option::Option::Some(#path::__private::encode_key(value, &mut #cx, #max)?),
+                        ::core::option::Option::Some(value) => ::core::option::Option::Some(#path::__private::encode_key_with::<#ty, #codec>(value, &mut #cx, #max)?),
                         ::core::option::Option::None => ::core::option::Option::None,
                     }),
                     quote!(match #item.get(#name) {
@@ -153,13 +154,13 @@ pub fn record(record: &Record) -> TokenStream {
             }
         } else if f.optional {
             (
-                quote!(#path::field::encode_optional::<#ty, #path::Native<#ty>>(&self.#id, &mut #cx)?),
-                quote!(#path::field::decode_optional::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #cx)?),
+                quote!(#path::field::encode_optional::<#ty, #codec>(&self.#id, &mut #cx)?),
+                quote!(#path::field::decode_optional::<#ty, #codec>(#item.get(#name), &mut #cx)?),
             )
         } else {
             (
-                quote!(::core::option::Option::Some(<#ty as #path::Value>::encode_value(&self.#id, &mut #cx)?)),
-                quote!(#path::field::decode_required::<#ty, #path::Native<#ty>>(#item.get(#name), &mut #cx)?),
+                quote!(::core::option::Option::Some(<#codec as #path::Converter<#ty>>::encode(&self.#id, &mut #cx)?)),
+                quote!(#path::field::decode_required::<#ty, #codec>(#item.get(#name), &mut #cx)?),
             )
         };
         let decode = if let Some(default) = &f.default {
@@ -212,7 +213,8 @@ pub fn record(record: &Record) -> TokenStream {
         let assertions = fields.iter().enumerate().filter(|(i, f)| f.key_limit.is_some() || key_expand::index_limit(record, *i).is_some()).map(|(i, f)| {
             let key_message = if key_expand::primary(record, i) { "primary keys require S, N or B codecs" } else { "index keys require S, N or B codecs" };
             let ty = &f.ty;
-            quote_spanned!(f.ident.span()=> ::core::assert!(::core::matches!(<<#ty as #path::Value>::Wire as #path::WireType>::DYNAMO_TYPE,
+            let codec = f.codec(path);
+            quote_spanned!(f.ident.span()=> ::core::assert!(::core::matches!(<<#codec as #path::Converter<#ty>>::Wire as #path::WireType>::DYNAMO_TYPE,
                 #path::DynamoType::S | #path::DynamoType::N | #path::DynamoType::B), #key_message);)
         });
         (

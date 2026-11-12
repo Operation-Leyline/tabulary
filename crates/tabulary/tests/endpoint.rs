@@ -4,6 +4,8 @@
 mod indexed;
 #[path = "endpoint/support.rs"]
 mod support;
+#[path = "endpoint/transactions_batches.rs"]
+mod transactions_batches;
 
 use aws_sdk_dynamodb::Client;
 use tabulary::{

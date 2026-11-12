@@ -2,8 +2,8 @@
 use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::{
-    DecodeContext, DecodeError, DecodeFault, EncodeContext, EncodeError, EncodeFault,
-    KeyFormatFault, Record, Value,
+    Converter, DecodeContext, DecodeError, DecodeFault, EncodeContext, EncodeError, EncodeFault,
+    KeyFormatFault, Native, Record, Value,
 };
 
 pub type Item = std::collections::HashMap<String, AttributeValue>;
@@ -44,7 +44,15 @@ pub fn encode_key<T: Value>(
     cx: &mut EncodeContext,
     max: usize,
 ) -> Result<AttributeValue, EncodeError> {
-    let value = value.encode_value(cx)?;
+    encode_key_with::<T, Native<T>>(value, cx, max)
+}
+
+pub fn encode_key_with<T, C: Converter<T>>(
+    value: &T,
+    cx: &mut EncodeContext,
+    max: usize,
+) -> Result<AttributeValue, EncodeError> {
+    let value = C::encode(value, cx)?;
     validate_key(&value, max).map_err(|fault| cx.error(fault))?;
     Ok(value)
 }
@@ -54,8 +62,16 @@ pub fn decode_key<T: Value>(
     cx: &mut DecodeContext,
     max: usize,
 ) -> Result<T, DecodeError> {
+    decode_key_with::<T, Native<T>>(value, cx, max)
+}
+
+pub fn decode_key_with<T, C: Converter<T>>(
+    value: Option<&AttributeValue>,
+    cx: &mut DecodeContext,
+    max: usize,
+) -> Result<T, DecodeError> {
     let value = value.ok_or_else(|| cx.error(DecodeFault::Missing))?;
-    let decoded = T::decode_value(value, cx)?;
+    let decoded = C::decode(value, cx)?;
     validate_key(value, max)
         .map_err(|_| cx.error(DecodeFault::KeyFormat(KeyFormatFault::InvalidLength)))?;
     Ok(decoded)

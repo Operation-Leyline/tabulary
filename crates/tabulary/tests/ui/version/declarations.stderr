@@ -40,8 +40,8 @@ error: Document fields cannot declare versions
 56 |     #[tabulary(version)]
    |     ^^^^^^^^^^^^^^^^^^^^
 
-error: unsupported tabulary option
-  --> tests/ui/version/declarations.rs:64:25
+error: version fields require the native u64 codec; converters are forbidden
+  --> tests/ui/version/declarations.rs:65:5
    |
-64 |     #[tabulary(version, with = "tabulary::Native<u64>")]
-   |                         ^^^^
+65 |     revision: u64,
+   |     ^^^^^^^^

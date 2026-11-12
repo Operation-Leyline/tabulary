@@ -204,6 +204,7 @@ fn key(
                 optional: false,
                 key_limit: Some(max),
                 default: None,
+                with: None,
                 flatten: false,
             });
             record.templates.push((i, template));

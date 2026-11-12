@@ -18,7 +18,18 @@ pub struct Field {
     pub optional: bool,
     pub key_limit: Option<usize>,
     pub default: Option<Path>,
+    pub with: Option<Path>,
     pub flatten: bool,
+}
+
+impl Field {
+    pub fn codec(&self, path: &Path) -> proc_macro2::TokenStream {
+        let ty = &self.ty;
+        match &self.with {
+            Some(module) => quote::quote!(#module::Codec),
+            None => quote::quote!(#path::Native<#ty>),
+        }
+    }
 }
 
 pub struct Record {
@@ -118,6 +129,22 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             .ident
             .ok_or_else(|| error(&field.ty, "expected a named field"))?;
         let rust_name = ident.to_string().trim_start_matches("r#").to_owned();
+        if opts.with.is_some() {
+            let reason = if opts.version {
+                Some("version fields require the native u64 codec; converters are forbidden")
+            } else if opts.ttl {
+                Some("TTL fields require the native TtlSeconds codec; converters are forbidden")
+            } else if opts.flatten {
+                Some(
+                    "flattened variants use their payload converters; a group converter is forbidden",
+                )
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Err(error(&ident, reason));
+            }
+        }
         if opts.version {
             if result.version.replace(i).is_some() {
                 return Err(error(&ident, "at most one version field is allowed"));
@@ -227,6 +254,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             name,
             key_limit,
             default: opts.default,
+            with: opts.with,
             flatten: opts.flatten,
         });
     }
@@ -257,6 +285,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             optional: false,
             key_limit: Some(if is_partition { 2048 } else { 1024 }),
             default: None,
+            with: None,
             flatten: false,
         });
     }
