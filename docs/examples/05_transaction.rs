@@ -33,11 +33,13 @@ pub struct Session {
 
 pub enum CheckoutAttempt {
     Committed,
-    Cancelled {
-        invoice: Failure<Invoice>,
-        stock: Failure<Stock>,
-        session: Failure<Session>,
-    },
+    Cancelled(Box<CheckoutCancellation>),
+}
+
+pub struct CheckoutCancellation {
+    pub invoice: Failure<Invoice>,
+    pub stock: Failure<Stock>,
+    pub session: Failure<Session>,
 }
 
 pub async fn checkout(
@@ -85,17 +87,17 @@ pub async fn checkout(
         Err(TxError::Cancelled(cancelled)) => {
             // Every tuple position has its original record type.
             let (invoice, stock, session) = cancelled.reasons;
-            if matches!(stock.kind, FailureKind::ConditionFailed) {
-                if let OldItem::Decoded(old_stock) = &stock.old {
-                    let _available = old_stock.on_hand;
-                }
+            if matches!(stock.kind, FailureKind::ConditionFailed)
+                && let OldItem::Decoded(old_stock) = &stock.old
+            {
+                let _available = old_stock.on_hand;
             }
             // Unavailable reasons remain explicit if the endpoint omitted them.
-            Ok(CheckoutAttempt::Cancelled {
+            Ok(CheckoutAttempt::Cancelled(Box::new(CheckoutCancellation {
                 invoice,
                 stock,
                 session,
-            })
+            })))
         }
         Err(other) => Err(Box::new(other)),
     }

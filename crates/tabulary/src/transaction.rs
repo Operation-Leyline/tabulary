@@ -1,12 +1,12 @@
 //! One inspectable transaction request; execution belongs to the caller.
 use std::fmt;
 
-use crate::{BilledSize, BuildError, Capacity, CollectionMetrics, Item, TxAction};
+use crate::{BilledSize, BuildError, Capacity, CollectionMetrics, Failure, Item, TxAction};
 use aws_sdk_dynamodb::{
     operation::transact_write_items::{
         TransactWriteItemsInput, builders::TransactWriteItemsFluentBuilder,
     },
-    types::TransactWriteItem,
+    types::{CancellationReason, TransactWriteItem},
 };
 
 fn constraint(code: &'static str) -> BuildError {
@@ -20,14 +20,29 @@ mod sealed {
     }
 }
 /// Frozen flat action tuples (arity 1..=12). Nested/vector composition comes later.
-pub trait TxActions: sealed::Actions {}
+pub trait TxActions: sealed::Actions {
+    type Reasons;
+    #[doc(hidden)]
+    fn decode_reasons(
+        &self,
+        reasons: &mut std::slice::Iter<'_, CancellationReason>,
+    ) -> Self::Reasons;
+}
 impl<R> sealed::Actions for TxAction<R> {
     fn append(&self, items: &mut Vec<TransactWriteItem>, targets: &mut Vec<(String, Item)>) {
         items.push(self.input().clone());
         targets.push(self.target.clone());
     }
 }
-impl<R> TxActions for TxAction<R> {}
+impl<R> TxActions for TxAction<R> {
+    type Reasons = Failure<R>;
+    fn decode_reasons(
+        &self,
+        reasons: &mut std::slice::Iter<'_, CancellationReason>,
+    ) -> Self::Reasons {
+        self.decode_reason(reasons.next())
+    }
+}
 macro_rules! tuples {
     ($($t:ident : $i:tt),+) => {
         impl<$($t),+> sealed::Actions for ($(TxAction<$t>,)+) {
@@ -35,7 +50,12 @@ macro_rules! tuples {
                 $(self.$i.append(items, targets);)+
             }
         }
-        impl<$($t),+> TxActions for ($(TxAction<$t>,)+) {}
+        impl<$($t),+> TxActions for ($(TxAction<$t>,)+) {
+            type Reasons = ($(Failure<$t>,)+);
+            fn decode_reasons(&self, reasons: &mut std::slice::Iter<'_, CancellationReason>) -> Self::Reasons {
+                ($(self.$i.decode_reasons(reasons),)+)
+            }
+        }
     };
 }
 tuples!(A:0);
