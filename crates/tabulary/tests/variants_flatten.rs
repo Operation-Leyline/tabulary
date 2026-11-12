@@ -173,4 +173,10 @@ fn shared_fields_converters_defaults_and_decode_order_remain_strict() {
     );
     DeliveryAttrs::STAGE.is(StageTags::WAITING).build().unwrap();
     assert_eq!(DeliveryAttrs::STAGE.name(), "delivery.stage");
+    assert_eq!(Flat::<String>::FIELDS[0].name, "kind");
+    assert_eq!(
+        Flat::<String>::FIELDS[0].access,
+        tabulary::FieldAccess::DerivedOnly
+    );
+    assert_eq!(Flat::<String>::FIELDS[0].wire, tabulary::DynamoType::S);
 }

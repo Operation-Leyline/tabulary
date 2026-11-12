@@ -25,6 +25,12 @@ pub fn validation(schema: &Record) -> TokenStream {
     quote_spanned!(f.ident.span()=> const { #path::__private::assert_disjoint(&[#(#names,)*], <#ty as #path::Variants>::ATTRIBUTES) };)
 }
 
+pub fn descriptor(schema: &Record, i: usize) -> TokenStream {
+    let (ty, path) = (&schema.fields[i].ty, &schema.crate_path);
+    let tag = quote!(<#ty as #path::Variants>::Tag);
+    quote!(#path::__private::field::<Self, #tag, #path::Required, #path::DerivedOnly, #path::Native<#tag>>(<#ty as #path::Variants>::TAG, #i).descriptor())
+}
+
 pub fn known(schema: &Record) -> TokenStream {
     let path = &schema.crate_path;
     let ty = schema.fields.iter().find(|f| f.flatten).map(|f| &f.ty);
