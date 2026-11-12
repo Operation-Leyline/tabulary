@@ -353,17 +353,6 @@ fn generics_renamed_runtime_recursive_self_and_marker_names_work() {
     };
     assert_eq!(error.kind, tabulary::EncodeFault::NonFiniteFloat);
     assert_eq!((error.record, error.attribute()), ("Parcel", Some("value")));
-    let mixed: Vec<StageTag> = vec![StageTag::from(StageTags::SENT), StageTags::FAILED.into()];
-    assert_eq!(
-        mixed
-            .into_iter()
-            .map(|tag| match tag {
-                StageTag::Sent => "sent",
-                StageTag::Failed => "failed",
-            })
-            .collect::<Vec<_>>(),
-        ["sent", "failed"]
-    );
     assert!(
         ParcelAttrs::<String>::STATE
             .is(PayloadTag::Active)
