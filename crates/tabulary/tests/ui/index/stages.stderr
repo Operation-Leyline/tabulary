@@ -1,0 +1,17 @@
+error: sparse indexes arrive with milestone 17
+ --> tests/ui/index/stages.rs:2:115
+  |
+2 | #[tabulary(rename_all = "snake_case", index(ident = ByValue, name = "by_value", kind = global, partition = value, sparse, project = a...
+  |                                                                                                                   ^^^^^^
+
+error: optional index inputs arrive with sparse indexes in milestone 17
+  --> tests/ui/index/stages.rs:11:5
+   |
+11 |     value: Option<String>,
+   |     ^^^^^
+
+error: composite index keys arrive with milestone 16b
+  --> tests/ui/index/stages.rs:14:113
+   |
+14 | #[tabulary(rename_all = "snake_case", index(ident = ByValue, name = "by_value", kind = global, partition(name = "gpk", template = "v...
+   |                                                                                                                 ^^^^^

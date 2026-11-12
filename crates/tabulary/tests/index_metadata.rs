@@ -1,0 +1,125 @@
+#![cfg(feature = "derive")]
+use aws_sdk_dynamodb::types::{AttributeValue as Av, ScalarAttributeType as Scalar};
+use tabulary::{IndexKind, IndexProjection, IndexSchema, Record};
+
+#[derive(Debug, PartialEq, tabulary::Record)]
+#[tabulary(rename_all = "camelCase",
+    index(ident = ByCourier, name = "by_courier", kind = global, partition = courier, project = include(gift_note)),
+    index(ident = ByLine, name = "by_line", kind = local, partition = order_ref, sort = line_no, project = keys_only))]
+struct Order {
+    #[tabulary(partition_key)]
+    order_ref: String,
+    #[tabulary(sort_key)]
+    created: u64,
+    courier: String,
+    line_no: u64,
+    gift_note: Option<String>,
+}
+
+#[test]
+fn hash_only_global_local_and_projected_names_share_one_schema() {
+    fn global<
+        I: IndexSchema<
+                Order,
+                Partition = String,
+                PartitionCodec = tabulary::Native<String>,
+                Sort = tabulary::NoSort,
+            >,
+    >(
+        _: I,
+    ) {
+    }
+    global(OrderIndexes::BY_COURIER);
+    let gsi = OrderByCourier::DEFINITION;
+    assert_eq!(gsi.kind, IndexKind::Global);
+    assert_eq!(gsi.keys.sort, None);
+    assert_eq!(gsi.projection, IndexProjection::Include(&["giftNote"]));
+    let lsi = OrderByLine::DEFINITION;
+    assert_eq!(lsi.kind, IndexKind::Local);
+    assert_eq!(lsi.keys.partition, Order::SCHEMA.primary.partition);
+    assert_ne!(lsi.keys.sort, Order::SCHEMA.primary.sort);
+    assert_eq!(Order::SCHEMA.indexes, &[gsi, lsi]);
+    let definitions = Order::SCHEMA.attribute_definitions().unwrap();
+    assert_eq!(
+        definitions
+            .iter()
+            .map(|d| d.attribute_name())
+            .collect::<Vec<_>>(),
+        ["orderRef", "created", "courier", "lineNo"]
+    );
+    assert!(definitions.iter().all(|d| d.attribute_name() != "giftNote"));
+    assert_eq!(
+        definitions
+            .iter()
+            .map(|d| d.attribute_type())
+            .collect::<Vec<_>>(),
+        [&Scalar::S, &Scalar::N, &Scalar::S, &Scalar::N]
+    );
+    let record = Order {
+        order_ref: "o".into(),
+        created: 1,
+        courier: "c".into(),
+        line_no: 2,
+        gift_note: None,
+    };
+    assert_eq!(
+        Order::from_item(&record.to_item().unwrap()).unwrap(),
+        record
+    );
+}
+
+#[derive(tabulary::Record)]
+#[tabulary(crate = "::tabulary", generated_prefix = "Stored", rename_all = "snake_case",
+    index(ident = ByValue, name = "by_value", kind = global, partition = value, sort = sequence, project = all))]
+struct Generic<T> {
+    #[tabulary(partition_key)]
+    id: String,
+    value: T,
+    sequence: u64,
+}
+#[test]
+fn generic_binary_keys_validate_physical_values_without_changing_primary_keys() {
+    let record = Generic {
+        id: "o".into(),
+        value: vec![1u8],
+        sequence: 1,
+    };
+    let handle = StoredIndexes::<Vec<u8>>::BY_VALUE;
+    let _copy = handle;
+    assert_eq!(
+        StoredByValue::<Vec<u8>>::DEFINITION.projection,
+        IndexProjection::All
+    );
+    assert_eq!(
+        Generic::<Vec<u8>>::SCHEMA.attribute_definitions().unwrap()[1].attribute_type(),
+        &Scalar::B
+    );
+    assert_eq!(
+        tabulary::RecordKey::encode_key(&record.key().unwrap())
+            .unwrap()
+            .len(),
+        1
+    );
+    let mut item = record.to_item().unwrap();
+    item.insert("value".into(), Av::S("wrong".into()));
+    let error = Generic::<Vec<u8>>::from_item(&item).err().unwrap();
+    assert!(matches!(
+        error.kind,
+        tabulary::DecodeFault::WrongType { .. }
+    ));
+    assert_eq!(error.attribute(), Some("value"));
+    let empty = Generic {
+        value: Vec::<u8>::new(),
+        ..record
+    };
+    assert_eq!(
+        empty.to_item().unwrap_err().kind,
+        tabulary::EncodeFault::EmptyKey
+    );
+    let mut invalid = Generic::<Vec<u8>>::SCHEMA;
+    invalid.primary.partition = 99;
+    assert_eq!(
+        invalid.attribute_definitions(),
+        Err(tabulary::BuildError::IncompatibleIndex)
+    );
+}

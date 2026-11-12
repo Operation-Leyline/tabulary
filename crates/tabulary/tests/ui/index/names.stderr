@@ -1,0 +1,17 @@
+error: empty or duplicate index name
+ --> tests/ui/index/names.rs:4:34
+  |
+4 |     index(ident = Second, name = "by_value", kind = global, partition = value, project = all))]
+  |                                  ^^^^^^^^^^
+
+error: duplicate generated index handle
+  --> tests/ui/index/names.rs:12:19
+   |
+12 |     index(ident = ByVALUE, name = "by_other", kind = global, partition = value, project = all))]
+   |                   ^^^^^^^
+
+error: expected an ordinary Rust field
+  --> tests/ui/index/names.rs:18:133
+   |
+18 | ..._value", kind = global, partition = value, project = include(absent)))]
+   |                                                                 ^^^^^^

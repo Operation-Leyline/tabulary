@@ -41,5 +41,6 @@ pub const fn schema(
         name,
         fields,
         primary,
+        indexes: &[],
     }
 }

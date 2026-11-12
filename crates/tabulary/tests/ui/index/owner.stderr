@@ -1,0 +1,21 @@
+error[E0277]: the trait bound `OrderByValue: IndexSchema<Invoice>` is not satisfied
+  --> tests/ui/index/owner.rs:13:27
+   |
+13 | fn main() { invoice_index(OrderIndexes::BY_VALUE); }
+   |             ------------- ^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |             |
+   |             required by a bound introduced by this call
+   |
+help: the trait `IndexSchema<Invoice>` is not implemented for `OrderByValue`
+      but trait `IndexSchema<Order>` is implemented for it
+  --> tests/ui/index/owner.rs:1:10
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Order`, found `Invoice`
+note: required by a bound in `invoice_index`
+  --> tests/ui/index/owner.rs:12:21
+   |
+12 | fn invoice_index<I: tabulary::IndexSchema<Invoice>>(_: I) {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `invoice_index`
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
