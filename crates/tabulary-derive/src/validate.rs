@@ -33,6 +33,7 @@ pub struct Record {
     pub allow_unknown: bool,
     pub templates: Vec<(usize, crate::template::Template)>,
     pub indexes: Vec<crate::index_validate::Index>,
+    pub ttl: Option<usize>,
 }
 
 pub fn record(input: DeriveInput) -> syn::Result<Record> {
@@ -103,6 +104,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
         allow_unknown,
         templates: Vec::new(),
         indexes: Vec::new(),
+        ttl: None,
     };
     let mut partition = None;
     let mut names = HashMap::new();
@@ -161,6 +163,9 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             return Err(error(&ident, "duplicate generated attribute handle"));
         }
         let inner = optional(&field.ty);
+        if opts.ttl && (opts.flatten || result.ttl.replace(i).is_some()) {
+            return Err(error(&ident, "one non-flattened TTL field is allowed"));
+        }
         let key_limit = if opts.partition_key {
             if partition.replace(i).is_some() || opts.sort_key {
                 return Err(error(&ident, "duplicate or overlapping partition key"));

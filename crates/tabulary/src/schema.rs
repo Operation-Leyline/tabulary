@@ -42,6 +42,7 @@ pub struct RecordSchema {
     pub fields: &'static [FieldDescriptor],
     pub primary: KeyDefinition,
     pub indexes: &'static [crate::IndexDefinition],
+    pub ttl: Option<usize>,
 }
 
 /// A record owns one static schema. Manual implementations are supported.
@@ -51,5 +52,13 @@ pub trait Record: Sized {
 
     fn table_definition() -> crate::TableDefinition<Self> {
         crate::TableDefinition::new(Self::SCHEMA)
+    }
+}
+
+impl RecordSchema {
+    #[doc(hidden)]
+    pub const fn with_ttl(mut self, position: usize) -> Self {
+        self.ttl = Some(position);
+        self
     }
 }

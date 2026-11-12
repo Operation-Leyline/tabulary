@@ -1523,6 +1523,23 @@ limits, and collisions. An LSI on a hash-only table is invalid.
 Same-table multiple record schemas can use
 `TableDefinition::merge(a, b)?`, which requires exact agreement for overlapping
 definitions and one compatible TTL setting.
+Milestone 37b adds `merge` and TTL metadata/inputs. Merging compares physical
+names and S/N/B types, independent of each record's field positions. Primary
+keys must agree; disjoint index names are unioned; shared names must agree on
+kind, HASH/RANGE keys, and projection (INCLUDE order does not matter). Combined
+index/projection limits are checked after deduplication. Any declared field
+that shares a merged physical key or TTL name must agree with its wire type.
+The merged definition retains the left record's type marker.
+
+TTL absence means unspecified, so it can merge with one declared TTL attribute;
+two different declared TTL names conflict. `#[tabulary(ttl)]` adds the field's
+position to `RecordSchema::ttl`. It accepts exactly `TtlSeconds` or
+`Option<TtlSeconds>`, including aliases; duplicate TTL fields/annotations,
+document TTL declarations and flattened TTL payloads are rejected. Unannotated
+TTL values do not enable expiry. `ttl_input` returns `None` for an undeclared
+TTL, or a separate enable request using its physical wire name. An empty table
+identifier is rejected; names and ARNs are otherwise preserved for this SDK
+operation. No request disables TTL implicitly.
 
 TTL requires a separate UpdateTimeToLive request after table activation; it is
 not a CreateTable field. Definition helpers do not create tables, wait for
