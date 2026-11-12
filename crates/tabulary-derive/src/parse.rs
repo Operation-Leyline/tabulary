@@ -10,6 +10,8 @@ pub struct Options {
     pub default: Option<Path>,
     pub partition_key: bool,
     pub sort_key: bool,
+    pub partition: Option<crate::template::Declaration>,
+    pub sort: Option<crate::template::Declaration>,
 }
 
 pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
@@ -26,6 +28,18 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                 (true, "generated_prefix") => &mut result.generated_prefix,
                 (true, "unknown") => &mut result.unknown,
                 (true, "crate") => &mut result.crate_path,
+                (true, "partition" | "sort") => {
+                    let slot = if option == "partition" {
+                        &mut result.partition
+                    } else {
+                        &mut result.sort
+                    };
+                    if slot.is_some() {
+                        return Err(meta.error("duplicate composite key declaration"));
+                    }
+                    *slot = Some(crate::template::declaration(&meta)?);
+                    return Ok(());
+                }
                 (false, "rename") => &mut result.rename,
                 (false, "default") => {
                     if result.default.is_some() {

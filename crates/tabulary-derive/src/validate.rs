@@ -82,6 +82,12 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             "Record and Document require named fields",
         ));
     };
+    crate::template::declarations(
+        opts.partition.as_ref(),
+        opts.sort.as_ref(),
+        &fields,
+        rule.as_deref(),
+    )?;
     let mut result = Record {
         ident: input.ident,
         generics: input.generics,

@@ -1,0 +1,11 @@
+error: template validated; composite key expansion requires milestone 15
+ --> tests/ui/record/template_expansion_gate.rs:2:73
+  |
+2 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{{{id:hex}}}"))]
+  |                                                                         ^^^^^^^^^^^^^^
+
+error: template validated; composite key expansion requires milestone 15
+ --> tests/ui/record/template_expansion_gate.rs:6:68
+  |
+6 | #[tabulary(rename_all = "snake_case", sort(name = "sk", template = "{count:dec20}"))]
+  |                                                                    ^^^^^^^^^^^^^^^

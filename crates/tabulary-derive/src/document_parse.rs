@@ -8,5 +8,11 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<crate::parse
             "Document fields cannot declare keys",
         ));
     }
+    if let Some(key) = opts.partition.as_ref().or(opts.sort.as_ref()) {
+        return Err(syn::Error::new_spanned(
+            &key.name,
+            "Document cannot declare keys",
+        ));
+    }
     Ok(opts)
 }

@@ -27,3 +27,9 @@ error: first declared here
    |
 12 | struct Duplicate { id: String, #[tabulary(rename = "id")] other: String }
    |                    ^^
+
+error: Document cannot declare keys
+  --> tests/ui/document/declarations.rs:14:56
+   |
+14 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{id:hex}"))]
+   |                                                        ^^^^
