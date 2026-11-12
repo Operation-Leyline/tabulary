@@ -1202,6 +1202,28 @@ There is no automatic fan-out, merge order, or cross-segment progress storage.
 
 ## 10. Batches and bounded unprocessed work
 
+Milestone 42 supplies the pure `BatchGetProgress<R, K, P = R>` core and
+`BatchBudget`, using the same `R: Record + Document` and `K: RecordKey<R>`
+contracts as GetItem. `new(keys, budget)` encodes and validates 1--100 owned
+keys and rejects duplicate canonical physical keys without requiring Rust Eq.
+`next_round()` reserves a call and returns a `BatchGetChunk` with immutable
+encoded keys and original input positions. Issuing a chunk consumes a budget
+slot even if the caller never sends it; this conservative reservation cannot
+be refunded. A live chunk prevents another round, even on the final slot.
+`accept_round(&chunk, found, pending)` receives already decoded values paired
+with original input positions, plus unprocessed positions. It validates batch
+identity, round, subset membership, duplicates and disjointness before mutation;
+invalid submissions leave the round outstanding and progress unchanged.
+`entries()` exposes ordered Found/Missing/Pending states; `into_partial()` moves
+owned keys and records without Clone. Core `finish()` rejects outstanding or
+pending work, distinguishing unused calls (`PendingWork`) from exhausted budget.
+Its complete result contains ordered records; incomplete results retain ordered
+entries and issued calls. SDK requests, consistency/projection selection,
+capacity vectors, response-key correlation, and terminal SDK/protocol/decode
+error wrapping and freezing belong to milestone 43's adapter below. The adapter
+must consume the core into a partial result on terminal failure; the low-level
+core's nonmutating rejection is not permission to retry a failed SDK call.
+
 The design resolves two requirements together: unprocessed items cannot
 disappear, and tabulary cannot retry or hide calls. Batch state prepares the
 next request only when the caller asks. It performs no I/O and does not sleep.
