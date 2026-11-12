@@ -42,25 +42,43 @@ note: method defined here
    |     pub fn transition<V: crate::Variants + 'static>(
    |            ^^^^^^^^^^
 
-error[E0308]: arguments to this method are incorrect
-  --> tests/ui/transitions/types.rs:35:31
+error[E0277]: the trait bound `StageTag: From<OtherWaitingTag>` is not satisfied
+  --> tests/ui/transitions/types.rs:35:80
    |
 35 |     Update::<Delivery>::new().transition(DeliveryAttrs::STAGE, Other::Waiting, OtherTags::WAITING);
-   |                               ^^^^^^^^^^                       --------------  ------------------ expected `StageTag`, found `OtherTag`
-   |                                                                |
-   |                                                                expected `Stage`, found `Other`
+   |                               ----------                                       ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                               |
+   |                               required by a bound introduced by this call
    |
-note: method defined here
+help: the trait `From<OtherWaitingTag>` is not implemented for `StageTag`
+  --> tests/ui/transitions/types.rs:3:10
+   |
+ 3 | #[derive(Variants)]
+   |          ^^^^^^^^
+help: `StageTag` implements trait `From<T>`
+  --> tests/ui/transitions/types.rs:3:10
+   |
+ 3 | #[derive(Variants)]
+   |          ^^^^^^^^
+   |          |
+   |          `From<StageSentTag>`
+   |          `From<StageWaitingTag>`
+   = note: required for `OtherWaitingTag` to implement `Into<StageTag>`
+note: required by a bound in `Update::<R>::transition`
   --> src/update.rs
    |
    |     pub fn transition<V: crate::Variants + 'static>(
-   |            ^^^^^^^^^^
+   |            ---------- required by a bound in this associated function
+...
+   |         expected_tag: impl Into<V::Tag>,
+   |                            ^^^^^^^^^^^^ required by this bound in `Update::<R>::transition`
+   = note: this error originates in the derive macro `Variants` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-  --> tests/ui/transitions/types.rs:36:80
+  --> tests/ui/transitions/types.rs:35:64
    |
-36 |     Update::<Delivery>::new().transition(DeliveryAttrs::STAGE, Stage::Waiting, OtherTags::WAITING);
-   |                               ----------                                       ^^^^^^^^^^^^^^^^^^ expected `StageTag`, found `OtherTag`
+35 |     Update::<Delivery>::new().transition(DeliveryAttrs::STAGE, Other::Waiting, OtherTags::WAITING);
+   |                               ----------                       ^^^^^^^^^^^^^^ expected `Stage`, found `Other`
    |                               |
    |                               arguments to this method are incorrect
    |
@@ -69,6 +87,38 @@ note: method defined here
    |
    |     pub fn transition<V: crate::Variants + 'static>(
    |            ^^^^^^^^^^
+
+error[E0277]: the trait bound `StageTag: From<OtherWaitingTag>` is not satisfied
+  --> tests/ui/transitions/types.rs:36:80
+   |
+36 |     Update::<Delivery>::new().transition(DeliveryAttrs::STAGE, Stage::Waiting, OtherTags::WAITING);
+   |                               ----------                                       ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                               |
+   |                               required by a bound introduced by this call
+   |
+help: the trait `From<OtherWaitingTag>` is not implemented for `StageTag`
+  --> tests/ui/transitions/types.rs:3:10
+   |
+ 3 | #[derive(Variants)]
+   |          ^^^^^^^^
+help: `StageTag` implements trait `From<T>`
+  --> tests/ui/transitions/types.rs:3:10
+   |
+ 3 | #[derive(Variants)]
+   |          ^^^^^^^^
+   |          |
+   |          `From<StageSentTag>`
+   |          `From<StageWaitingTag>`
+   = note: required for `OtherWaitingTag` to implement `Into<StageTag>`
+note: required by a bound in `Update::<R>::transition`
+  --> src/update.rs
+   |
+   |     pub fn transition<V: crate::Variants + 'static>(
+   |            ---------- required by a bound in this associated function
+...
+   |         expected_tag: impl Into<V::Tag>,
+   |                            ^^^^^^^^^^^^ required by this bound in `Update::<R>::transition`
+   = note: this error originates in the derive macro `Variants` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Nested: FlattenedVariants<_>` is not satisfied
   --> tests/ui/transitions/types.rs:37:60

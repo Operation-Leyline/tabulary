@@ -689,6 +689,30 @@ condition. Variant payload handles are scoped through
 `DeliveryAttrs::STAGE.variant(DeliveryStageTags::SENT)`; their conditions
 include the tag guard. They cannot be used as unconditional update targets.
 
+Scoped payload access is available for a record's flattened group only. Nested
+variant maps retain whole-map handles; their existing nested `Path` API supports
+updates, not condition operands, so nested scoped predicates are deferred.
+A generated singleton type for each tag selects a peer such as
+`DeliveryStageSentAttrs<Delivery>`. Its named fields (for example,
+`.tracking_ref`) are read-only `ScopedAttr` handles with the declared logical
+type, field converter, and physical wire name. Shared fields retain the selected
+tag's guard. Unit variants return an empty payload peer. Generic enums and
+`generated_prefix` apply to these peers as to the other generated names.
+The singleton tags convert into the group's ordinary `DeliveryStageTag` enum;
+`.is(..)` and `transition(..)` accept either form. Use that enum for collections
+of different tags.
+
+Scope guards are requirements on the complete condition: composing predicates
+with AND, OR, or NOT composes their payload expressions while retaining every
+scope guard as an outer AND requirement. In particular, `NOT(scoped)` means
+`NOT(payload) AND tag = selected`, and `scoped OR common` still requires the
+selected tag. Combining scopes of different tags in one condition requires both
+tags and therefore matches no item; use discriminator `.is(..)` conditions when
+expressing alternatives across variants. Guards are retained in encounter
+order without deduplication. Scoped handles expose no update target, update
+operand, or conversion to an unguarded attribute; replace payloads with
+`transition`.
+
 `update.transition(DeliveryAttrs::STAGE, new_stage, expected_tag)` adds a
 condition for the expected tag, SETs the new tag and payload, and REMOVEs the
 union of old-only payload attributes. It replaces the entire variant value, so

@@ -155,6 +155,7 @@ impl<R> fmt::Debug for BuiltCondition<R> {
 /// ```
 pub struct Condition<R> {
     build: Box<dyn FnOnce() -> Result<ConditionNode, BuildError>>,
+    guards: Vec<Self>,
     owner: PhantomData<fn(R) -> R>,
 }
 impl<R> fmt::Debug for Condition<R> {
@@ -166,14 +167,23 @@ impl<R> Condition<R> {
     pub(crate) fn new(build: impl FnOnce() -> Result<ConditionNode, BuildError> + 'static) -> Self {
         Self {
             build: Box::new(build),
+            guards: Vec::new(),
             owner: PhantomData,
         }
     }
     pub fn build(self) -> Result<BuiltCondition<R>, BuildError> {
+        let mut root = (self.build)()?;
+        for guard in self.guards {
+            root = ConditionNode::And(Box::new(root), Box::new(guard.build()?.into_root()));
+        }
         Ok(BuiltCondition {
-            root: (self.build)()?,
+            root,
             owner: PhantomData,
         })
+    }
+    pub(crate) fn guarded(mut self, guard: Self) -> Self {
+        self.guards.push(guard);
+        self
     }
     pub fn and(self, other: Self) -> Self {
         self.join(other, ConditionNode::And)
@@ -187,16 +197,21 @@ impl<R> Condition<R> {
         join: fn(Box<ConditionNode>, Box<ConditionNode>) -> ConditionNode,
     ) -> Self {
         let (left, right) = (self.build, other.build);
-        Self::new(move || Ok(join(Box::new(left()?), Box::new(right()?))))
+        let mut combined = Self::new(move || Ok(join(Box::new(left()?), Box::new(right()?))));
+        combined.guards = self.guards;
+        combined.guards.extend(other.guards);
+        combined
     }
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Self {
         let build = self.build;
-        Self::new(move || Ok(ConditionNode::Not(Box::new(build()?))))
+        let mut negated = Self::new(move || Ok(ConditionNode::Not(Box::new(build()?))));
+        negated.guards = self.guards;
+        negated
     }
 }
 
-fn predicate<R: Record, T: 'static, C: Converter<T> + 'static>(
+pub(crate) fn predicate<R: Record, T: 'static, C: Converter<T> + 'static>(
     field: Result<FieldDescriptor, BuildError>,
     size: bool,
     operator: Operator,
@@ -280,6 +295,7 @@ impl<R: Record, T: 'static, P: PresenceMarker, A: AccessMarker, C: Converter<T> 
     {
         Size {
             field: self.validate(),
+            guard: None,
             owner: PhantomData,
         }
     }
@@ -305,12 +321,17 @@ where
 
 /// A numeric size operand. It retains its source's record and validated descriptor.
 pub struct Size<R> {
-    field: Result<FieldDescriptor, BuildError>,
-    owner: PhantomData<fn(R) -> R>,
+    pub(crate) guard: Option<Condition<R>>,
+    pub(crate) field: Result<FieldDescriptor, BuildError>,
+    pub(crate) owner: PhantomData<fn(R) -> R>,
 }
 impl<R: Record> Size<R> {
     fn predicate(self, operator: Operator, values: Vec<u64>) -> Condition<R> {
-        predicate::<R, u64, Native<u64>>(self.field, true, operator, values)
+        let condition = predicate::<R, u64, Native<u64>>(self.field, true, operator, values);
+        match self.guard {
+            Some(guard) => condition.guarded(guard),
+            None => condition,
+        }
     }
     pub fn in_values(self, values: Vec<u64>) -> Condition<R> {
         self.predicate(Operator::In, values)

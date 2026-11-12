@@ -1,0 +1,128 @@
+error[E0277]: the trait bound `OtherSentTag: VariantScope<Delivery, Stage>` is not satisfied
+  --> tests/ui/scoped_variants/types.rs:34:34
+   |
+34 |     DeliveryAttrs::STAGE.variant(OtherTags::SENT);
+   |                          ------- ^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                          |
+   |                          required by a bound introduced by this call
+   |
+help: the trait `VariantScope<Delivery, Stage>` is not implemented for `OtherSentTag`
+      but trait `VariantScope<Delivery, Other>` is implemented for it
+  --> tests/ui/scoped_variants/types.rs:15:10
+   |
+15 | #[derive(tabulary::Variants)]
+   |          ^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Other`, found `Stage`
+note: required by a bound in `tabulary::variants::<impl Attr<R, T, tabulary::Required, tabulary::DerivedOnly>>::variant`
+  --> src/variants.rs
+   |
+   |     pub fn variant<S>(self, tag: S) -> S::Payload
+   |            ------- required by a bound in this associated function
+...
+   |         S: VariantScope<R, R::Group>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `tabulary::variants::<impl Attr<R, T, Required, DerivedOnly>>::variant`
+   = note: this error originates in the derive macro `tabulary::Variants` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0609]: no field `failure` on type `StageSentAttrs<Delivery>`
+  --> tests/ui/scoped_variants/types.rs:35:51
+   |
+35 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).failure.exists();
+   |                                                   ^^^^^^^ unknown field
+   |
+   = note: available fields are: `tracking`, `count`, `note`, `items`, `labels` ... and 2 others
+
+error[E0609]: no field `tracking` on type `StageFailedAttrs<Delivery>`
+  --> tests/ui/scoped_variants/types.rs:36:53
+   |
+36 |     DeliveryAttrs::STAGE.variant(StageTags::FAILED).tracking.exists();
+   |                                                     ^^^^^^^^ unknown field
+   |
+   = note: available fields are: `failure`, `__tabulary_marker`
+
+error[E0599]: no method named `variant` found for struct `Attr<Nested, Stage>` in the current scope
+  --> tests/ui/scoped_variants/types.rs:37:24
+   |
+37 |     NestedAttrs::STAGE.variant(StageTags::SENT);
+   |                        ^^^^^^^ method not found in `Attr<Nested, Stage>`
+   |
+   = note: the method was found for `Attr<R, T, tabulary::Required, tabulary::DerivedOnly>`
+
+error[E0308]: mismatched types
+  --> tests/ui/scoped_variants/types.rs:38:60
+   |
+38 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.eq("wrong".to_owned());
+   |                                                         -- ^^^^^^^^^^^^^^^^^^ expected `u64`, found `String`
+   |                                                         |
+   |                                                         arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/scoped_variant.rs
+   |
+   |     pub fn eq(self, value: T) -> Condition<R> {
+   |            ^^
+
+error[E0599]: the method `lt` exists for struct `ScopedAttr<Delivery, u128, Codec>`, but its trait bounds were not satisfied
+  --> tests/ui/scoped_variants/types.rs:39:60
+   |
+39 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).external.lt(3);
+   |                                                            ^^ method cannot be called on `ScopedAttr<Delivery, u128, Codec>` due to unsatisfied trait bounds
+   |
+  ::: src/convert.rs
+   |
+   |     pub struct Wire;
+   |     --------------- doesn't satisfy `Wire: Ordered`
+   |
+  ::: src/scoped_variant.rs
+   |
+   | pub struct ScopedAttr<R, T, C = Native<T>> {
+   | ------------------------------------------ doesn't satisfy `ScopedAttr<Delivery, u128, Codec>: Iterator`
+   |
+   = note: the following trait bounds were not satisfied:
+           `Wire: Ordered`
+           `ScopedAttr<Delivery, u128, Codec>: Iterator`
+           which is required by `&mut ScopedAttr<Delivery, u128, Codec>: Iterator`
+
+error[E0277]: the trait bound `Number: tabulary::condition::Prefix` is not satisfied
+  --> tests/ui/scoped_variants/types.rs:40:57
+   |
+40 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.begins_with(3);
+   |                                                         ^^^^^^^^^^^ the trait `tabulary::condition::Prefix` is not implemented for `Number`
+   |
+help: the following other types implement trait `tabulary::condition::Prefix`
+  --> src/condition.rs
+   |
+   |     ($cap:ident: $($wire:ident),+) => {$(impl $cap for wire::$wire {})+};
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                                          |
+   |                                          `tabulary::wire::Binary`
+   |                                          `tabulary::wire::String`
+...
+   | capabilities!(Prefix: String, Binary);
+   | ------------------------------------- in this macro invocation
+note: required by a bound in `ScopedAttr::<R, T, C>::begins_with`
+  --> src/scoped_variant.rs
+   |
+   |     pub fn begins_with(self, value: T) -> Condition<R>
+   |            ----------- required by a bound in this associated function
+   |     where
+   |         C::Wire: Prefix,
+   |                  ^^^^^^ required by this bound in `ScopedAttr::<R, T, C>::begins_with`
+   = note: this error originates in the macro `capabilities` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/scoped_variants/types.rs:41:66
+   |
+41 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).items.contains(3);
+   |                                                         -------- ^ expected `String`, found integer
+   |                                                         |
+   |                                                         arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/scoped_variant.rs
+   |
+   |     pub fn contains(self, value: C::Element) -> Condition<R>
+   |            ^^^^^^^^
+help: try using a conversion method
+   |
+41 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).items.contains(3.to_string());
+   |                                                                   ++++++++++++

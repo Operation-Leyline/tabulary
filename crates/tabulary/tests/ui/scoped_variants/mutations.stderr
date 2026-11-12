@@ -1,0 +1,77 @@
+error[E0599]: no method named `set` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:20:57
+   |
+20 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.set(1);
+   |                                                         ^^^ method not found in `ScopedAttr<Delivery, u64>`
+
+error[E0599]: no method named `remove` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:21:56
+   |
+21 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).note.remove();
+   |                                                        ^^^^^^ method not found in `ScopedAttr<Delivery, std::string::String>`
+
+error[E0599]: no method named `add` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:22:57
+   |
+22 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.add(1);
+   |                                                         ^^^ method not found in `ScopedAttr<Delivery, u64>`
+
+error[E0599]: no method named `increment` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:23:57
+   |
+23 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.increment(1);
+   |                                                         ^^^^^^^^^
+   |
+help: there is a method `instrument` with a similar name
+   |
+23 -     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.increment(1);
+23 +     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.instrument(1);
+   |
+
+error[E0599]: no method named `decrement` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:24:57
+   |
+24 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.decrement(1);
+   |                                                         ^^^^^^^^^ method not found in `ScopedAttr<Delivery, u64>`
+
+error[E0599]: no method named `set_expr` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:25:57
+   |
+25 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.set_expr(1);
+   |                                                         ^^^^^^^^ method not found in `ScopedAttr<Delivery, u64>`
+
+error[E0599]: no method named `list_append` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:26:57
+   |
+26 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).items.list_append(tabulary::List(vec![]));
+   |                                                         ^^^^^^^^^^^ method not found in `ScopedAttr<Delivery, tabulary::List<std::string::String>>`
+
+error[E0599]: no method named `append_or_empty` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:27:57
+   |
+27 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).items.append_or_empty(tabulary::List(vec![]));
+   |                                                         ^^^^^^^^^^^^^^^ method not found in `ScopedAttr<Delivery, tabulary::List<std::string::String>>`
+
+error[E0599]: no method named `delete_members` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:28:58
+   |
+28 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).labels.delete_members(tabulary::StringSet::try_from(vec!["label".into()]).unwrap());
+   |                                                          ^^^^^^^^^^^^^^ method not found in `ScopedAttr<Delivery, tabulary::StringSet>`
+
+error[E0599]: no method named `operand` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:29:57
+   |
+29 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.operand();
+   |                                                         ^^^^^^^ method not found in `ScopedAttr<Delivery, u64>`
+
+error[E0599]: no method named `if_not_exists` found for struct `ScopedAttr<R, T, C>` in the current scope
+  --> tests/ui/scoped_variants/mutations.rs:30:57
+   |
+30 |     DeliveryAttrs::STAGE.variant(StageTags::SENT).count.if_not_exists(1);
+   |                                                         ^^^^^^^^^^^^^
+   |
+help: there is a method `not_exists` with a similar name, but with different arguments
+  --> src/scoped_variant.rs
+   |
+   |     pub fn not_exists(self) -> Condition<R> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
