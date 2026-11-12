@@ -120,6 +120,7 @@ impl<P> PreparedGet<P> {
                         position: 0,
                         source,
                         capacity,
+                        page: None,
                         raw_items: vec![raw],
                     })));
                 }
