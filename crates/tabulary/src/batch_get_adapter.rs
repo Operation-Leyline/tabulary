@@ -20,8 +20,9 @@ pub enum BatchGetFailure {
     State(BatchStateError),
     Sdk(Box<SdkError<BatchGetItemError>>),
     Decode {
-        position: usize,
-        source: DecodeError,
+        /// Every malformed item, in response order, paired with its original input position.
+        /// These positions distinguish corrupt returned items from service-unprocessed keys.
+        failures: Vec<(usize, DecodeError)>,
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,7 +40,13 @@ impl fmt::Display for BatchGetFailure {
             Self::Aborted(cause) => write!(f, "batch round aborted: {cause:?}"),
             Self::State(error) => error.fmt(f),
             Self::Sdk(_) => f.write_str("SDK batch read failed"),
-            Self::Decode { position, source } => write!(f, "item {position}: {source}"),
+            Self::Decode { failures } => {
+                f.write_str("batch item decode failed")?;
+                for (position, source) in failures {
+                    write!(f, "; item {position}: {source}")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -49,7 +56,7 @@ impl Error for BatchGetFailure {
             Self::Aborted(_) => None,
             Self::State(error) => Some(error),
             Self::Sdk(error) => Some(error.as_ref()),
-            Self::Decode { source, .. } => Some(source),
+            Self::Decode { failures } => failures.first().map(|(_, source)| source as &dyn Error),
         }
     }
 }
@@ -327,22 +334,20 @@ impl<P> PreparedBatchGet<P> {
             }
         }
         let mut found = Vec::new();
-        let mut fault = None;
+        let mut failures = Vec::new();
         for (position, raw) in correlated {
             match (self.request.decode_item)(raw) {
                 Ok(value) => found.push((position, value)),
                 Err(source) => {
                     pending.push(position);
-                    if fault.is_none() {
-                        fault = Some(BatchGetFailure::Decode { position, source });
-                    }
+                    failures.push((position, source));
                 }
             }
         }
         Ok(DecodedRound {
             found,
             pending,
-            fault,
+            fault: (!failures.is_empty()).then_some(BatchGetFailure::Decode { failures }),
         })
     }
 }

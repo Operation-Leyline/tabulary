@@ -1265,8 +1265,11 @@ per accepted round, including an empty vector when the SDK supplies no accountin
 A malformed or unexpected physical key, wrong table, duplicate or overlapping
 response is `State(InvalidResponse)`: none of that round's item states is trusted.
 Once all keys correlate, decoding retains every valid record from that round;
-failed positions remain Pending and the first decode fault names its original
-input position and attribute path. Prior progress and all received capacities
+failed positions remain Pending and `Decode { failures }` lists every malformed
+item as its original input position paired with its structured decode error,
+including the attribute path. The vector follows response order; it distinguishes
+these corrupt items from the service's unprocessed keys in the partial, and
+`source()` exposes its first error. Prior progress and all received capacities
 survive both paths. A terminal error transfers ownership to its partial and
 subsequent operations return Frozen (their partial is empty, already transferred).
 `abort_round(Cancelled | Deadline)` freezes an outstanding round; `finish` returns
