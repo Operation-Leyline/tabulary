@@ -1,0 +1,21 @@
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+  --> tests/ui/get/consistency.rs:13:19
+   |
+13 |     let _ = table.get(key);
+   |                   ^^^----- argument #2 of type `ReadConsistency` is missing
+   |
+note: method defined here
+  --> src/get.rs
+   |
+   |     pub fn get<K: RecordKey<R>>(&self, key: K, consistency: ReadConsistency) -> GetBuilder<R, K> {
+   |            ^^^
+help: provide the argument
+   |
+13 |     let _ = table.get(key, /* ReadConsistency */);
+   |                          +++++++++++++++++++++++
+
+error[E0599]: no variant, associated function, or constant named `default` found for enum `ReadConsistency` in the current scope
+  --> tests/ui/get/consistency.rs:14:30
+   |
+14 |     let _ = ReadConsistency::default();
+   |                              ^^^^^^^ variant, associated function, or constant not found in `ReadConsistency`
