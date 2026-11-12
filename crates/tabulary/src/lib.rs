@@ -9,6 +9,7 @@ mod batch_get;
 mod batch_get_adapter;
 mod batch_write;
 mod batch_write_adapter;
+mod batch_write_size;
 mod billed_size;
 mod collections;
 pub mod condition;
