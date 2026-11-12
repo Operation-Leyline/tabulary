@@ -950,6 +950,9 @@ nested view field `#[tabulary(attribute = SourceAttrs::FIELD, nested)]`; its
 type is another Projection (or `Option<View>` for an optional source). Nested
 selection fetches the whole physical map but decodes only the nested view.
 It requires the native document-map codec; a custom converter cannot be bypassed.
+An inherited nested default is projected by moving its selected fields, without
+encoding the source or applying child defaults again. Existing `None` values
+remain `None`; unselected fields cannot reject the view.
 Select a flattened variant through its existing discriminator handle, with the
 whole Variants enum as the view field type; selecting just the tag is invalid.
 The projection's `attributes()` lists the complete physical selection.

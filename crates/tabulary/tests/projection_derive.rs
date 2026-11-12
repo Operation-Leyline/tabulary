@@ -10,6 +10,8 @@ fn initial_address() -> Address {
     Address {
         city: "Lime".into(),
         required_elsewhere: "default".into(),
+        unselected: f64::NAN,
+        note: None,
     }
 }
 
@@ -18,6 +20,12 @@ fn initial_address() -> Address {
 struct Address {
     city: String,
     required_elsewhere: String,
+    unselected: f64,
+    #[tabulary(default = initial_note)]
+    note: Option<String>,
+}
+fn initial_note() -> Option<String> {
+    Some("fallback".into())
 }
 
 #[derive(tabulary::Variants)]
@@ -62,6 +70,8 @@ struct Quantity {
 struct City {
     #[tabulary(attribute = AddressAttrs::CITY)]
     city: String,
+    #[tabulary(attribute = AddressAttrs::NOTE)]
+    note: Option<String>,
 }
 
 #[derive(Debug, PartialEq, tabulary::Projection)]
@@ -113,6 +123,10 @@ fn nested_views_decode_only_their_selected_fields_and_keep_paths() {
         Location::from_item(&Item::new()).unwrap().address.city,
         "Lime"
     );
+    assert_eq!(
+        Location::from_item(&Item::new()).unwrap().address.note,
+        None
+    );
     let mut item: Item = [(
         "address".into(),
         Av::M([("city".into(), Av::S("Lime".into()))].into()),
@@ -122,7 +136,8 @@ fn nested_views_decode_only_their_selected_fields_and_keep_paths() {
         Location::from_item(&item).unwrap(),
         Location {
             address: City {
-                city: "Lime".into()
+                city: "Lime".into(),
+                note: initial_note(),
             },
             optional: None
         }
@@ -260,20 +275,32 @@ fn a_source_codec_is_inherited_without_redeclaration() {
         }
         fn decode_map(item: &Item, cx: &mut DecodeContext) -> Result<Self, DecodeError> {
             Ok(Self {
-                amount: <Self as tabulary::projection::SourceField<0>>::decode(item, cx)?,
+                amount: <Self as tabulary::projection::SourceField<0, u128, _>>::decode(item, cx)?,
             })
         }
     }
-    impl tabulary::projection::SourceField<0> for Invoice {
-        type Handle = tabulary::Attr<Self, u128, tabulary::Required, tabulary::Mutable, Codec>;
-        type Output = u128;
-        type Presence = tabulary::Required;
+    impl
+        tabulary::projection::SourceField<
+            0,
+            u128,
+            tabulary::Attr<Self, u128, tabulary::Required, tabulary::Mutable, Codec>,
+        > for Invoice
+    {
         const ATTRIBUTES: &'static [&'static str] = &["amount"];
         fn decode(item: &Item, cx: &mut DecodeContext) -> Result<u128, DecodeError> {
             tabulary::field::decode_required::<u128, Codec>(
                 item.get("amount"),
                 &mut cx.at(tabulary::PathSegment::Attribute("amount".into())),
             )
+        }
+        fn take(parts: &mut Self::Parts, _: &mut DecodeContext) -> Result<u128, DecodeError> {
+            Ok(parts.take().unwrap())
+        }
+    }
+    impl tabulary::projection::ProjectionSource for Invoice {
+        type Parts = Option<u128>;
+        fn into_parts(self) -> Self::Parts {
+            Some(self.amount)
         }
     }
     #[derive(tabulary::Projection)]
@@ -327,4 +354,33 @@ fn composite_keys_keep_access_markers_and_validate_selected_wire_values() {
         Physical::from_item(&item).err().unwrap().kind,
         DecodeFault::KeyFormat(tabulary::KeyFormatFault::InvalidPrefix)
     );
+}
+
+pub mod public_source {
+    use super::*;
+    #[derive(tabulary::StringEnum)]
+    #[tabulary(rename_all = "snake_case")]
+    enum Kind {
+        Invoice,
+    }
+    #[derive(tabulary::Document)]
+    #[tabulary(rename_all = "snake_case")]
+    pub struct Entry {
+        kind: Kind,
+    }
+    #[derive(tabulary::Projection)]
+    #[tabulary(record = Entry)]
+    struct View {
+        #[tabulary(attribute = EntryAttrs::KIND)]
+        kind: Kind,
+    }
+    #[test]
+    fn private_field_types_remain_private_in_public_sources() {
+        assert!(matches!(
+            View::from_item(&[("kind".into(), Av::S("invoice".into()))].into())
+                .unwrap()
+                .kind,
+            Kind::Invoice
+        ));
+    }
 }

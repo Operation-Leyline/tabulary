@@ -6,10 +6,11 @@ pub fn projection(s: &Projection) -> TokenStream {
     let (id, source, path) = (&s.input.ident, &s.source, &s.path);
     let mut selections = Vec::new();
     let mut reads = Vec::new();
+    let mut defaults = Vec::new();
     for field in &s.fields {
         let (name, ty, handle) = (&field.id, &field.ty, &field.handle);
         let index = quote!({ (#handle).descriptor().index });
-        selections.push(quote_spanned!(name.span()=> #path::projection::append(&mut names, #path::projection::select::<#source, #index>(#handle)?)?;));
+        selections.push(quote_spanned!(name.span()=> #path::projection::append(&mut names, #path::projection::select::<#source, #index, _, _>(#handle)?)?;));
         let decode = if field.nested {
             let view = crate::validate::optional(ty).unwrap_or_else(|| ty.clone());
             selections
@@ -17,11 +18,18 @@ pub fn projection(s: &Projection) -> TokenStream {
             selections.push(
                 quote_spanned!(name.span()=> let _ = <#view as #path::Projection>::attributes()?;),
             );
-            quote_spanned!(name.span()=> #path::projection::decode_nested::<#source, #index, #view>(item, &mut cx)?)
+            quote_spanned!(name.span()=> #path::projection::decode_nested::<#source, #index, _, _, #view>(#handle, item, &mut cx)?)
         } else {
-            quote_spanned!(name.span()=> <#source as #path::projection::SourceField<#index>>::decode(item, &mut cx)?)
+            quote_spanned!(name.span()=> #path::projection::decode::<#source, #index, #ty, _>(#handle, item, &mut cx)?)
         };
         reads.push(quote_spanned!(name.span()=> #name: { let value: #ty = #decode; value }));
+        let take = if field.nested {
+            let view = crate::validate::optional(ty).unwrap_or_else(|| ty.clone());
+            quote_spanned!(name.span()=> #path::projection::project_nested::<#source, #index, _, _, #view>(#handle, &mut parts, &mut cx)?)
+        } else {
+            quote_spanned!(name.span()=> #path::projection::take::<#source, #index, #ty, _>(#handle, &mut parts, &mut cx)?)
+        };
+        defaults.push(quote_spanned!(name.span()=> #name: { let value: #ty = #take; value }));
     }
     quote! {
         impl #path::Projection for #id {
@@ -33,6 +41,12 @@ pub fn projection(s: &Projection) -> TokenStream {
                 let mut cx = cx.in_document(<#source as #path::Document>::NAME);
                 <Self as #path::Projection>::attributes().map_err(|_| cx.error(#path::DecodeFault::Custom { code: "invalid_projection" }))?;
                 ::core::result::Result::Ok(Self { #(#reads,)* })
+            }
+            fn project_source(source: #source, cx: &mut #path::DecodeContext) -> ::core::result::Result<Self, #path::DecodeError> {
+                let mut cx = cx.in_document(<#source as #path::Document>::NAME);
+                <Self as #path::Projection>::attributes().map_err(|_| cx.error(#path::DecodeFault::Custom { code: "invalid_projection" }))?;
+                let mut parts = <#source as #path::projection::ProjectionSource>::into_parts(source);
+                ::core::result::Result::Ok(Self { #(#defaults,)* })
             }
         }
     }

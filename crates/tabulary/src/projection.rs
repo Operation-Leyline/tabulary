@@ -1,16 +1,19 @@
 //! Read-only selected-attribute decoding, independent of request execution.
 use crate::{
-    Attr, BuildError, DecodeContext, DecodeError, DecodeFault, Document, DynamoType, EncodeContext,
-    FieldDescriptor, Item, Optional, PathSegment, Required,
+    Attr, BuildError, DecodeContext, DecodeError, Document, DynamoType, FieldDescriptor, Item,
+    Optional, PathSegment, Required,
 };
 use aws_sdk_dynamodb::types::AttributeValue;
 
 /// A partial read with the source's field codecs, presence, and explicit defaults.
 /// Extra response attributes belong to the caller's transport validation.
 pub trait Projection: Sized {
-    type Source: Document;
+    type Source: ProjectionSource;
     fn attributes() -> Result<Vec<&'static str>, BuildError>;
     fn decode_map(item: &Item, cx: &mut DecodeContext) -> Result<Self, DecodeError>;
+    /// Project an already constructed source default without applying defaults again.
+    #[doc(hidden)]
+    fn project_source(source: Self::Source, cx: &mut DecodeContext) -> Result<Self, DecodeError>;
     fn from_item(item: &Item) -> Result<Self, DecodeError> {
         Self::decode_map(item, &mut DecodeContext::new(Self::Source::NAME))
     }
@@ -32,34 +35,61 @@ pub trait Projection: Sized {
 
 /// Reserved source-field hooks emitted by Document and Record derives.
 #[doc(hidden)]
-pub trait SourceField<const I: usize>: Document {
-    type Handle: Handle;
-    type Output;
-    type Presence;
+pub trait ProjectionSource: Document {
+    type Parts;
+    fn into_parts(self) -> Self::Parts;
+}
+
+#[doc(hidden)]
+pub trait SourceField<const I: usize, Output, H>: ProjectionSource {
     const ATTRIBUTES: &'static [&'static str];
-    fn decode(item: &Item, cx: &mut DecodeContext) -> Result<Self::Output, DecodeError>;
+    fn decode(item: &Item, cx: &mut DecodeContext) -> Result<Output, DecodeError>;
+    fn take(parts: &mut Self::Parts, cx: &mut DecodeContext) -> Result<Output, DecodeError>;
 }
 
 #[doc(hidden)]
 pub trait Handle {
+    type Presence;
     fn descriptor(self) -> FieldDescriptor;
 }
 impl<R, T, P, A, C> Handle for Attr<R, T, P, A, C> {
+    type Presence = P;
     fn descriptor(self) -> FieldDescriptor {
         self.descriptor()
     }
 }
 
 #[doc(hidden)]
-pub fn select<S: SourceField<I>, const I: usize>(
-    handle: S::Handle,
-) -> Result<&'static [&'static str], BuildError> {
+pub fn select<S, const I: usize, O, H: Handle>(
+    handle: H,
+) -> Result<&'static [&'static str], BuildError>
+where
+    S: SourceField<I, O, H>,
+{
     if S::FIELDS.get(I) != Some(&handle.descriptor()) {
         return Err(BuildError::OperationConstraint {
             code: "invalid_projection_attribute",
         });
     }
     Ok(S::ATTRIBUTES)
+}
+
+#[doc(hidden)]
+pub fn decode<S: SourceField<I, O, H>, const I: usize, O, H>(
+    _: H,
+    item: &Item,
+    cx: &mut DecodeContext,
+) -> Result<O, DecodeError> {
+    S::decode(item, cx)
+}
+
+#[doc(hidden)]
+pub fn take<S: SourceField<I, O, H>, const I: usize, O, H>(
+    _: H,
+    parts: &mut S::Parts,
+    cx: &mut DecodeContext,
+) -> Result<O, DecodeError> {
+    S::take(parts, cx)
 }
 
 #[doc(hidden)]
@@ -95,24 +125,17 @@ fn nested<P: Projection>(value: &AttributeValue, cx: &mut DecodeContext) -> Resu
     };
     P::decode_map(item, &mut cx.enter_container()?)
 }
-impl<T: Document, P: Projection<Source = T>> NestedValue<P, Required> for T {
+impl<T: ProjectionSource, P: Projection<Source = T>> NestedValue<P, Required> for T {
     type Output = P;
     fn present(value: &AttributeValue, cx: &mut DecodeContext) -> Result<P, DecodeError> {
         nested::<P>(value, cx)
     }
     fn default_view(self, cx: &mut DecodeContext) -> Result<P, DecodeError> {
         let mut cx = cx.in_document(T::NAME).enter_container()?;
-        let item = self
-            .encode_map(&mut EncodeContext::new(T::NAME))
-            .map_err(|_| {
-                cx.error(DecodeFault::Custom {
-                    code: "invalid_projection_default",
-                })
-            })?;
-        P::decode_map(&item, &mut cx)
+        P::project_source(self, &mut cx)
     }
 }
-impl<T: Document, P: Projection<Source = T>> NestedValue<P, Optional> for Option<T> {
+impl<T: ProjectionSource, P: Projection<Source = T>> NestedValue<P, Optional> for Option<T> {
     type Output = Option<P>;
     fn present(
         value: &AttributeValue,
@@ -126,17 +149,32 @@ impl<T: Document, P: Projection<Source = T>> NestedValue<P, Optional> for Option
     }
 }
 #[doc(hidden)]
-pub fn decode_nested<S: SourceField<I>, const I: usize, P: Projection>(
+pub fn decode_nested<S, const I: usize, O, H: Handle, P: Projection>(
+    _: H,
     item: &Item,
     cx: &mut DecodeContext,
-) -> Result<<S::Output as NestedValue<P, S::Presence>>::Output, DecodeError>
+) -> Result<<O as NestedValue<P, H::Presence>>::Output, DecodeError>
 where
-    S::Output: NestedValue<P, S::Presence>,
+    S: SourceField<I, O, H>,
+    O: NestedValue<P, H::Presence>,
 {
     let name = S::ATTRIBUTES[0];
     let mut child = cx.at(PathSegment::Attribute(name.into()));
     match item.get(name) {
-        Some(value) => <S::Output as NestedValue<P, S::Presence>>::present(value, &mut child),
+        Some(value) => <O as NestedValue<P, H::Presence>>::present(value, &mut child),
         None => S::decode(item, cx)?.default_view(&mut child),
     }
+}
+
+#[doc(hidden)]
+pub fn project_nested<S, const I: usize, O, H: Handle, P: Projection>(
+    _: H,
+    parts: &mut S::Parts,
+    cx: &mut DecodeContext,
+) -> Result<<O as NestedValue<P, H::Presence>>::Output, DecodeError>
+where
+    S: SourceField<I, O, H>,
+    O: NestedValue<P, H::Presence>,
+{
+    S::take(parts, cx)?.default_view(&mut cx.at(PathSegment::Attribute(S::ATTRIBUTES[0].into())))
 }
