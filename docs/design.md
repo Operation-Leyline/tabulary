@@ -1059,8 +1059,15 @@ Query builders accept `filter(Condition<R>)`, `limit(NonZeroU32)`,
 `order(QueryOrder::Ascending | Descending)`, `select::<P>()`, and
 `resume(Cursor<R, I>)`. Key fields are rejected in query filters; express
 them in the key condition. Scan filters may include key fields.
+For an index query this restriction refers to the selected index's physical keys;
+base-table keys that are not keys of that index may be filtered. Non-ALL index
+reads also reject filters using attributes outside the stored index namespace,
+so filtering cannot introduce an implicit base-table fetch.
 Filters act after service evaluation and do not reduce the read work. A limit
 is an evaluated-item limit per call, not a requested count of matching records.
+Query defaults to ascending traversal and an omitted limit. `NonZeroU32` limits
+above the SDK's `i32::MAX` are build errors rather than clamped values. Decode
+preserves the service's row order and never sorts, truncates, or fills a page.
 
 `Page` contains `items`, `next`, `count`, `scanned_count`, and
 `capacity`. Empty items with a nonempty last-evaluated key still produce
@@ -1182,6 +1189,11 @@ control. The library does not fetch state, sign tokens, or assign tenancy.
 
 `ScanSegment::new(segment, total)` requires a positive total and
 `segment < total`, within DynamoDB's supported segment range.
+Milestone 35's segment value has private `u32` fields and rejects total zero,
+totals above 1,000,000, and segment IDs at or above total with
+`OperationConstraint { code: "invalid_scan_segment" }`. This also rejects
+out-of-range values before converting them to SDK integers. The boundary is
+defined by the [Scan API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html).
 `table.scan(consistency).segment(segment).resume(cursor).build()` prepares one
 page of one segment. An unsegmented scan has a distinct cursor binding.
 Changing total or segment rejects the old cursor. Each segment keeps its own
@@ -1551,6 +1563,25 @@ let ttl = definition.ttl_input("parcels_test")?; // Option<UpdateTimeToLiveInput
 
 `create_input` returns the SDK `CreateTableInput`.
 `Billing::Provisioned` requires table and every GSI throughput explicitly.
+Milestone 37a adds the `Record::table_definition()` default method (with the
+`Record` trait in scope), `Billing`, and `Throughput { read, write }`. Provisioned
+billing takes `table: Throughput` and `global_indexes: BTreeMap<String,
+Throughput>` keyed by physical GSI name. Both unit counts must be positive;
+missing or extra GSI entries, including LSI entries, are errors. On-demand
+inputs omit throughput. Empty index lists are absent SDK fields.
+
+The input uses deterministic physical-name order for attribute definitions and
+indexes, HASH before RANGE for keys, and sorted INCLUDE names. It revalidates
+manual schemas as well as derives: key positions, S/N/B types, distinct key
+names, required primary keys, index-name collisions, and LSI restrictions.
+The initial limits are 20 GSIs, 5 LSIs, 1–20 INCLUDE attributes per index and
+100 INCLUDE entries summed over indexes (repeated names in different indexes
+count separately). Automatically projected keys cannot be INCLUDE entries.
+Table/index identifiers are 3–255 ASCII letters, digits, underscores, hyphens,
+or dots; physical key and INCLUDE names are 1–255 UTF-8 bytes. Invalid schema
+definitions use `BuildError::IncompatibleIndex`; invalid billing/name settings
+use structured `OperationConstraint` codes. These helpers add no dependencies.
+
 The generator checks LSI partition equality, scalar types, index/projection
 limits, and collisions. An LSI on a hash-only table is invalid.
 Same-table multiple record schemas can use

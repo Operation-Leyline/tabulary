@@ -48,4 +48,8 @@ pub struct RecordSchema {
 /// Record encoding and key interfaces are added by their owning milestones.
 pub trait Record: Sized {
     const SCHEMA: RecordSchema;
+
+    fn table_definition() -> crate::TableDefinition<Self> {
+        crate::TableDefinition::new(Self::SCHEMA)
+    }
 }
