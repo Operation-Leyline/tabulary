@@ -87,13 +87,8 @@ jobs:
           --root "$RUNNER_TEMP/dynoxide" dynoxide-rs
       - name: Verify runner failure paths
         run: python -m unittest discover -s scripts -p test_run_endpoint.py
-      - name: Verify ignored invocation fails without an endpoint
-        shell: bash
-        run: |
-          if env -u TABULARY_DYNAMODB_ENDPOINT cargo test -p tabulary --test endpoint --locked -- --ignored; then
-            echo "Endpoint suite unexpectedly passed without an endpoint"
-            exit 1
-          fi
+      - name: Verify the typed missing-endpoint precondition in an isolated process
+        run: cargo test -p tabulary --test endpoint --locked -- support::missing_endpoint_fails_before_aws_configuration --exact
       - name: Run isolated table lifecycle, CRUD and conditional old-item tests
         shell: bash
         run: |

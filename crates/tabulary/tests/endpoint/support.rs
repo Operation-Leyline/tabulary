@@ -16,9 +16,15 @@ use tokio::time::{sleep, timeout};
 const WAIT: Duration = Duration::from_secs(60);
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-fn endpoint(value: Option<&str>) -> Result<url::Url, &'static str> {
-    let value = value.ok_or("TABULARY_DYNAMODB_ENDPOINT is required; endpoint suite UNEXECUTED")?;
-    let url = url::Url::parse(value).map_err(|_| "endpoint must be an explicit HTTP(S) URL")?;
+#[derive(Debug, PartialEq)]
+enum EndpointError {
+    Missing,
+    InvalidUrl,
+}
+
+fn endpoint(value: Option<&str>) -> Result<url::Url, EndpointError> {
+    let value = value.ok_or(EndpointError::Missing)?;
+    let url = url::Url::parse(value).map_err(|_| EndpointError::InvalidUrl)?;
     if !(value.starts_with("http://") || value.starts_with("https://"))
         || !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
@@ -27,9 +33,7 @@ fn endpoint(value: Option<&str>) -> Result<url::Url, &'static str> {
         || url.query().is_some()
         || url.fragment().is_some()
     {
-        return Err(
-            "endpoint must be an explicit HTTP(S) URL without credentials, query or fragment",
-        );
+        return Err(EndpointError::InvalidUrl);
     }
     Ok(url)
 }
@@ -37,7 +41,10 @@ fn endpoint(value: Option<&str>) -> Result<url::Url, &'static str> {
 async fn client() -> Client {
     // Check before loading credentials/configuration or making any SDK call.
     let value = std::env::var("TABULARY_DYNAMODB_ENDPOINT");
-    let endpoint = endpoint(value.as_deref().ok()).expect("explicit endpoint required");
+    let endpoint = endpoint(value.as_deref().ok()).unwrap_or_else(|error| {
+        eprintln!("TABULARY_DYNAMODB_ENDPOINT requires an explicit HTTP(S) URL: {error:?}; endpoint suite UNEXECUTED");
+        std::panic::panic_any(error)
+    });
     let config = timeout(
         WAIT,
         aws_config::defaults(aws_config::BehaviorVersion::latest()).load(),
@@ -180,6 +187,40 @@ fn table_names_are_isolated_and_service_compatible() {
             .iter()
             .all(|n| n.len() <= 255 && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
     );
+}
+
+#[test]
+fn missing_endpoint_fails_before_aws_configuration() {
+    const CHILD: &str = "TABULARY_ENDPOINT_PRECONDITION_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let panic = tokio::spawn(client()).await.unwrap_err().into_panic();
+            assert_eq!(
+                *panic.downcast::<EndpointError>().unwrap(),
+                EndpointError::Missing
+            );
+        });
+    } else {
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "support::missing_endpoint_fails_before_aws_configuration",
+            ])
+            .env_remove("TABULARY_DYNAMODB_ENDPOINT")
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "isolated precondition check: {result:?}"
+        );
+        assert!(
+            String::from_utf8(result.stdout)
+                .unwrap()
+                .lines()
+                .any(|line| line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"))
+        );
+    }
 }
 
 #[tokio::test]

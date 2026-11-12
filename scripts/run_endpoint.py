@@ -5,12 +5,21 @@ This runner supplies dummy credentials; real-service tests use cargo directly.
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import time
 import urllib.error
 import urllib.request
+
+
+def require_endpoint_evidence(output):
+    summary = re.findall(r"^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;", output, re.M)
+    # Update this explicit gate when later milestones add endpoint tests.
+    if summary != [("3", "0", "0")]:
+        raise RuntimeError("endpoint suite did not execute and pass all 3 required tests")
 
 
 def main():
@@ -44,18 +53,33 @@ def main():
                     # server occupying the port must never satisfy emulator readiness.
                     started = f"Dynoxide listening on {endpoint}" in args.log.read_text(encoding="utf-8")
                     if started:
-                        with probe.open(endpoint, timeout=min(1, remaining)) as response:
-                            if response.status == 200:
+                        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+                        request = urllib.request.Request(endpoint, data=b"{}", headers={
+                            "Content-Type": "application/x-amz-json-1.0",
+                            "X-Amz-Target": "DynamoDB_20120810.ListTables",
+                            "X-Amz-Date": stamp,
+                            # Dynoxide validates auth material but does not verify signatures.
+                            "Authorization": f"AWS4-HMAC-SHA256 Credential=dummy/{stamp[:8]}/us-east-1/dynamodb/aws4_request, "
+                                             f"SignedHeaders=host;x-amz-date, Signature={'0' * 64}",
+                        })
+                        with probe.open(request, timeout=min(1, remaining)) as response:
+                            payload = json.load(response)
+                            tables = payload.get("TableNames") if isinstance(payload, dict) else None
+                            if response.status == 200 and isinstance(tables, list):
                                 break
-                except (OSError, urllib.error.URLError):
+                except (OSError, urllib.error.URLError, ValueError):
                     pass
                 time.sleep(min(0.1, max(0, deadline - time.monotonic())))
             print(f"dynoxide ready at {endpoint}", flush=True)
-            subprocess.run(
+            result = subprocess.run(
                 ["cargo", "test", "-p", "tabulary", "--test", "endpoint", "--locked",
                  "--", "--ignored", "--nocapture"],
-                cwd=Path(__file__).resolve().parents[1], env=env, check=True, timeout=600,
+                cwd=Path(__file__).resolve().parents[1], env=env, timeout=600,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             )
+            print(result.stdout, end="", flush=True)
+            result.check_returncode()
+            require_endpoint_evidence(result.stdout)
         finally:
             process.terminate()
             try:
