@@ -934,11 +934,21 @@ item. `sdk_error()` exposes the original SDK error. Error and prepared-request
 formatting redacts payloads and SDK text. Pagination metadata joins these read
 errors with the page adapters; GetItem has no pagination metadata.
 
-`.return_item(ReturnItem::None | AllOld | AllNew)` is operation-specific.
-Put/delete support None or AllOld; update additionally supports AllNew.
+`.return_item(ReturnOld::None | AllOld)` selects success returns for put/delete;
+update uses `.return_item(ReturnItem::None | AllOld | AllNew)`.
+The separate enums make unsupported operation choices unrepresentable.
 UPDATED_OLD/UPDATED_NEW are excluded in the first API because they are partial
 shapes and cannot decode into a full record. A later API can add typed update
 projections. No read follows a write to obtain return values.
+
+The shared `write_options` types supply these choices to milestones 27–29.
+Both return enums default to `None` and convert to the SDK's `ReturnValue`;
+`ReturnOld` also converts to `ReturnItem`. The conversions send `NONE`,
+`ALL_OLD`, or `ALL_NEW` explicitly. Failure-side `OldItemMode` is independent.
+`.collection_metrics(CollectionMetrics::None | Size)` selects the SDK's
+`ReturnItemCollectionMetrics` (`NONE` or `SIZE`), defaulting to `None`.
+`WriteResult<R>` retains the optional full record, complete consumed capacity,
+and item-collection metrics supplied by the SDK, without inventing accounting.
 
 An absent GetItem item is `None`. A nonempty or explicitly present item that
 fails decoding is an error, never “not found.” An SDK response with an empty item

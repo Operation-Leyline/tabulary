@@ -39,6 +39,7 @@ mod value;
 mod variants;
 pub mod wire;
 mod write;
+mod write_options;
 
 pub use attr::AccessMarker;
 pub use attr::Attr;
@@ -112,3 +113,7 @@ pub use write::OldItem;
 pub use write::OldItemMode;
 pub use write::WriteDecodeError;
 pub use write::WriteError;
+pub use write_options::CollectionMetrics;
+pub use write_options::ReturnItem;
+pub use write_options::ReturnOld;
+pub use write_options::WriteResult;
