@@ -1,0 +1,23 @@
+error: StringEnum requires unit variants
+ --> tests/ui/string_enum/payloads.rs:4:5
+  |
+4 |     Ready(String),
+  |     ^^^^^^^^^^^^^
+
+error: StringEnum requires unit variants
+  --> tests/ui/string_enum/payloads.rs:10:5
+   |
+10 |     Ready { count: u64 },
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: StringEnum requires unit variants
+  --> tests/ui/string_enum/payloads.rs:16:5
+   |
+16 |     Ready(),
+   |     ^^^^^^^
+
+error: StringEnum requires unit variants
+  --> tests/ui/string_enum/payloads.rs:22:5
+   |
+22 |     Ready {},
+   |     ^^^^^^^^
