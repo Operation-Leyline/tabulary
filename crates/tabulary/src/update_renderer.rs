@@ -126,12 +126,19 @@ impl<R> BuiltUpdate<R> {
     pub fn render(&self) -> RenderedExpressions {
         let mut result = RenderedExpressions::default();
         result.update = Some(render_update(self.actions(), &mut result.aliases));
+        if let Some(condition) = self.condition() {
+            result.condition = Some(render_condition(condition.root(), &mut result.aliases));
+        }
         result
     }
     /// Allocate the update first, then its condition, in a single request space.
     pub fn render_with_condition(&self, condition: &BuiltCondition<R>) -> RenderedExpressions {
         let mut result = self.render();
-        result.condition = Some(render_condition(condition.root(), &mut result.aliases));
+        let condition = render_condition(condition.root(), &mut result.aliases);
+        result.condition = Some(match result.condition {
+            Some(guard) => format!("({guard} AND {condition})"),
+            None => condition,
+        });
         result
     }
 }

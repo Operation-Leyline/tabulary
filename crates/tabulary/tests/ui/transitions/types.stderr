@@ -1,0 +1,123 @@
+error[E0277]: the trait bound `Nested: FlattenedVariants<_>` is not satisfied
+  --> tests/ui/transitions/types.rs:34:62
+   |
+34 |     Update::<Nested>::new().transition(DeliveryAttrs::STAGE, Stage::Waiting, StageTags::WAITING);
+   |                             ----------                       ^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                             |
+   |                             required by a bound introduced by this call
+   |
+help: the trait `FlattenedVariants<_>` is not implemented for `Nested`
+  --> tests/ui/transitions/types.rs:27:1
+   |
+27 | struct Nested {
+   | ^^^^^^^^^^^^^
+help: the trait `FlattenedVariants<Stage>` is implemented for `Delivery`
+  --> tests/ui/transitions/types.rs:16:10
+   |
+16 | #[derive(Record)]
+   |          ^^^^^^
+note: required by a bound in `Update::<R>::transition`
+  --> src/update.rs
+   |
+   |     pub fn transition<V: crate::Variants + 'static>(
+   |            ---------- required by a bound in this associated function
+...
+   |         R: crate::FlattenedVariants<V>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Update::<R>::transition`
+   = note: this error originates in the derive macro `Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/transitions/types.rs:34:40
+   |
+34 |     Update::<Nested>::new().transition(DeliveryAttrs::STAGE, Stage::Waiting, StageTags::WAITING);
+   |                             ---------- ^^^^^^^^^^^^^^^^^^^^ expected `Attr<Nested, StageTag, Required, ...>`, found `Attr<Delivery, StageTag, Required, ...>`
+   |                             |
+   |                             arguments to this method are incorrect
+   |
+   = note: expected struct `Attr<Nested, StageTag, tabulary::Required, tabulary::DerivedOnly, Native<StageTag>>`
+              found struct `Attr<Delivery, StageTag, tabulary::Required, tabulary::DerivedOnly, Native<StageTag>>`
+note: method defined here
+  --> src/update.rs
+   |
+   |     pub fn transition<V: crate::Variants + 'static>(
+   |            ^^^^^^^^^^
+
+error[E0308]: arguments to this method are incorrect
+  --> tests/ui/transitions/types.rs:35:31
+   |
+35 |     Update::<Delivery>::new().transition(DeliveryAttrs::STAGE, Other::Waiting, OtherTags::WAITING);
+   |                               ^^^^^^^^^^                       --------------  ------------------ expected `StageTag`, found `OtherTag`
+   |                                                                |
+   |                                                                expected `Stage`, found `Other`
+   |
+note: method defined here
+  --> src/update.rs
+   |
+   |     pub fn transition<V: crate::Variants + 'static>(
+   |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/transitions/types.rs:36:80
+   |
+36 |     Update::<Delivery>::new().transition(DeliveryAttrs::STAGE, Stage::Waiting, OtherTags::WAITING);
+   |                               ----------                                       ^^^^^^^^^^^^^^^^^^ expected `StageTag`, found `OtherTag`
+   |                               |
+   |                               arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/update.rs
+   |
+   |     pub fn transition<V: crate::Variants + 'static>(
+   |            ^^^^^^^^^^
+
+error[E0277]: the trait bound `Nested: FlattenedVariants<_>` is not satisfied
+  --> tests/ui/transitions/types.rs:37:60
+   |
+37 |     Update::<Nested>::new().transition(NestedAttrs::STAGE, Stage::Waiting, StageTags::WAITING);
+   |                             ----------                     ^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                             |
+   |                             required by a bound introduced by this call
+   |
+help: the trait `FlattenedVariants<_>` is not implemented for `Nested`
+  --> tests/ui/transitions/types.rs:27:1
+   |
+27 | struct Nested {
+   | ^^^^^^^^^^^^^
+help: the trait `FlattenedVariants<Stage>` is implemented for `Delivery`
+  --> tests/ui/transitions/types.rs:16:10
+   |
+16 | #[derive(Record)]
+   |          ^^^^^^
+note: required by a bound in `Update::<R>::transition`
+  --> src/update.rs
+   |
+   |     pub fn transition<V: crate::Variants + 'static>(
+   |            ---------- required by a bound in this associated function
+...
+   |         R: crate::FlattenedVariants<V>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Update::<R>::transition`
+   = note: this error originates in the derive macro `Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/transitions/types.rs:37:40
+   |
+37 |     Update::<Nested>::new().transition(NestedAttrs::STAGE, Stage::Waiting, StageTags::WAITING);
+   |                             ---------- ^^^^^^^^^^^^^^^^^^ expected `Attr<Nested, StageTag, Required, ...>`, found `Attr<Nested, Stage>`
+   |                             |
+   |                             arguments to this method are incorrect
+   |
+   = note: expected struct `Attr<Nested, StageTag, tabulary::Required, tabulary::DerivedOnly, Native<StageTag>>`
+              found struct `Attr<Nested, Stage, tabulary::Required, tabulary::Mutable, Native<Stage>>`
+note: method defined here
+  --> src/update.rs
+   |
+   |     pub fn transition<V: crate::Variants + 'static>(
+   |            ^^^^^^^^^^
+
+error[E0599]: no method named `set` found for struct `Attr<Delivery, StageTag, tabulary::Required, tabulary::DerivedOnly>` in the current scope
+  --> tests/ui/transitions/types.rs:38:26
+   |
+38 |     DeliveryAttrs::STAGE.set(StageTags::SENT);
+   |                          ^^^ method not found in `Attr<Delivery, StageTag, tabulary::Required, tabulary::DerivedOnly>`
+   |
+   = note: the method was found for `Attr<R, T, P, tabulary::Mutable, C>`
