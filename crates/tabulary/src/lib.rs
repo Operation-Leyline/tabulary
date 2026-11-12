@@ -21,6 +21,7 @@ mod scalar;
 mod schema;
 mod secret;
 mod time;
+pub mod update;
 mod value;
 pub mod wire;
 
@@ -49,5 +50,7 @@ pub use secret::Secret;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Record;
 pub use time::{TimeError, TimestampMicros, TimestampMillis, TimestampSeconds, TtlSeconds};
+pub use update::BuiltUpdate;
+pub use update::Update;
 pub use value::Value;
 pub use wire::WireType;
