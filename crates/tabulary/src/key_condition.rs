@@ -21,6 +21,16 @@ pub trait KeySchema<R: Record> {
 /// A primary schema inherits its logical types and physical keys from `KeySchema`.
 pub trait PrimarySchema<R: Record>: KeySchema<R> {}
 
+/// Opt in only when encoded key order preserves the logical input order.
+/// Native field codecs opt in through their wire capability; template codecs
+/// opt in only when their component encodings and boundaries preserve tuple order.
+#[diagnostic::on_unimplemented(
+    message = "sort codec `{Self}` does not declare order preservation",
+    note = "use dec20 or fixed-width hex before other components; final text must have no suffix; use sort_eq or sort_begins_with otherwise"
+)]
+pub trait OrderedKeyCodec<T>: Converter<T> {}
+impl<T: Value> OrderedKeyCodec<T> for Native<T> where T::Wire: Ordered {}
+
 /// A prefix encoder may accept a different logical input from a full sort key.
 /// Generated composite codecs accept only their private complete-boundary carrier.
 pub trait PrefixCodec<T>: Converter<T> {
@@ -201,7 +211,7 @@ impl<R: Record, I: KeySchema<R>, T: 'static, C: Converter<T>> KeyCondition<R, I,
 }
 macro_rules! ordered {
     ($($method:ident => $op:ident),+) => {$(
-        pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> { self.sort(Operator::$op, vec![value]) }
+        pub fn $method(self, value: T) -> KeyCondition<R, I, SortComplete> where C: OrderedKeyCodec<T> { self.sort(Operator::$op, vec![value]) }
     )+};
 }
 impl<R: Record, I: KeySchema<R>, T: 'static, C: Converter<T>> KeyCondition<R, I, SortKey<T, C>>
@@ -209,7 +219,10 @@ where
     C::Wire: Ordered,
 {
     ordered!(sort_lt => Lt, sort_le => Le, sort_gt => Gt, sort_ge => Ge);
-    pub fn sort_between(self, lo: T, hi: T) -> KeyCondition<R, I, SortComplete> {
+    pub fn sort_between(self, lo: T, hi: T) -> KeyCondition<R, I, SortComplete>
+    where
+        C: OrderedKeyCodec<T>,
+    {
         self.sort(Operator::Between, vec![lo, hi])
     }
 }

@@ -175,11 +175,11 @@ struct Parcel {
 fn composite_conditions_reuse_complete_partition_and_prefix_carriers() {
     let text = ParcelIndexes::BY_DECIMAL
         .partition("o".into())
-        .sort_ge((9,))
+        .sort_eq((9,))
         .build()
         .unwrap()
         .render();
-    assert_eq!(text.key_condition(), Some("(#n0 = :v0 AND #n1 >= :v1)"));
+    assert_eq!(text.key_condition(), Some("(#n0 = :v0 AND #n1 = :v1)"));
     assert_eq!(text.values()[":v1"], Av::S("9".into()));
     let item = Parcel {
         id: "o".into(),
@@ -254,4 +254,112 @@ fn generic_binary_partitions_and_native_string_prefixes_preserve_types() {
         matches!(Generic::<String>::primary().partition("o".into()).sort_eq("x".repeat(1025)).build(),
         Err(BuildError::Encode(e)) if e.kind == EncodeFault::KeySize { max: 1024, actual: 1025 })
     );
+}
+
+#[derive(tabulary::Record)]
+#[tabulary(rename_all = "snake_case",
+    sort(name = "sk", template = "line!{token:hex}!{count:dec20}!{label:text}"),
+    index(ident = ByFixed, name = "by_fixed", kind = global, partition = id,
+        sort(name = "gsk", template = "{count:dec20}!{token:hex}!end"), project = all),
+    index(ident = ByVariable, name = "by_variable", kind = global, partition = id,
+        sort(name = "vsk", template = "{label:text}!{count:dec20}"), project = all),
+    index(ident = BySuffix, name = "by_suffix", kind = global, partition = id,
+        sort(name = "ssk", template = "{label:text}!end"), project = all))]
+struct Sortable {
+    #[tabulary(partition_key)]
+    id: String,
+    token: [u8; 2],
+    count: u64,
+    label: String,
+}
+
+#[test]
+fn ordered_templates_keep_exact_range_bindings_and_logical_order() {
+    for (condition, expression) in [
+        (
+            Sortable::primary()
+                .partition("o".into())
+                .sort_ge(([0, 255], 9, "a".into())),
+            "#n1 >= :v1",
+        ),
+        (
+            Sortable::primary()
+                .partition("o".into())
+                .sort_between(([0, 255], 9, "a".into()), ([0, 255], 10, "b".into())),
+            "#n1 BETWEEN :v1 AND :v2",
+        ),
+    ] {
+        let text = condition.build().unwrap().render();
+        assert_eq!(
+            text.key_condition(),
+            Some(format!("(#n0 = :v0 AND {expression})").as_str())
+        );
+        assert_eq!(
+            text.values()[":v1"],
+            Av::S("line!00ff!00000000000000000009!a".into())
+        );
+        if expression.contains(":v2") {
+            assert_eq!(
+                text.values()[":v2"],
+                Av::S("line!00ff!00000000000000000010!b".into())
+            );
+            assert!(text.values()[":v1"].as_s().unwrap() < text.values()[":v2"].as_s().unwrap());
+        }
+    }
+    let text = SortableIndexes::BY_FIXED
+        .partition("o".into())
+        .sort_between((9, [0, 255]), (10, [0, 255]))
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(
+        text.key_condition(),
+        Some("(#n0 = :v0 AND #n1 BETWEEN :v1 AND :v2)")
+    );
+    assert_eq!(
+        text.values()[":v1"],
+        Av::S("00000000000000000009!00ff!end".into())
+    );
+    assert_eq!(
+        text.values()[":v2"],
+        Av::S("00000000000000000010!00ff!end".into())
+    );
+}
+
+#[test]
+fn unordered_templates_keep_equality_and_complete_boundary_prefixes() {
+    let index = SortableIndexes::BY_VARIABLE;
+    let prefix = index.sort_prefix(("a".into(),)).unwrap();
+    let text = index
+        .partition("o".into())
+        .sort_begins_with(prefix)
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(
+        text.key_condition(),
+        Some("(#n0 = :v0 AND begins_with(#n1, :v1))")
+    );
+    assert_eq!(text.values()[":v1"], Av::S("a!".into()));
+    let text = index
+        .partition("o".into())
+        .sort_eq(("a".into(), 9))
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(text.values()[":v1"], Av::S("a!00000000000000000009".into()));
+
+    // A suffix after final text reverses the ordering of these valid inputs.
+    let encode = |label: &str| {
+        Sortable {
+            id: "o".into(),
+            token: [0, 255],
+            count: 9,
+            label: label.into(),
+        }
+        .to_item()
+        .unwrap()
+    };
+    assert!("a" < "a ");
+    assert!(encode("a")["ssk"].as_s().unwrap() > encode("a ")["ssk"].as_s().unwrap());
 }

@@ -395,8 +395,41 @@ pub fn template_codec(
     let cx = format_ident!("cx", span = Span::mixed_site());
     let item = format_ident!("item", span = Span::mixed_site());
     let output = format_ident!("__tabulary_output", span = Span::mixed_site());
+    let unordered = parts.iter().enumerate().find_map(|(position, part)| {
+        let Part::Component {
+            field,
+            codec,
+            width,
+        } = part
+        else {
+            return None;
+        };
+        let preserves_order = match codec {
+            Codec::Dec20 => true,
+            Codec::Hex => width.is_some(),
+            // A suffix can reverse the order when one text value prefixes another.
+            Codec::Text => position + 1 == parts.len(),
+            Codec::Dec => false,
+        };
+        (!preserves_order).then_some(*field)
+    });
+    let ordered = unordered.is_none().then(|| {
+        quote! {
+            impl #ig #path::OrderedKeyCodec<#logical> for #codec #tg #wc {}
+        }
+    });
+    // Point missing-capability errors at the component, retaining macro hygiene.
+    let codec_span = unordered.map_or_else(Span::mixed_site, |field| {
+        Span::mixed_site().located_at(record.fields[field].ident.span())
+    });
+    let mut declaration_name = codec.clone();
+    declaration_name.set_span(codec_span);
+    let codec_declaration = quote_spanned!(codec_span=>
+        #vis struct #declaration_name #generics (::core::marker::PhantomData<fn() -> #owner #tg>) #wc;
+    );
     let declaration = quote! {
-        #vis struct #codec #generics (::core::marker::PhantomData<fn() -> #owner #tg>) #wc;
+        #codec_declaration
+        #ordered
         impl #ig #path::Converter<#logical> for #codec #tg #wc {
             type Wire = #path::wire::String;
             fn encode(value: &#logical, #cx: &mut #path::EncodeContext) -> ::core::result::Result<#path::__private::AttributeValue, #path::EncodeError> {
