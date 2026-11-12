@@ -1322,6 +1322,34 @@ actions retain their state. The adapter in milestone 45 retains SDK and abort
 causes, validates raw unprocessed responses, and records capacity vectors; none
 of those SDK/error-wrapper surfaces are introduced by this pure core.
 
+Milestone 45's adapter uses `Table::batch_write(actions, budget)` to construct
+`BatchWriteBatch<R>`. `next_request()` builds an owned `PreparedBatchWrite`;
+`input`, empty `expressions`, and `apply` follow the single-item adapters.
+`decode` consumes that prepared round into a Result that must be passed to
+`batch.accept(...)`, including on failure. It does not send anything. Returned
+unprocessed writes must match a complete issued put/delete payload exactly,
+including the action kind and put attributes; duplicates, changed payloads and
+foreign tables are protocol errors. Matching is independent of response order.
+Foreign or stale round results conservatively freeze the recipient batch too.
+
+The adapter-local names `BatchWriteError<R>`, `BatchWriteErrorKind`,
+`BatchWriteResult<R>` and `BatchWriteAbort::{Cancelled, Deadline}` specialize
+the BatchError/BatchRoundAbort sketches below without changing the pure core.
+Error `partial` is the core's ordered `BatchWritePartial`; success `actions`
+are in original order. Both retain `capacity: Vec<Option<Vec<ConsumedCapacity>>>`
+with one entry per issued call. Absent, empty and populated SDK vectors remain
+distinct, with table/index details and vector order unchanged; SDK failures,
+aborts and abandoned calls contribute `None`, never invented capacity.
+`accept` and `finish` return terminal errors in `Arc`, letting the frozen batch
+and caller retain the same owned partial without Clone bounds. Repeated failure
+access returns the same error; drop/finish the batch to release its ownership
+before using `Arc::try_unwrap` to recover owned pending actions. SDK/protocol
+failures and explicit aborts call `fail_round`; no indeterminate action is
+issued again. Finishing an outstanding call is also conservatively
+indeterminate, even if its decoded result was dropped before acceptance.
+The wire-size gate is the second, stacked part of milestone 45; this first part
+inherits the core's 1..=25 action gate without claiming wire-size validation.
+
 Batch write accepts only `BatchAction::put(&record)?` and
 `BatchAction::delete(key)?`. No conditions, updates, version-controlled
 records, or return-old-item options are allowed: the AWS batch API cannot enforce
