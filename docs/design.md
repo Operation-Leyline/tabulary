@@ -950,6 +950,18 @@ Both return enums default to `None` and convert to the SDK's `ReturnValue`;
 `WriteResult<R>` retains the optional full record, complete consumed capacity,
 and item-collection metrics supplied by the SDK, without inventing accounting.
 
+Milestone 28 adds `Table<R>::delete(key)` for `R: Record + Document` and
+`K: RecordKey<R>`. `DeleteBuilder<R, K>` owns the table name and key, encoding
+the key and validating its optional `Condition<R>` at `build()`.
+Each `.condition(...)` replaces the previous condition; combine predicates
+explicitly with `.and(...)` or `.or(...)`. `PreparedDelete<R>` aliases
+`PreparedRequest<DeleteItemInput, R>`, copies every SDK input field, and derives
+failure-side old-item mode from its immutable input. Success attributes are
+strictly decoded as the complete record: absent attributes mean `None`, while a
+present empty or malformed map yields `WriteError::Decode` with unchanged raw
+attributes, capacity, and collection metrics. Refusals use the milestone 26
+classifier without changing their kind when an old item is absent or invalid.
+
 An absent GetItem item is `None`. A nonempty or explicitly present item that
 fails decoding is an error, never “not found.” An SDK response with an empty item
 map decodes as an item and fails on required keys; only an absent item is missing.
