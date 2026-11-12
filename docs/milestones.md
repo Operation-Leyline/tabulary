@@ -6,7 +6,10 @@ source until the owning milestone makes them compile against the real crates.
 
 Each row is one pull request, targeting **150–400 changed implementation and test
 lines**, excluding generated diagnostic snapshots. Split a row further if it
-exceeds that range. Avoid bundling adjacent rows merely because they touch the
+exceeds that range. The exception is a piece that cannot be cut smaller and stay
+coherent, such as a derive's parsing, validation and expansion with its
+round-trip tests: it may run to about 700 lines, and its description states the
+size and why it was not split. Avoid bundling adjacent rows merely because they touch the
 same file. No milestone implements application schemas or business policies.
 
 Dependencies name earlier PRs, so the table is in dependency order. “Parallel”
