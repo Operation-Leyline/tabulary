@@ -1,0 +1,11 @@
+error: unknown template field
+ --> tests/ui/record/template_references.rs:2:73
+  |
+2 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{missing:hex}"))]
+  |                                                                         ^^^^^^^^^^^^^^^
+
+error: duplicate template component reference
+ --> tests/ui/record/template_references.rs:6:73
+  |
+6 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{id:hex}!{id:text}"))]
+  |                                                                         ^^^^^^^^^^^^^^^^^^^^

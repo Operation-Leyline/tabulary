@@ -1,0 +1,12 @@
+error: primary template sources cannot be optional
+ --> tests/ui/record/template_sources.rs:3:16
+  |
+3 | struct Order { id: Option<String> }
+  |                ^^^^^^^^^^^^^^^^^^
+
+error: template sources cannot have defaults
+ --> tests/ui/record/template_sources.rs:8:5
+  |
+8 | /     #[tabulary(default = initial_id)]
+9 | |     id: String,
+  | |______________^

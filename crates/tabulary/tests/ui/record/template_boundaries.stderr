@@ -1,0 +1,17 @@
+error: adjacent variable-width components have ambiguous boundaries
+ --> tests/ui/record/template_boundaries.rs:2:73
+  |
+2 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{shop:hex}{id:hex}"))]
+  |                                                                         ^^^^^^^^^^^^^^^^^^^^
+
+error: separator is admitted by a component codec; use a delimiter outside its alphabet
+ --> tests/ui/record/template_boundaries.rs:6:73
+  |
+6 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{shop:hex}a{id:hex}"))]
+  |                                                                         ^^^^^^^^^^^^^^^^^^^^^
+
+error: separator is admitted by a component codec; use a delimiter outside its alphabet
+  --> tests/ui/record/template_boundaries.rs:10:68
+   |
+10 | #[tabulary(rename_all = "snake_case", sort(name = "sk", template = "{count:dec}0{id:hex}"))]
+   |                                                                    ^^^^^^^^^^^^^^^^^^^^^^

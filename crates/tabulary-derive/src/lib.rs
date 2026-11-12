@@ -5,6 +5,7 @@ mod parse;
 mod string_enum_expand;
 mod string_enum_parse;
 mod string_enum_validate;
+mod template;
 mod validate;
 
 #[proc_macro_derive(Record, attributes(tabulary))]

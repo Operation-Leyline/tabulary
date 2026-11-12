@@ -252,6 +252,27 @@ Custom components implement `KeyComponentCodec<T>` with parse and format;
 the author declares reserved delimiters and tests round trips. They cannot
 silently replace the built-in grammar.
 
+Milestone 14 implements the built-in grammar and validation only. A validated
+primary `partition(name = ..., template = ...)` or `sort(...)` declaration
+reports that expansion requires milestone 15; it is never ignored. Formatting,
+inverse parsing, source/codec type bounds, and custom component integration
+belong to that later stage. Components name Rust fields (including unprefixed
+raw identifiers), not renamed wire attributes. Primary sources cannot be
+optional or have defaults. Nonempty literal-only templates are permitted.
+
+For boundary validation, a run of adjacent components between literals may
+contain at most one variable-width component. `dec20` has width 20; `hex` on
+`[u8; N]` has width `2*N` when N is an integer literal. Other array length
+expressions are conservatively variable-width at this stage. A literal after
+a variable-width run must start outside the numeric/hex output alphabets of
+every component in that run (decimal includes `-`). This conservative rule
+also rejects overlapping multi-character delimiters such as `a!` after hex.
+`text` instead reserves the first character of the following literal separator
+in its accepted input domain, preventing overlapping delimiter matches too;
+milestone 15 must reject source strings containing that character when formatting.
+Fixed-width runs need no delimiter restriction. Escaped braces are decoded
+before these checks, and literal prefixes require no separator check.
+
 On decode, the generated parser reads each synthesized primary key, parses all
 components, and checks them against their separately decoded source fields.
 A missing component attribute is still `Missing`; a parsed component mismatch

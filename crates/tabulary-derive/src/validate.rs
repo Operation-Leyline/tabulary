@@ -68,6 +68,12 @@ pub fn record(input: DeriveInput) -> syn::Result<Record> {
     let Fields::Named(fields) = data.fields else {
         return Err(error(data.fields, "Record requires named fields"));
     };
+    crate::template::declarations(
+        opts.partition.as_ref(),
+        opts.sort.as_ref(),
+        &fields,
+        rule.as_deref(),
+    )?;
     let mut result = Record {
         ident: input.ident,
         vis: input.vis,

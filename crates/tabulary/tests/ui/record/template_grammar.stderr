@@ -1,0 +1,17 @@
+error: expected {field:codec}
+ --> tests/ui/record/template_grammar.rs:2:73
+  |
+2 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{id}"))]
+  |                                                                         ^^^^^^
+
+error: unknown component codec; expected hex, dec, dec20 or text
+ --> tests/ui/record/template_grammar.rs:6:73
+  |
+6 | #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "{id:base64}"))]
+  |                                                                         ^^^^^^^^^^^^^
+
+error: unescaped closing brace in key template
+  --> tests/ui/record/template_grammar.rs:10:68
+   |
+10 | #[tabulary(rename_all = "snake_case", sort(name = "sk", template = "bad}"))]
+   |                                                                    ^^^^^^
