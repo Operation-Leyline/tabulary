@@ -20,6 +20,7 @@ const EXTERNAL: Attr<Order, u128, Required, Mutable, tabulary::convert::u128_str
 const VERSION: Attr<Order, u64, Required, VersionOnly> = __private::field("version", 8);
 const SOURCE: Attr<Order, u64, Optional, IndexSourceOnly> = __private::field("indexSource", 9);
 const DERIVED: Attr<Order, u64, Optional, DerivedOnly> = __private::field("indexKey", 10);
+const TOTAL: Attr<Order, u64> = __private::field("total", 11);
 impl Record for Order {
     const SCHEMA: RecordSchema = __private::schema(
         "Order",
@@ -35,6 +36,7 @@ impl Record for Order {
             VERSION.descriptor(),
             SOURCE.descriptor(),
             DERIVED.descriptor(),
+            TOTAL.descriptor(),
         ],
         __private::keys(0, None),
     );
@@ -74,7 +76,7 @@ fn actions_preserve_targets_constants_and_composition_order() {
     let actions = Update::new()
         .and(COUNT.set(7))
         .and(NOTE.remove())
-        .and(COUNT.add(3))
+        .and(TOTAL.add(3))
         .and(TAGS.delete_members(StringSet::try_from(vec!["gift".into()]).unwrap()))
         .build()
         .unwrap();
@@ -89,7 +91,7 @@ fn actions_preserve_targets_constants_and_composition_order() {
                 target: NOTE.descriptor()
             },
             ActionNode::Add {
-                target: COUNT.descriptor(),
+                target: TOTAL.descriptor(),
                 value: n("3")
             },
             ActionNode::Delete {
