@@ -1,0 +1,47 @@
+error: version must be a required native u64 without a default, key or flatten
+ --> tests/ui/version/declarations.rs:7:5
+  |
+7 |     revision: Option<u64>,
+  |     ^^^^^^^^
+
+error: version must be a required native u64 without a default, key or flatten
+  --> tests/ui/version/declarations.rs:15:5
+   |
+15 |     revision: i64,
+   |     ^^^^^^^^
+
+error: version must be a required native u64 without a default, key or flatten
+  --> tests/ui/version/declarations.rs:23:5
+   |
+23 |     revision: u64,
+   |     ^^^^^^^^
+
+error: at most one version field is allowed
+  --> tests/ui/version/declarations.rs:36:5
+   |
+36 |     other: u64,
+   |     ^^^^^
+
+error: version must be a required native u64 without a default, key or flatten
+  --> tests/ui/version/declarations.rs:42:5
+   |
+42 |     id: u64,
+   |     ^^
+
+error: version cannot be a composite key source
+  --> tests/ui/version/declarations.rs:51:5
+   |
+51 |     revision: u64,
+   |     ^^^^^^^^
+
+error: Document fields cannot declare versions
+  --> tests/ui/version/declarations.rs:56:5
+   |
+56 |     #[tabulary(version)]
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: unsupported tabulary option
+  --> tests/ui/version/declarations.rs:64:25
+   |
+64 |     #[tabulary(version, with = "tabulary::Native<u64>")]
+   |                         ^^^^

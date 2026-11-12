@@ -20,6 +20,7 @@ pub struct PutBuilder<'a, R> {
     table: String,
     record: &'a R,
     condition: Option<Condition<R>>,
+    version: crate::version::Policy,
     old_item: OldItemMode,
     return_item: ReturnOld,
     capacity: Capacity,
@@ -31,6 +32,7 @@ impl<R: Record + Document> Table<R> {
             table: self.name.clone(),
             record,
             condition: None,
+            version: crate::version::Policy::Missing,
             old_item: OldItemMode::None,
             return_item: ReturnOld::None,
             capacity: Capacity::None,
@@ -39,6 +41,22 @@ impl<R: Record + Document> Table<R> {
     }
 }
 impl<R: Record + Document> PutBuilder<'_, R> {
+    /// Require primary key absence and, on a versioned record, explicit version 1.
+    pub fn expect_new(mut self) -> Self {
+        self.version.select(crate::version::Policy::New);
+        self
+    }
+    /// Guard the stored version and require its checked successor in the proposed record.
+    pub fn expect_version(mut self, version: u64) -> Self {
+        self.version
+            .select(crate::version::Policy::Expected(version));
+        self
+    }
+    /// Explicit maintenance bypass; no version guard or increment is added.
+    pub fn unchecked_version(mut self) -> Self {
+        self.version.select(crate::version::Policy::Unchecked);
+        self
+    }
     /// AND this predicate with any existing inline condition.
     pub fn condition(mut self, condition: Condition<R>) -> Self {
         self.condition = Some(match self.condition {
@@ -66,7 +84,10 @@ impl<R: Record + Document> PutBuilder<'_, R> {
     pub fn build(self) -> Result<PreparedPut<R>, BuildError> {
         let item = self.record.encode_map(&mut EncodeContext::new(R::NAME))?;
         BilledSize::of_item(&item)?.ensure_at_most(400 * 1024)?;
-        let expressions = match self.condition {
+        let condition = self
+            .version
+            .expand(crate::version::Write::Put(&item), self.condition)?;
+        let expressions = match condition {
             Some(condition) => condition.build()?.render(),
             None => RenderedExpressions::default(),
         };

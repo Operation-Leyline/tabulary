@@ -48,6 +48,7 @@ mod update_path;
 mod update_renderer;
 mod value;
 mod variants;
+mod version;
 pub mod wire;
 mod write;
 mod write_options;

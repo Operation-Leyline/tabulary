@@ -1,0 +1,39 @@
+error[E0599]: no method named `set` found for struct `Attr<Invoice, u64, tabulary::Required, tabulary::VersionOnly>` in the current scope
+  --> tests/ui/version/mutations.rs:10:28
+   |
+10 |     InvoiceAttrs::REVISION.set(2);
+   |                            ^^^ method not found in `Attr<Invoice, u64, tabulary::Required, tabulary::VersionOnly>`
+   |
+   = note: the method was found for `Attr<R, T, P, tabulary::Mutable, C>`
+
+error[E0599]: no method named `increment` found for struct `Attr<Invoice, u64, tabulary::Required, tabulary::VersionOnly>` in the current scope
+  --> tests/ui/version/mutations.rs:11:28
+   |
+11 |     InvoiceAttrs::REVISION.increment(1);
+   |                            ^^^^^^^^^
+   |
+help: there is a method `instrument` with a similar name
+   |
+11 -     InvoiceAttrs::REVISION.increment(1);
+11 +     InvoiceAttrs::REVISION.instrument(1);
+   |
+
+error[E0599]: no method named `expect_new` found for struct `DeleteBuilder<R, K>` in the current scope
+  --> tests/ui/version/mutations.rs:15:10
+   |
+13 | /     table
+14 | |         .delete(InvoiceKey::new("i".into()).unwrap())
+15 | |         .expect_new();
+   | |         -^^^^^^^^^^ method not found in `DeleteBuilder<Invoice, InvoiceKey>`
+   | |_________|
+   |
+
+error[E0599]: no method named `expect_new` found for struct `UpdateBuilder<R, K>` in the current scope
+  --> tests/ui/version/mutations.rs:18:10
+   |
+16 | /     table
+17 | |         .update(InvoiceKey::new("i".into()).unwrap())
+18 | |         .expect_new();
+   | |         -^^^^^^^^^^ method not found in `UpdateBuilder<Invoice, InvoiceKey>`
+   | |_________|
+   |

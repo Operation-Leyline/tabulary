@@ -21,6 +21,7 @@ pub struct UpdateBuilder<R, K> {
     key: K,
     changes: Update<R>,
     condition: Option<Condition<R>>,
+    version: crate::version::Policy,
     return_item: ReturnItem,
     old_item: OldItemMode,
     capacity: Capacity,
@@ -33,6 +34,7 @@ impl<R: Record + Document> Table<R> {
             key,
             changes: Update::new(),
             condition: None,
+            version: crate::version::Policy::Missing,
             return_item: ReturnItem::None,
             old_item: OldItemMode::None,
             capacity: Capacity::None,
@@ -41,7 +43,18 @@ impl<R: Record + Document> Table<R> {
     }
 }
 impl<R: Record + Document, K: RecordKey<R>> UpdateBuilder<R, K> {
-    /// Replace the complete mutation set. An empty set is rejected at build.
+    /// Guard the stored version and SET its checked successor atomically.
+    pub fn expect_version(mut self, version: u64) -> Self {
+        self.version
+            .select(crate::version::Policy::Expected(version));
+        self
+    }
+    /// Explicit maintenance bypass; no version guard or increment is added.
+    pub fn unchecked_version(mut self) -> Self {
+        self.version.select(crate::version::Policy::Unchecked);
+        self
+    }
+    /// Replace the mutation set; a version guard may supply its only SET.
     pub fn changes(mut self, changes: Update<R>) -> Self {
         self.changes = changes;
         self
@@ -72,8 +85,12 @@ impl<R: Record + Document, K: RecordKey<R>> UpdateBuilder<R, K> {
     }
     pub fn build(self) -> Result<PreparedUpdate<R>, BuildError> {
         let key = self.key.encode_key()?;
-        let changes = self.changes.build()?;
-        let expressions = match self.condition {
+        let mut changes = self.changes;
+        let condition = self
+            .version
+            .expand(crate::version::Write::Update(&mut changes), self.condition)?;
+        let changes = changes.build()?;
+        let expressions = match condition {
             Some(condition) => changes.render_with_condition(&condition.build()?),
             None => changes.render(),
         };
