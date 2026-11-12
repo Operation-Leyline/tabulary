@@ -100,6 +100,7 @@ pub use condition::BuiltCondition;
 pub use condition::Condition;
 pub use convert::{Converter, Native};
 pub use cursor::Cursor;
+pub use cursor::CursorError;
 pub use cursor::QueryOrder;
 pub use decimal::Decimal;
 pub use delete::DeleteBuilder;
