@@ -1059,8 +1059,15 @@ Query builders accept `filter(Condition<R>)`, `limit(NonZeroU32)`,
 `order(QueryOrder::Ascending | Descending)`, `select::<P>()`, and
 `resume(Cursor<R, I>)`. Key fields are rejected in query filters; express
 them in the key condition. Scan filters may include key fields.
+For an index query this restriction refers to the selected index's physical keys;
+base-table keys that are not keys of that index may be filtered. Non-ALL index
+reads also reject filters using attributes outside the stored index namespace,
+so filtering cannot introduce an implicit base-table fetch.
 Filters act after service evaluation and do not reduce the read work. A limit
 is an evaluated-item limit per call, not a requested count of matching records.
+Query defaults to ascending traversal and an omitted limit. `NonZeroU32` limits
+above the SDK's `i32::MAX` are build errors rather than clamped values. Decode
+preserves the service's row order and never sorts, truncates, or fills a page.
 
 `Page` contains `items`, `next`, `count`, `scanned_count`, and
 `capacity`. Empty items with a nonempty last-evaluated key still produce

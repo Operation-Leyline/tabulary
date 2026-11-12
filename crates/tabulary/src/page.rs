@@ -39,19 +39,11 @@ impl fmt::Debug for PageMetadata {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Used by the stacked Query adapter")
-)]
 pub(crate) struct RawPage {
     pub items: Vec<Item>,
     pub metadata: PageMetadata,
     pub capacity: Option<ConsumedCapacity>,
 }
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Used by the stacked Query adapter")
-)]
 impl RawPage {
     fn fault(self, position: usize, source: DecodeError) -> Box<ReadDecodeError> {
         Box::new(ReadDecodeError {
