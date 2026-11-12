@@ -133,6 +133,44 @@ fn echoed_string_and_binary_sets_ignore_order_but_reject_changed_members() {
 }
 
 #[test]
+fn large_reordered_set_echoes_preserve_unprocessed_actions() {
+    let strings: Vec<_> = (0..40_000).map(|n| format!("{n:05}")).collect();
+    let binaries: Vec<_> = (0u32..40_000)
+        .map(|n| n.to_be_bytes().to_vec().into())
+        .collect();
+    let row = NumericOrder(
+        [
+            ("id".into(), Av::S("order".into())),
+            ("strings".into(), Av::Ss(strings.clone())),
+            ("binaries".into(), Av::Bs(binaries.clone())),
+        ]
+        .into(),
+    );
+    let mut batch = Table::<NumericOrder>::new("orders")
+        .unwrap()
+        .batch_write(
+            vec![BatchAction::put(&row).unwrap()],
+            BatchBudget::new(2).unwrap(),
+        )
+        .unwrap();
+    let request = batch.next_request().unwrap().unwrap();
+    let mut write = request.input().request_items.as_ref().unwrap()["orders"][0].clone();
+    let item = &mut write.put_request.as_mut().unwrap().item;
+    item.insert(
+        "strings".into(),
+        Av::Ss(strings.into_iter().rev().collect()),
+    );
+    item.insert(
+        "binaries".into(),
+        Av::Bs(binaries.into_iter().rev().collect()),
+    );
+    batch
+        .accept(request.decode(Ok(output(vec![write], None))))
+        .unwrap();
+    assert_eq!(batch.next_request().unwrap().unwrap().positions(), &[0]);
+}
+
+#[test]
 fn echoed_numbers_match_by_decimal_value_including_nested_number_sets() {
     for echoed in ["1e0", "different", "malformed", "duplicate"] {
         let item = [
