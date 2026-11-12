@@ -1143,6 +1143,7 @@ abandoned or timed-out writes as safe retries.
 pub enum FailureKind {
     ConditionFailed,
     TransactionConflict,
+    ReplicatedWriteConflict,
     ProvisionedThroughputExceeded,
     Throttled,
     RequestLimitExceeded,
@@ -1191,6 +1192,23 @@ Errors keep SDK metadata and original source errors accessible. Their own
 Debug/Display output includes only structured codes and positions.
 No code path parses an exception's message, Display, or source text.
 Matching the documented machine-readable CancellationReason.Code is permitted.
+
+Milestone 26 exposes `WriteError::<R, E>::from_sdk(error, old_item_mode)` for
+the SDK's put, delete, and update error types, with `R: Record + Document`.
+It matches only modeled conditional-check, transaction-conflict,
+replicated-write-conflict, provisioned-throughput, throttling, and request-limit
+variants. A separate `ReplicatedWriteConflict` kind preserves the SDK distinction
+between replicated and transaction conflicts. Other service
+variants (including item-collection size failures) remain `Sdk`; the broader
+failure vocabulary also serves later transaction cancellation decoding.
+`OldItem::decode` returns `NotRequested` for mode `None`, even if an endpoint
+supplies unsolicited data; the original SDK source still retains that data.
+`Redacted<T>::expose()` and `into_inner()` provide explicit raw access. Formatting
+never reveals decoded old records or raw payloads and requires no `R: Debug`.
+`WriteDecodeError` retains the returned attributes as `raw: Redacted<Item>`,
+the structured `source`, and unchanged `capacity` and `item_collection_metrics`.
+The operation adapters populate this committed-write error from successful SDK
+outputs; refusal classification never constructs it.
 
 ### 11.2 Composing a transaction
 
