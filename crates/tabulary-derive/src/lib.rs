@@ -10,6 +10,19 @@ mod string_enum_parse;
 mod string_enum_validate;
 mod template;
 mod validate;
+mod variants_expand;
+mod variants_parse;
+mod variants_validate;
+
+/// Derive a strict discriminator-selected map, optionally flattened into a document.
+#[proc_macro_derive(Variants, attributes(tabulary))]
+pub fn variants(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    variants_validate::variants(input)
+        .map(|schema| variants_expand::variants(&schema))
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
 
 #[proc_macro_derive(Record, attributes(tabulary))]
 pub fn record(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
