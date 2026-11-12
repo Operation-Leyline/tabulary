@@ -1,5 +1,5 @@
 #![cfg(feature = "derive")]
-use aws_sdk_dynamodb::types::{AttributeValue as Av, ScalarAttributeType as Scalar};
+use aws_sdk_dynamodb::types::AttributeValue as Av;
 use tabulary::{IndexKind, IndexProjection, IndexSchema, Native, NoSort, Record};
 
 #[derive(Debug, PartialEq, tabulary::Record)]
@@ -17,19 +17,30 @@ struct Order {
 }
 
 #[test]
-fn manual_key_name_collisions_are_rejected() {
-    const FIELDS: [tabulary::FieldDescriptor; 2] = [
-        Order::SCHEMA.fields[0],
-        tabulary::FieldDescriptor {
-            index: 1,
-            ..Order::SCHEMA.fields[0]
-        },
-    ];
-    let schema =
-        tabulary::__private::schema("Manual", &FIELDS, tabulary::__private::keys(0, Some(1)));
-    assert_eq!(
-        schema.attribute_definitions(),
-        Err(tabulary::BuildError::IncompatibleIndex)
+fn literal_index_updates_validate_the_target_key() {
+    use tabulary::{BuildError, EncodeFault, Update};
+    for action in [
+        OrderAttrs::COURIER.set(String::new()),
+        OrderAttrs::COURIER.set_expr(OrderAttrs::GIFT_NOTE.if_not_exists(String::new())),
+    ] {
+        assert!(
+            matches!(Update::new().and(action).build(), Err(BuildError::Encode(e)) if e.kind == EncodeFault::EmptyKey && e.attribute() == Some("courier"))
+        );
+    }
+    assert!(
+        Update::new()
+            .and(OrderAttrs::COURIER.set("courier".into()))
+            .build()
+            .is_ok()
+    );
+    assert!(
+        Update::new()
+            .and(OrderAttrs::GIFT_NOTE.set(String::new()))
+            .build()
+            .is_ok()
+    );
+    assert!(
+        matches!(Update::new().and(OrderAttrs::COURIER.set("c".repeat(2049))).build(), Err(BuildError::Encode(e)) if matches!(e.kind, EncodeFault::KeySize { max: 2048, .. }))
     );
 }
 
@@ -50,22 +61,6 @@ fn hash_only_global_local_and_projected_names_share_one_schema() {
     assert_eq!(lsi.keys.partition, Order::SCHEMA.primary.partition);
     assert_ne!(lsi.keys.sort, Order::SCHEMA.primary.sort);
     assert_eq!(Order::SCHEMA.indexes, &[gsi, lsi]);
-    let definitions = Order::SCHEMA.attribute_definitions().unwrap();
-    assert_eq!(
-        definitions
-            .iter()
-            .map(|d| d.attribute_name())
-            .collect::<Vec<_>>(),
-        ["orderRef", "created", "courier", "lineNo"]
-    );
-    assert!(definitions.iter().all(|d| d.attribute_name() != "giftNote"));
-    assert_eq!(
-        definitions
-            .iter()
-            .map(|d| d.attribute_type())
-            .collect::<Vec<_>>(),
-        [&Scalar::S, &Scalar::N, &Scalar::S, &Scalar::N]
-    );
     let record = Order {
         order_ref: "o".into(),
         created: 1,
@@ -102,10 +97,6 @@ fn generic_binary_keys_validate_physical_values_without_changing_primary_keys() 
         IndexProjection::All
     );
     assert_eq!(
-        Generic::<Vec<u8>>::SCHEMA.attribute_definitions().unwrap()[1].attribute_type(),
-        &Scalar::B
-    );
-    assert_eq!(
         tabulary::RecordKey::encode_key(&record.key().unwrap())
             .unwrap()
             .len(),
@@ -126,11 +117,5 @@ fn generic_binary_keys_validate_physical_values_without_changing_primary_keys() 
     assert_eq!(
         empty.to_item().unwrap_err().kind,
         tabulary::EncodeFault::EmptyKey
-    );
-    let mut invalid = Generic::<Vec<u8>>::SCHEMA;
-    invalid.primary.partition = 99;
-    assert_eq!(
-        invalid.attribute_definitions(),
-        Err(tabulary::BuildError::IncompatibleIndex)
     );
 }

@@ -1,9 +1,7 @@
 //! Secondary key schemas and storage projections, without a client or table.
 use std::marker::PhantomData;
 
-use aws_sdk_dynamodb::types::{AttributeDefinition, ScalarAttributeType};
-
-use crate::{BuildError, Converter, DynamoType, KeyDefinition, Native, Record, RecordSchema};
+use crate::{BuildError, Converter, KeyDefinition, Native, Record, RecordSchema};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IndexKind {
@@ -39,42 +37,37 @@ pub trait IndexSchema<R: Record> {
     const DEFINITION: IndexDefinition;
 }
 
+pub(crate) fn validate_set<R: Record>(
+    target: crate::FieldDescriptor,
+    node: &crate::update::SetNode,
+) -> Result<(), BuildError> {
+    use crate::{condition::Operand::Value, update::SetNode};
+    let value = match node {
+        SetNode::Operand(Value(v))
+        | SetNode::IfNotExists {
+            default: Value(v), ..
+        }
+        | SetNode::IfPathNotExists {
+            default: Value(v), ..
+        } => v,
+        _ => return Ok(()), // The result of a stored-value expression is unknown locally.
+    };
+    let cx = crate::EncodeContext::new(R::SCHEMA.name)
+        .at(crate::PathSegment::Attribute(target.name.into()));
+    for index in R::SCHEMA.indexes {
+        for (position, limit) in [(Some(index.keys.partition), 2048), (index.keys.sort, 1024)] {
+            if position == Some(target.index) {
+                crate::record::validate_key(value, limit).map_err(|fault| cx.error(fault))?;
+            }
+        }
+    }
+    Ok(())
+}
+
 impl RecordSchema {
     #[doc(hidden)]
     pub const fn with_indexes(mut self, indexes: &'static [IndexDefinition]) -> Self {
         self.indexes = indexes;
         self
-    }
-    /// Only physical primary/index keys are DynamoDB AttributeDefinitions.
-    /// Included and ordinary attributes are deliberately excluded.
-    pub fn attribute_definitions(self) -> Result<Vec<AttributeDefinition>, BuildError> {
-        let positions: std::collections::BTreeSet<_> = std::iter::once(self.primary)
-            .chain(self.indexes.iter().map(|i| i.keys))
-            .flat_map(|k| std::iter::once(k.partition).chain(k.sort))
-            .collect();
-        let mut names = std::collections::BTreeSet::new();
-        positions
-            .into_iter()
-            .map(|position| {
-                let field = self
-                    .fields
-                    .get(position)
-                    .ok_or(BuildError::IncompatibleIndex)?;
-                if !names.insert(field.name) {
-                    return Err(BuildError::IncompatibleIndex);
-                }
-                let wire = match field.wire {
-                    DynamoType::S => ScalarAttributeType::S,
-                    DynamoType::N => ScalarAttributeType::N,
-                    DynamoType::B => ScalarAttributeType::B,
-                    _ => return Err(BuildError::IncompatibleIndex),
-                };
-                AttributeDefinition::builder()
-                    .attribute_name(field.name)
-                    .attribute_type(wire)
-                    .build()
-                    .map_err(|_| BuildError::IncompatibleIndex)
-            })
-            .collect()
     }
 }
