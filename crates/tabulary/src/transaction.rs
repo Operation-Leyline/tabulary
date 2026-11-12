@@ -19,7 +19,10 @@ mod sealed {
         fn append(&self, items: &mut Vec<TransactWriteItem>, targets: &mut Vec<(String, Item)>);
     }
 }
-/// Frozen flat action tuples (arity 1..=12). Nested/vector composition comes later.
+/// Frozen actions, recursive tuples (arity 1..=12), and homogeneous action vectors.
+///
+/// Requests flatten depth-first, left-to-right; `Reasons` retains the original shape.
+/// Empty vectors contribute no actions, but the final request must have 1..=100.
 pub trait TxActions: sealed::Actions {
     type Reasons;
     #[doc(hidden)]
@@ -43,15 +46,33 @@ impl<R> TxActions for TxAction<R> {
         self.decode_reason(reasons.next())
     }
 }
+impl<R> sealed::Actions for Vec<TxAction<R>> {
+    fn append(&self, items: &mut Vec<TransactWriteItem>, targets: &mut Vec<(String, Item)>) {
+        for action in self {
+            action.append(items, targets);
+        }
+    }
+}
+impl<R> TxActions for Vec<TxAction<R>> {
+    type Reasons = Vec<Failure<R>>;
+    fn decode_reasons(
+        &self,
+        reasons: &mut std::slice::Iter<'_, CancellationReason>,
+    ) -> Self::Reasons {
+        self.iter()
+            .map(|action| action.decode_reasons(reasons))
+            .collect()
+    }
+}
 macro_rules! tuples {
     ($($t:ident : $i:tt),+) => {
-        impl<$($t),+> sealed::Actions for ($(TxAction<$t>,)+) {
+        impl<$($t: TxActions),+> sealed::Actions for ($($t,)+) {
             fn append(&self, items: &mut Vec<TransactWriteItem>, targets: &mut Vec<(String, Item)>) {
                 $(self.$i.append(items, targets);)+
             }
         }
-        impl<$($t),+> TxActions for ($(TxAction<$t>,)+) {
-            type Reasons = ($(Failure<$t>,)+);
+        impl<$($t: TxActions),+> TxActions for ($($t,)+) {
+            type Reasons = ($($t::Reasons,)+);
             fn decode_reasons(&self, reasons: &mut std::slice::Iter<'_, CancellationReason>) -> Self::Reasons {
                 ($(self.$i.decode_reasons(reasons),)+)
             }
