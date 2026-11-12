@@ -664,6 +664,22 @@ union of old-only payload attributes. It replaces the entire variant value, so
 stale fields cannot survive a status change. Common-field updates can join the
 same request. Conditional old-item decode uses the old discriminator.
 
+Milestone 31 preserves the discriminator `Attr` type. `Record` derives implement
+`FlattenedVariants<V>` with the discriminator's field position, binding transition
+values to the record's flattened enum rather than to nested maps or unrelated
+tag attributes. Manual records implement the same trait; build validates the
+descriptor, key protection, and disjoint common/variant namespaces.
+Transitions encode the new enum at update build, then visit `Variants::ATTRIBUTES`
+in its metadata order (generated tag first, followed by sorted payload names).
+Present attributes become ordinary SET actions; every omitted group attribute
+becomes REMOVE, including an absent optional field shared by two shapes. This
+also defines same-tag replacement and transitions to unit variants.
+The expected-tag condition is retained in `BuiltUpdate::condition()` and in
+both rendering methods. Caller conditions are ANDed with that guard using the
+same alias allocator; extracting `into_actions()` yields only the inspectable
+mutation tree and discards its condition. No separate UpdateItem adapter exists
+for transitions.
+
 ## 6. Strict decoding and error paths
 
 The default unknown attribute policy is **deny** on full records and nested
