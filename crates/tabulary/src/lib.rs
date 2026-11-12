@@ -36,6 +36,7 @@ mod secret;
 mod table;
 mod table_definition;
 mod time;
+mod transition;
 pub mod update;
 mod update_item;
 mod update_path;
@@ -114,6 +115,7 @@ pub use tabulary_derive::StringEnum;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Variants;
 pub use time::{TimeError, TimestampMicros, TimestampMillis, TimestampSeconds, TtlSeconds};
+pub use transition::FlattenedVariants;
 pub use update::BuiltUpdate;
 pub use update::Update;
 pub use update_item::PreparedUpdate;
