@@ -44,6 +44,8 @@ pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, 
 pub use secret::Secret;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Record;
+#[cfg(feature = "derive")]
+pub use tabulary_derive::StringEnum;
 pub use time::{TimeError, TimestampMicros, TimestampMillis, TimestampSeconds, TtlSeconds};
 pub use value::Value;
 pub use wire::WireType;
