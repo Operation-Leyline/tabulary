@@ -1,10 +1,12 @@
-use syn::{Attribute, LitStr};
+use syn::{Attribute, LitStr, Path};
 
 #[derive(Default)]
 pub struct Options {
     pub rename: Option<LitStr>,
     pub rename_all: Option<LitStr>,
     pub generated_prefix: Option<LitStr>,
+    pub unknown: Option<LitStr>,
+    pub default: Option<Path>,
     pub partition_key: bool,
     pub sort_key: bool,
 }
@@ -21,7 +23,15 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
             let slot = match (container, option.as_str()) {
                 (true, "rename_all") => &mut result.rename_all,
                 (true, "generated_prefix") => &mut result.generated_prefix,
+                (true, "unknown") => &mut result.unknown,
                 (false, "rename") => &mut result.rename,
+                (false, "default") => {
+                    if result.default.is_some() {
+                        return Err(meta.error("duplicate default option"));
+                    }
+                    result.default = Some(meta.value()?.parse()?);
+                    return Ok(());
+                }
                 (false, "partition_key" | "sort_key") => {
                     let flag = if option == "partition_key" {
                         &mut result.partition_key
@@ -37,7 +47,7 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                 _ => return Err(meta.error("unsupported tabulary option")),
             };
             if slot.is_some() {
-                return Err(meta.error("duplicate naming option"));
+                return Err(meta.error(format!("duplicate {option} option")));
             }
             *slot = Some(meta.value()?.parse()?);
             Ok(())

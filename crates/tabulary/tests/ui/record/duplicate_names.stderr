@@ -1,0 +1,23 @@
+error: duplicate wire name `orderRef`
+ --> tests/ui/record/duplicate_names.rs:6:25
+  |
+6 |     #[tabulary(rename = "orderRef")]
+  |                         ^^^^^^^^^^
+
+error: first declared here
+ --> tests/ui/record/duplicate_names.rs:4:40
+  |
+4 |     #[tabulary(partition_key, rename = "orderRef")]
+  |                                        ^^^^^^^^^^
+
+error: duplicate wire name `orderRef`
+  --> tests/ui/record/duplicate_names.rs:15:25
+   |
+15 |     #[tabulary(rename = "orderRef")]
+   |                         ^^^^^^^^^^
+
+error: first declared here
+  --> tests/ui/record/duplicate_names.rs:14:5
+   |
+14 |     order_ref: String,
+   |     ^^^^^^^^^

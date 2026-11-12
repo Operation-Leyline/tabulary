@@ -1,0 +1,11 @@
+error: unknown must be "allow" or "deny"
+ --> tests/ui/record/unknown_policy.rs:2:49
+  |
+2 | #[tabulary(rename_all = "snake_case", unknown = "ignore")]
+  |                                                 ^^^^^^^^
+
+error: duplicate unknown option
+ --> tests/ui/record/unknown_policy.rs:9:58
+  |
+9 | #[tabulary(rename_all = "snake_case", unknown = "allow", unknown = "deny")]
+  |                                                          ^^^^^^^

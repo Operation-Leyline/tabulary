@@ -1,0 +1,11 @@
+error: expected `=`
+ --> tests/ui/record/default_options.rs:6:23
+  |
+6 |     #[tabulary(default)]
+  |                       ^
+
+error: duplicate default option
+  --> tests/ui/record/default_options.rs:15:44
+   |
+15 |     #[tabulary(default = initial_quantity, default = initial_quantity)]
+   |                                            ^^^^^^^

@@ -1,0 +1,17 @@
+error[E0080]: evaluation panicked: primary keys require S, N or B codecs
+ --> tests/ui/record/non_scalar_keys.rs:5:5
+  |
+5 |     id: bool,
+  |     ^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: primary keys require S, N or B codecs
+  --> tests/ui/record/non_scalar_keys.rs:14:5
+   |
+14 |     lines: tabulary::List<u64>,
+   |     ^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: primary keys require S, N or B codecs
+  --> tests/ui/record/non_scalar_keys.rs:21:5
+   |
+21 |     id: tabulary::Nullable<String>,
+   |     ^^ evaluation of `_` failed here

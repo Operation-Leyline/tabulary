@@ -480,7 +480,8 @@ Encoding `Nullable::Value` rejects an inner codec's NULL output with
 `Custom { code: "null_inner_value" }` rather than silently collapsing it into
 the outer `Nullable::Null`. This includes nested nullable values.
 
-A field's `default = path` names a visible `fn() -> T`. It runs only for a
+A field's `default = path` names a visible `fn() -> T`, where `T` is the
+declared field type (the whole `Option<U>` for an optional field). It runs only for a
 missing field, never wrong types, NULL, malformed values, or failed validation.
 Key fields, template sources, discriminator tags, and version fields cannot
 have defaults. `Option` absence is its explicit presence rule, not a fallback
@@ -1256,8 +1257,11 @@ precedence over the completed-surface sketch below for this stage.
 The merged metadata-only `Record` trait stays unchanged. For now the derive
 emits inherent `to_item`, `from_item`, `key`, and `primary` methods; `RecordKey`
 provides key encode/decode, accepting a full item's extra fields on key decode.
-Full record decode rejects unknown fields in sorted order. Explicit defaults,
-the configurable unknown policy, and compile-fail snapshots follow in 11b.
+Milestone 11b adds missing-only explicit defaults and the configurable unknown
+policy: full record decode rejects unknown fields in sorted order unless
+`unknown = "allow"` is declared. Its compile-fail snapshots cover duplicate wire
+names at both declarations, optional/non-scalar primary keys, key defaults,
+invalid/duplicate policy options, and invalid default options/signatures.
 `Document`/nested `Value` expansion and generic bounds belong to milestone 12;
 query-facing primary interfaces belong to milestone 23. Primary/index peer
 types are currently markers. No builders, queries, or nested records are implied.
