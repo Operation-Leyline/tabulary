@@ -1249,6 +1249,30 @@ error wrapping and freezing belong to milestone 43's adapter below. The adapter
 must consume the core into a partial result on terminal failure; the low-level
 core's nonmutating rejection is not permission to retry a failed SDK call.
 
+Milestone 43 stages the SDK adapter separately from projection selection.
+`Table::batch_get(keys, consistency, budget)` validates immediately and returns
+`BatchGet<R, K>`. `next_request()` prepares an immutable `PreparedBatchGet<P>`
+using the shared prepared-request storage; `input()`, `expressions()` and `apply`
+expose/copy the complete SDK input. `decode` returns an opaque `BatchGetRound<P>`
+containing its issued identity and either decoded values or a typed fault.
+`accept` validates that identity before accounting or changing progress.
+`BatchGetError<K, P> { kind, partial }` boxes its owned partial; the kind is
+`BatchGetFailure::{State, Sdk, Decode, Aborted}`. Budget exhaustion is
+`State(BatchStateError::BudgetExhausted)`, rather than a separate batch enum.
+The complete and partial core result types now have `capacity` vectors; pure
+core operations leave them empty. The SDK adapter preserves one complete vector
+per accepted round, including an empty vector when the SDK supplies no accounting.
+A malformed or unexpected physical key, wrong table, duplicate or overlapping
+response is `State(InvalidResponse)`: none of that round's item states is trusted.
+Once all keys correlate, decoding retains every valid record from that round;
+failed positions remain Pending and the first decode fault names its original
+input position and attribute path. Prior progress and all received capacities
+survive both paths. A terminal error transfers ownership to its partial and
+subsequent operations return Frozen (their partial is empty, already transferred).
+`abort_round(Cancelled | Deadline)` freezes an outstanding round; `finish` returns
+the abort cause and all owned progress. Aborting with no outstanding round is
+WrongRound. An aborted round adds no capacity vector, since no result was accepted.
+
 The design resolves two requirements together: unprocessed items cannot
 disappear, and tabulary cannot retry or hide calls. Batch state prepares the
 next request only when the caller asks. It performs no I/O and does not sleep.
