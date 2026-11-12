@@ -41,6 +41,7 @@ pub enum BatchStateError {
     InvalidResponse,
     BudgetExhausted,
     PendingWork,
+    Indeterminate,
 }
 impl fmt::Display for BatchStateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
