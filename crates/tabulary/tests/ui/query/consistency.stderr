@@ -13,3 +13,19 @@ help: provide the argument
   |
 6 |     table.query(key, /* ReadConsistency */);
   |                    +++++++++++++++++++++++
+
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+  --> tests/ui/query/consistency.rs:11:11
+   |
+11 |     table.query(key);
+   |           ^^^^^----- argument #2 of type `ReadConsistency` is missing
+   |
+note: method defined here
+  --> src/query.rs
+   |
+   |     pub fn query<S>(
+   |            ^^^^^
+help: provide the argument
+   |
+11 |     table.query(key, /* ReadConsistency */);
+   |                    +++++++++++++++++++++++

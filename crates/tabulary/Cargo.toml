@@ -1,6 +1,6 @@
 [package]
 name = "tabulary"
-description = "Typed DynamoDB records and request plans (design skeleton)"
+description = "Typed DynamoDB records and request plans"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

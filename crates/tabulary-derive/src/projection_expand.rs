@@ -9,6 +9,8 @@ pub fn projection(s: &Projection) -> TokenStream {
     let mut defaults = Vec::new();
     for field in &s.fields {
         let (name, ty, handle) = (&field.id, &field.ty, &field.handle);
+        // Trait-bound errors belong to the selected field, not record = Source.
+        let source = crate::expand::at(quote!(#source), name.span());
         let index = quote!({ (#handle).descriptor().index });
         selections.push(quote_spanned!(name.span()=> #path::projection::append(&mut names, #path::projection::select::<#source, #index, _, _>(#handle)?)?;));
         let decode = if field.nested {

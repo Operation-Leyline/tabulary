@@ -1,8 +1,10 @@
 # tabulary
 
-**Status: early implementation.** Structured errors, paths, and encode/decode contexts
-are implemented; record codecs and derives are still planned. The Rust below describes
-the proposed API and does not yet compile against the library.
+**Status: implemented, with contract gaps listed in [the design](docs/design.md#16-test-contract-and-ci).**
+Record codecs and derives, typed expressions, prepared operations, cursors, batches,
+transactions, and table definitions have unit, compile-fail, SDK-fixture, and emulator
+tests. All seven [worked examples](docs/examples/README.md) compile as test modules;
+their public functions run against deterministic SDK responses with result assertions.
 
 tabulary makes a Rust struct a typed DynamoDB item. A derive declares attribute
 names and keys once. The same declaration drives strict decoding, expressions,
@@ -36,7 +38,7 @@ async fn read_line(client: &aws_sdk_dynamodb::Client) -> Result<(), Box<dyn std:
 }
 ```
 
-tabulary targets `aws-sdk-dynamodb` 1.x. It will support typed conditions and
+tabulary targets `aws-sdk-dynamodb` 1.x. It supports typed conditions and
 updates, composite keys, sparse indexes, projections, explicit pagination,
 batches, and transactions with typed cancellation reasons. It adds no retry loop
 and makes no network calls. The SDK's own retry settings remain the caller's choice.
@@ -53,14 +55,14 @@ Edition 2024; MSRV **Rust 1.97.1**. Both crates forbid unsafe code. The runtime
 depends on `aws-sdk-dynamodb` with API floor **1.130.0** and default SDK features
 disabled. Applications enable the SDK transport features they need. The default
 `derive` feature includes the optional macro crate; `--no-default-features`
-omits it. The macro implementations and runtime API are still future milestones.
+omits it while retaining the runtime API for manual trait implementations.
 
 CI runs formatting, check, clippy, and tests with the committed lockfile. A
 separate MSRV matrix checks the exact SDK floor and the current compatible
 release with both `--all-features` and `--no-default-features`. SDK fixtures
 exercise attribute values and modeled conditional-failure items without I/O;
 the dependency guard rejects SDK features and transitive transport dependencies.
-The error and context acceptance tests run in the same workspace test step.
+The endpoint job runs the discovered endpoint suite against a pinned dynoxide emulator.
 
 ```sh
 cargo check --workspace --all-targets --locked
@@ -71,7 +73,10 @@ python scripts/check_sdk_features.py --all-features
 python scripts/check_sdk_features.py --no-default-features
 ```
 
-Endpoint integration tests are specified in the design and milestones; the empty
-skeleton does not yet run DynamoDB tests or type-check the proposed examples.
+Emulator results do not establish exact DynamoDB equivalence. Real-service checks
+remain unexecuted for extreme numeric continuation-key spelling and the 192-byte
+cursor bound, the conservative 2 MiB expression-binding cap, the transaction
+aggregate's assumed binary 4 MiB boundary, and TTL activation timing. Exact remote
+billing equivalence is also unverified.
 
 Licensed under [Apache-2.0](LICENSE).

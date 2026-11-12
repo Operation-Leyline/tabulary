@@ -1,9 +1,13 @@
 # tabulary design
 
-Status: **design**, not an implemented API. This document is the implementation
-contract. The empty crates compile; the proposed API examples do not yet
-type-check against them. [Milestones](milestones.md) define when each example must
-become a compiling test.
+Status: **implemented library with documented contract gaps**. Record codecs and
+derives, typed expressions, prepared operations, cursor bytes, batches,
+transactions, and table definitions have unit, compile-fail, and SDK-fixture
+coverage. CI runs the SDK/MSRV feature matrix and the discovered endpoint suite
+against a pinned dynoxide emulator. All seven [examples](examples/README.md)
+compile as real test modules and their public functions have result assertions.
+Section 16 lists remaining API and real-service verification gaps; passing these
+tests does not establish exact DynamoDB equivalence.
 
 ## 1. Scope and design rules
 
@@ -54,9 +58,8 @@ struct conversion. tabulary does not depend on an SDK roadmap commitment.
   `Projection` derives, re-exported by the runtime's `derive` feature.
 
 Both use edition 2024, MSRV **1.97.1**, Apache-2.0, and
-`#![forbid(unsafe_code)]`. The skeleton has no third-party dependencies.
-Implementation adds `aws-sdk-dynamodb = "1.130.0"` with default features
-disabled, plus the optional derive crate. The runtime's default feature set is
+`#![forbid(unsafe_code)]`. The runtime uses `aws-sdk-dynamodb = "1.130.0"`
+with default features disabled, plus the optional derive crate. The runtime's default feature set is
 `["derive"]`; disabling it supports manual trait implementations.
 The application enables SDK transport features.
 The macro crate needs only `syn`, `quote`, and `proc-macro2`.
@@ -145,30 +148,34 @@ implement the corresponding `IndexSchema<R>` contract. Their generated inherent
 `partition` methods accept one argument per logical component and pack them into
 the associated partition type; composite codecs format that tuple. The runtime's
 `KeyCondition<R, I>` exposes valid sort methods through I's Sort type.
-`Primary<R>` is only a convenience alias for `<R as Record>::Primary`, including
-when used as a cursor marker. This avoids Rust's foreign inherent-impl restriction.
+Query cursors use the concrete primary peer, such as `OrderPrimary`.
+The earlier `Primary<R>` alias sketch is not implemented because `Record`
+remains metadata-only. This avoids Rust's foreign inherent-impl restriction.
 
 ### 2.1 Runtime traits
 
-These are signature sketches, not code already present in the empty library.
+These are the current runtime trait boundaries. `Record` owns metadata,
+`table_definition()`, and `billed_size()` (the last requires `Document`).
+It has no document supertrait or associated key/primary types.
+The derive emits inherent `to_item`, `from_item`, `key`, and `primary` methods.
+Manual records implement `Document` and `RecordKey<R>` separately when needed.
+Use the generated primary peer as a query cursor marker; a table scan uses `()`.
+There is no `Primary<R>` alias; use the concrete primary peer.
 
 ```rust,ignore
 pub type Item = std::collections::HashMap<String, aws_sdk_dynamodb::types::AttributeValue>;
 
 pub trait Document: Sized {
+    const FIELDS: &'static [FieldDescriptor] = &[];
     const NAME: &'static str;
     fn encode_map(&self, cx: &mut EncodeContext) -> Result<Item, EncodeError>;
     fn decode_map(item: &Item, cx: &mut DecodeContext) -> Result<Self, DecodeError>;
 }
 
-pub trait Record: Document {
-    type Key: RecordKey<Self>;
-    type Primary: PrimarySchema<Self>;
+pub trait Record: Sized {
     const SCHEMA: RecordSchema;
-    fn key(&self) -> Result<Self::Key, EncodeError>;
-    fn primary() -> Self::Primary;
-    fn to_item(&self) -> Result<Item, EncodeError>; // default delegates to Document
-    fn from_item(item: &Item) -> Result<Self, DecodeError>; // same
+    fn billed_size(&self) -> Result<BilledSize, EncodeError> where Self: Document;
+    fn table_definition() -> TableDefinition<Self>; // provided default
 }
 
 pub trait Value: Sized {
@@ -1577,8 +1584,8 @@ result in `PreparedPut<R>` (`PreparedRequest<PutItemInput, R>`). Conditions
 are validated and rendered at build; repeated `condition` calls AND their
 predicates. Refusal decoding derives `OldItemMode`
 from the immutable input's failure-return option and uses the shared classifier.
-The registered `01_simple.rs` compile test uses `BilledSize::of_item` directly;
-the sketched record-level `billed_size()` convenience is not yet implemented.
+The registered `01_simple.rs` test uses `BilledSize::of_item` directly;
+`Record::billed_size()` is also available after the milestone 49 contract review.
 
 ### 11.2 Composing a transaction
 
@@ -1777,13 +1784,14 @@ policy of its own.
 
 ## 13. Item size and capacity boundaries
 
-`Record::billed_size(&self) -> Result<BilledSize, EncodeError>` encodes with
-the same codecs as a put. `BilledSize::of_item(&Item)` sizes an already encoded
+`Record::billed_size(&self)` encodes with the same document codec as a put.
+It requires `Self: Document` and returns `Result<BilledSize, EncodeError>`.
+`BilledSize::of_item(&Item)` sizes an already encoded
 item without cloning. It includes physical names, synthetic keys, and only
 attributes actually present.
 
-Milestone 09 provides the standalone estimator; the `Record::billed_size`
-convenience method follows when record encoding is introduced. `of_item`
+Milestone 09 provides the standalone estimator; milestone 49 adds the
+`Record::billed_size` convenience. `of_item`
 accepts a borrowed SDK `HashMap<String, AttributeValue>` (the planned `Item`
 alias) and returns `Result<BilledSize, EncodeError>`. Its diagnostic root is
 `Item`, with physical attribute/index paths. It validates numeric domain and
@@ -1931,148 +1939,18 @@ empty-key or key-size variants: these decode failures use
 `KeyFormat(InvalidLength)` at the physical attribute; encoding retains
 `EmptyKey` or `KeySize`. The native codec reports numeric-domain failures first.
 
-This is the semantic expansion for the three-field Order in the README.
-Generated boilerplate is shown using runtime helpers to keep it legible;
-the helpers below are part of the planned macro/runtime contract. No
-`todo!()` implementation is being passed off as a working derive.
+The checked expansion fixture above is the source of truth for generated code.
+`expand::tests::expansion_matches_fixture` checks its tokens and
+`crates/tabulary/tests/record_derive.rs` compiles the fixture as a module.
+Generated code uses reserved macro/runtime hooks. These hooks are not application
+examples or a supported manual-construction API. The former semantic sketch was
+removed because it advertised nonexistent MapWriter/MapReader/KeyWriter/KeyReader
+helpers, a six-argument schema helper, and a richer Record trait than implemented.
 
-```rust,ignore
-struct OrderAttrs;
-impl OrderAttrs {
-    const ORDER_REF: tabulary::Attr<Order, String, tabulary::Required, tabulary::KeyOnly> =
-        tabulary::__private::field("order_ref", 0);
-    const LINE_NO: tabulary::Attr<Order, u64, tabulary::Required, tabulary::KeyOnly> =
-        tabulary::__private::field("line_no", 1);
-    const QUANTITY: tabulary::Attr<Order, u64> =
-        tabulary::__private::field("quantity", 2);
-}
-
-struct OrderIndexes;
-#[derive(Clone, Copy)]
-struct OrderPrimary;
-
-impl tabulary::KeySchema<Order> for OrderPrimary {
-    type Partition = String;
-    type PartitionCodec = tabulary::Native<String>;
-    type Sort = tabulary::SortKey<u64>;
-    const KEYS: tabulary::KeyDefinition = tabulary::__private::keys(0, Some(1));
-}
-impl tabulary::PrimarySchema<Order> for OrderPrimary {}
-
-impl OrderPrimary {
-    fn partition(self, order_ref: String) -> tabulary::KeyCondition<Order, Self> {
-        tabulary::__private::partition::<Order, Self, _, tabulary::Native<String>>(Ok(order_ref))
-    }
-}
-
-struct OrderKey {
-    order_ref: String,
-    line_no: u64,
-}
-
-impl OrderKey {
-    fn new(order_ref: String, line_no: u64) -> Result<Self, tabulary::EncodeError> {
-        let key = Self { order_ref, line_no };
-        tabulary::__private::validate_key::<Order>(&key)?;
-        Ok(key)
-    }
-}
-
-impl tabulary::RecordKey<Order> for OrderKey {
-    fn encode_key(&self) -> Result<tabulary::Item, tabulary::EncodeError> {
-        let mut writer = tabulary::__private::KeyWriter::new::<Order>();
-        writer.partition(OrderAttrs::ORDER_REF, &self.order_ref)?;
-        writer.sort(OrderAttrs::LINE_NO, &self.line_no)?;
-        writer.finish()
-    }
-    fn decode_key(item: &tabulary::Item) -> Result<Self, tabulary::DecodeError> {
-        let mut reader = tabulary::__private::KeyReader::new::<Order>(item);
-        let key = Self {
-            order_ref: reader.partition(OrderAttrs::ORDER_REF)?,
-            line_no: reader.sort(OrderAttrs::LINE_NO)?,
-        };
-        reader.finish()?;
-        Ok(key)
-    }
-}
-
-impl tabulary::Document for Order {
-    const NAME: &'static str = "Order";
-
-    fn encode_map(&self, cx: &mut tabulary::EncodeContext)
-        -> Result<tabulary::Item, tabulary::EncodeError>
-    {
-        let mut w = tabulary::__private::MapWriter::new(cx);
-        w.required(OrderAttrs::ORDER_REF, &self.order_ref)?;
-        w.required(OrderAttrs::LINE_NO, &self.line_no)?;
-        w.required(OrderAttrs::QUANTITY, &self.quantity)?;
-        w.finish()
-    }
-
-    fn decode_map(item: &tabulary::Item, cx: &mut tabulary::DecodeContext)
-        -> Result<Self, tabulary::DecodeError>
-    {
-        let mut r = tabulary::__private::MapReader::new(item, cx);
-        let value = Self {
-            order_ref: r.required(OrderAttrs::ORDER_REF)?,
-            line_no: r.required(OrderAttrs::LINE_NO)?,
-            quantity: r.required(OrderAttrs::QUANTITY)?,
-        };
-        r.finish(tabulary::UnknownAttributes::Deny)?;
-        Ok(value)
-    }
-}
-
-impl tabulary::Record for Order {
-    type Key = OrderKey;
-    type Primary = OrderPrimary;
-    const SCHEMA: tabulary::RecordSchema = tabulary::__private::schema(
-        "Order",
-        &[
-            OrderAttrs::ORDER_REF.descriptor(),
-            OrderAttrs::LINE_NO.descriptor(),
-            OrderAttrs::QUANTITY.descriptor(),
-        ],
-        tabulary::__private::keys(0, Some(1)),
-        &[], // indexes
-        None, // TTL
-        None, // version
-    );
-
-    fn key(&self) -> Result<OrderKey, tabulary::EncodeError> {
-        OrderKey::new(self.order_ref.clone(), self.line_no)
-    }
-    fn primary() -> Self::Primary {
-        OrderPrimary
-    }
-}
-
-impl tabulary::Value for Order {
-    type Wire = tabulary::wire::Map;
-    fn encode_value(&self, cx: &mut tabulary::EncodeContext)
-        -> Result<aws_sdk_dynamodb::types::AttributeValue, tabulary::EncodeError>
-    {
-        <Self as tabulary::Document>::encode_map(self, cx)
-            .map(aws_sdk_dynamodb::types::AttributeValue::M)
-    }
-    fn decode_value(value: &aws_sdk_dynamodb::types::AttributeValue,
-        cx: &mut tabulary::DecodeContext) -> Result<Self, tabulary::DecodeError>
-    {
-        tabulary::__private::decode_document(value, cx)
-    }
-}
-```
-
-`Record` default methods implement to_item/from_item/billed_size/table_definition
-using these generated pieces. The expansion additionally emits Clone for
-the key, direct primary-key query component trait implementations, and index
-builders when declared. It does not add Clone, Debug, or Default to the record.
-Key field types must support owned cloning; the bound is diagnosed at the field.
-Keys do not require Rust Eq, allowing checked floating-point key codecs;
-identity uses canonical encoded physical values.
-MapWriter/MapReader accept all Access modes and enforce path context. Their
-finish methods validate key/index invariants and depth. The native Value
-implementations own scalar conversion.
+Generated keys implement `Clone`, without adding `Clone`, `Debug`, or `Default`
+to the record. Key field types must support owned cloning; keys do not require
+Rust Eq. Identity compares canonical physical values. The native Value codecs
+own scalar conversion.
 
 Derives parse attributes into a small checked schema IR, then generate code.
 Reject duplicates, unsupported combinations, missing names/keys, bad templates,
@@ -2097,9 +1975,17 @@ boundary against deliberately dishonest trait implementations.
 
 ## 16. Test contract and CI
 
-The skeleton workflow runs fmt, check, clippy with warnings denied, and tests
-on the MSRV. Its current tests count is zero. It does not establish mapping,
-SDK, emulator, or live-service correctness. Implementation PRs add these gates:
+CI runs fmt, check, clippy with warnings denied, and workspace tests on the MSRV.
+The compatibility matrix runs every workspace test target and doctest against the
+exact SDK floor and current MSRV-compatible dependencies, in both feature modes.
+Only derive macro re-exports depend on the `derive` feature; runtime implementations
+have the same meaning in both modes. Derive-dependent tests are feature-gated;
+manual codec, schema, expression, SDK, and state tests still run without it.
+`scripts/check_sdk_features.py` checks the normal/build graph in both modes.
+The endpoint runner inventories every ignored endpoint test before running it and
+requires all inventoried tests to pass. There are no ignored tests outside that
+suite. Deterministic SDK fixtures cover responses that cannot be induced reliably
+offline. The required evidence is:
 
 | Layer | Required evidence |
 | --- | --- |
@@ -2138,6 +2024,61 @@ register it as a Cargo example or compile test and make it type-check against th
 real API; no temporary mock crate may satisfy that gate.
 Wire-size and conservative numeric-size tests additionally need a documented
 live-service boundary experiment before claims of exact billing equivalence.
+
+### 16.1 Public contract review
+
+The public surface includes these inspectable/supporting APIs in addition to the
+operations described above:
+
+| Surface | Contract |
+| --- | --- |
+| `condition::{Operator, Operand, ConditionNode, Size}` | Read-only built AST inspection and the typed `size()` operand. `root()` borrows and `into_root()` consumes the condition. Inspecting `Operand::Value` explicitly exposes its raw SDK constant. |
+| `update::{Action, SetOperand, SetExpression, SetNode, ActionNode}`, `Path`, `MapKey`, `Element` | Typed unbuilt actions/operands and built tree inspection. `Element` marks list-element presence. Constructed AST nodes cannot be injected into builders. |
+| `FieldDescriptor`, `KeyDefinition`, `RecordSchema`, `IndexDefinition`, `IndexKind`, `IndexProjection` | Public static metadata for manual schemas. `RecordSchema::attribute_definitions()` returns physical key definitions; `with_indexes` and `with_ttl` are doc-hidden derive helpers. Version metadata uses `FieldAccess::VersionOnly`, not a schema field. |
+| `EncodeContext`, `DecodeContext`, `AttributePath`, `PathSegment` | Manual codec traversal via `new`, `at`, `in_document`, `enter_container`, `error`, `segments`, and `attribute`; child contexts preserve their parent. |
+| `Cursor::last_evaluated_key`, `PageMetadata::last_evaluated_key` | Explicit raw continuation-key access; Debug remains redacted. Page metadata retains SDK counts. |
+| `Batch*Progress`, `Batch*Chunk`, `Batch*Entry`, `Batch*State`, `Batch*Complete`, `Batch*Incomplete`, `Batch*Partial` | Public pure progress cores and ordered results in section 10. `positions`, `keys`, `entries`, and `calls_issued` inspect state without issuing work. Adapter round/result/error names specialize each API. `BatchAction::key/item` explicitly expose frozen raw values. |
+| `Redacted::new/expose/into_inner`, `OldItem::decode`, `Table::name`, `BatchBudget::max_calls` | Explicit wrapping/raw access, standalone old-record decoding, binding identifier and budget inspection. |
+
+Reserved public hooks also exist outside `__private`: doc-hidden
+`projection::{ProjectionSource, SourceField, Handle, NestedValue}` and helper
+functions, `Projection::project_source`, `key_component::take`, and
+`TxActions::decode_reasons`. Generated doc-hidden `__Tabulary*ProjectionParts`
+carriers, `*PartitionCodec`/`*SortCodec` peers, and `*PrefixParts` traits also
+support cross-crate expansion. These names need public visibility to appear in
+associated types or generated bounds; they are not independent application APIs.
+Implementing a manual Projection currently also requires its source's
+`ProjectionSource` hook.
+The seven worked examples and README use no `__private` items.
+
+The review found larger gaps in the intended contract that remain unimplemented:
+
+- Section 4.1's `validate = ...` record hook and `ValidationFault` type do not exist;
+  the derive rejects that option. There is no acceptance test for that promised
+  hook or the status-dependent sparse-membership validation that relies on it.
+- Section 5's `.variant(tag)` payload handles and their implicit tag-guarded
+  conditions do not exist. Whole-group projections and guarded transitions do.
+  Scoped payload-condition acceptance remains unexecuted.
+- Manual codecs/schemas work, but constructing typed handles or manual query entry
+  points currently requires reserved helpers. A supported constructor API needs
+  a separate contract decision; examples do not make these helpers public guidance.
+
+These gaps require follow-up work; the final review does not claim the whole
+design is implemented. The metadata-only Record boundary and missing `Primary<R>`
+alias are stated in section 2. The small `Record::billed_size()` omission is fixed
+with a provided method constrained by `Document`, as described in section 13.
+
+### 16.2 Real-service evidence still needed
+
+No real DynamoDB run has verified extreme numeric continuation-key spellings
+and therefore acceptance of the 192-byte cursor number bound. The 2 MiB
+expression-binding cap uses a conservative JSON measurement rather than an
+observed service boundary. Transaction aggregation assumes binary megabytes
+(4 MiB) for the service's documented 4 MB limit. TTL request shapes and stored
+values have fixtures/emulator coverage, but real-service TTL activation timing
+and physical expiry remain unverified. Conservative item sizing also lacks
+remote billing-equivalence evidence. None of these offline gates claims exact
+service equivalence.
 
 ## 17. Alternatives rejected
 

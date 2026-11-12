@@ -96,6 +96,7 @@ pub fn bounds(record: &Record, generics: &mut syn::Generics) {
     }
 }
 pub fn codec(codec: Codec, span: Span, path: &syn::Path) -> TokenStream {
+    let path = crate::expand::at(quote!(#path), span);
     let name = syn::Ident::new(
         match codec {
             Codec::Hex => "Hex",
@@ -155,6 +156,7 @@ fn format(
         Part::Literal(s) => quote!(#output.push_str(#s);),
         Part::Component { field, codec: kind, .. } => {
             let f = &record.fields[*field]; let (id, ty) = (&f.ident, &f.ty);
+            let path = crate::expand::at(quote!(#path), id.span());
             let value = if receiver && !f.optional { quote!(&self.#id) } else { quote!(&#id) };
             let cx = component_context(record, key, Some(*field)); let codec = codec(*kind, record.fields[*field].ident.span(), &record.crate_path);
             let reserved = if *kind == Codec::Text { boundary(full, position).1 } else { None };
@@ -212,6 +214,7 @@ pub fn decode(record: &Record, key: usize) -> TokenStream {
             Part::Component { field, codec: kind, width } => {
                 let (tail, separator) = boundary(parts, position); let separator = option(separator); let width = option(*width);
                 let local = parsed(key, *field); let codec = codec(*kind, record.fields[*field].ident.span(), &record.crate_path); let ty = &record.fields[*field].ty; let id = &record.fields[*field].ident;
+                let path = crate::expand::at(quote!(#path), id.span());
                 quote_spanned! {id.span()=>
                     let #local: #ty = {
                         let component = #path::key_component::take(&mut #rest, #width, #tail, #separator).map_err(|fault| #cx.error(#path::DecodeFault::KeyFormat(fault)))?;
@@ -430,6 +433,7 @@ pub fn template_codec(
     let mut declaration_name = codec.clone();
     declaration_name.set_span(codec_span);
     let codec_declaration = quote_spanned!(codec_span=>
+        #[doc(hidden)]
         #vis struct #declaration_name #generics (::core::marker::PhantomData<fn() -> #owner #tg>) #wc;
     );
     let declaration = quote! {
