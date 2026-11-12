@@ -69,7 +69,11 @@ pub fn envelope() -> Result<InvoiceEnvelope, Box<dyn Error>> {
         external_number: 123,
         full_width_number: u128::MAX,
         ratio: 0.5,
-        exact_price: "19.75".parse::<Decimal>()?,
+        exact_price: "19.75".parse::<Decimal>().map_err(|kind| {
+            tabulary::DecodeContext::new("InvoiceEnvelope")
+                .at(tabulary::PathSegment::Attribute("exact_price".into()))
+                .error(kind)
+        })?,
         attachment: vec![0x2a, 0x2b],
         signature_bytes: [0x6e; 16],
         verified: true,

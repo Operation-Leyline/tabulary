@@ -571,6 +571,17 @@ too, preventing an update from writing a different representation than a put.
 Converters return structured `Custom { code: &'static str }` faults and cannot
 override the owning path. No error value includes the rejected input.
 
+`Record` and `Document` field declarations select `with = module` for the logical
+type (the inner type for `Option<T>`). Projections inherit that selection.
+Physical primary and index keys may use converters with an S, N, or B wire type;
+key validation still checks the encoded value. A template source's field converter
+controls its separately stored attribute; the template's component codec controls
+the synthesized key and compares inverse-parsed logical values on decode.
+Version and annotated TTL fields require their native codecs so their dedicated
+operations retain the declared numeric representation. A flattened variants group
+cannot have `with`: its discriminator stays native and its payload fields select
+their own converters. A nested variants map may use a field converter.
+
 `Native<T>` adapts `Value` to `Converter<T>`. The `field` helpers
 `encode_optional`, `decode_optional`, and `decode_required` accept a context
 already positioned at the physical field and use its selected converter.

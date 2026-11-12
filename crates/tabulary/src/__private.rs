@@ -2,7 +2,7 @@
 use std::marker::PhantomData;
 
 pub use crate::key_condition::partition;
-pub use crate::record::{decode_key, encode_key};
+pub use crate::record::{decode_key, decode_key_with, encode_key, encode_key_with};
 pub use crate::value::wrong_type;
 pub use crate::variants::disjoint;
 pub use aws_sdk_dynamodb::types::AttributeValue;

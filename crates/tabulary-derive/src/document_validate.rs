@@ -20,6 +20,11 @@ pub fn bounds(schema: &crate::validate::Record) -> Generics {
                 .make_where_clause()
                 .predicates
                 .push(syn::parse_quote_spanned!(field.ident.span()=> #ty: #path::Variants));
+        } else if field.with.is_some() {
+            let codec = field.codec(path);
+            generics.make_where_clause().predicates.push(
+                syn::parse_quote_spanned!(field.ident.span()=> #codec: #path::Converter<#ty>),
+            );
         } else if !references_self(quote::quote!(#ty), &schema.ident) {
             generics
                 .make_where_clause()

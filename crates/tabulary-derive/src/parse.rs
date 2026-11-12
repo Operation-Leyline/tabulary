@@ -8,6 +8,7 @@ pub struct Options {
     pub unknown: Option<LitStr>,
     pub crate_path: Option<LitStr>,
     pub default: Option<Path>,
+    pub with: Option<Path>,
     pub partition_key: bool,
     pub sort_key: bool,
     pub flatten: bool,
@@ -70,11 +71,16 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                     result.flatten = true;
                     return Ok(());
                 }
-                (false, "default") => {
-                    if result.default.is_some() {
-                        return Err(meta.error("duplicate default option"));
+                (false, "default" | "with") => {
+                    let slot = if option == "with" {
+                        &mut result.with
+                    } else {
+                        &mut result.default
+                    };
+                    if slot.is_some() {
+                        return Err(meta.error(format!("duplicate {option} option")));
                     }
-                    result.default = Some(meta.value()?.parse()?);
+                    *slot = Some(meta.value()?.parse()?);
                     return Ok(());
                 }
                 (false, "partition_key" | "sort_key") => {

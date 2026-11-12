@@ -1,0 +1,246 @@
+error[E0599]: the method `lt` exists for struct `Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Codec>`, but its trait bounds were not satisfied
+  --> tests/ui/converters/capabilities.rs:10:25
+   |
+10 |     InvoiceAttrs::TOTAL.lt(1);
+   |                         ^^ method cannot be called due to unsatisfied trait bounds
+   |
+  ::: src/attr.rs
+   |
+   | pub struct Attr<R, T, P = Required, A = Mutable, C = Native<T>> {
+   | --------------------------------------------------------------- doesn't satisfy `_: Iterator`
+   |
+  ::: src/convert.rs
+   |
+   |     pub struct Wire;
+   |     --------------- doesn't satisfy `Wire: Ordered`
+   |
+   = note: the following trait bounds were not satisfied:
+           `Wire: Ordered`
+           `Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Codec>: Iterator`
+           which is required by `&mut Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Codec>: Iterator`
+
+error[E0277]: the trait bound `Wire: tabulary::condition::Prefix` is not satisfied
+  --> tests/ui/converters/capabilities.rs:11:25
+   |
+11 |     InvoiceAttrs::TOTAL.begins_with(1);
+   |                         ^^^^^^^^^^^ the trait `tabulary::condition::Prefix` is not implemented for `Wire`
+   |
+help: the following other types implement trait `tabulary::condition::Prefix`
+  --> src/condition.rs
+   |
+   |     ($cap:ident: $($wire:ident),+) => {$(impl $cap for wire::$wire {})+};
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                                          |
+   |                                          `tabulary::wire::Binary`
+   |                                          `tabulary::wire::String`
+...
+   | capabilities!(Prefix: String, Binary);
+   | ------------------------------------- in this macro invocation
+note: required by a bound in `condition::<impl Attr<R, T, P, A, C>>::begins_with`
+  --> src/condition.rs
+   |
+   |     pub fn begins_with(self, value: T) -> Condition<R>
+   |            ----------- required by a bound in this associated function
+   |     where
+   |         C::Wire: Prefix,
+   |                  ^^^^^^ required by this bound in `condition::<impl Attr<R, T, P, A, C>>::begins_with`
+   = note: this error originates in the macro `capabilities` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Wire: SizedWire` is not satisfied
+  --> tests/ui/converters/capabilities.rs:12:25
+   |
+12 |     InvoiceAttrs::TOTAL.size();
+   |                         ^^^^ the trait `SizedWire` is not implemented for `Wire`
+   |
+   = help: the following other types implement trait `SizedWire`:
+             tabulary::wire::Binary
+             tabulary::wire::BinarySet
+             tabulary::wire::List
+             tabulary::wire::Map
+             tabulary::wire::NumberSet
+             tabulary::wire::String
+             tabulary::wire::StringSet
+note: required by a bound in `condition::<impl Attr<R, T, P, A, C>>::size`
+  --> src/condition.rs
+   |
+   |     pub fn size(self) -> Size<R>
+   |            ---- required by a bound in this associated function
+   |     where
+   |         C::Wire: SizedWire,
+   |                  ^^^^^^^^^ required by this bound in `condition::<impl Attr<R, T, P, A, C>>::size`
+
+error[E0277]: the trait bound `Codec: tabulary::condition::Contains<u128>` is not satisfied
+  --> tests/ui/converters/capabilities.rs:13:25
+   |
+13 |     InvoiceAttrs::TOTAL.contains(1);
+   |                         ^^^^^^^^ the trait `tabulary::condition::Contains<u128>` is not implemented for `Codec`
+   |
+   = help: the following other types implement trait `tabulary::condition::Contains<T>`:
+             `Native<std::string::String>` implements `tabulary::condition::Contains<std::string::String>`
+             `Native<tabulary::BinarySet>` implements `tabulary::condition::Contains<tabulary::BinarySet>`
+             `Native<tabulary::List<T>>` implements `tabulary::condition::Contains<tabulary::List<T>>`
+             `Native<tabulary::NumberSet<T>>` implements `tabulary::condition::Contains<tabulary::NumberSet<T>>`
+             `Native<tabulary::StringSet>` implements `tabulary::condition::Contains<tabulary::StringSet>`
+
+error[E0599]: no method named `add` found for struct `Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Codec>` in the current scope
+  --> tests/ui/converters/capabilities.rs:14:25
+   |
+14 |     InvoiceAttrs::TOTAL.add(1);
+   |                         ^^^ method not found in `Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Codec>`
+   |
+   = note: the method was found for `Attr<R, T, P>`
+
+error[E0599]: no method named `delete_members` found for struct `Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Codec>` in the current scope
+  --> tests/ui/converters/capabilities.rs:15:25
+   |
+15 |     InvoiceAttrs::TOTAL.delete_members(1);
+   |                         ^^^^^^^^^^^^^^ method not found in `Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Codec>`
+   |
+   = note: the method was found for `Attr<R, T, P>`
+
+error[E0277]: the trait bound `Wire: Numeric` is not satisfied
+  --> tests/ui/converters/capabilities.rs:16:25
+   |
+16 |     InvoiceAttrs::TOTAL.increment(1);
+   |                         ^^^^^^^^^ the trait `Numeric` is not implemented for `Wire`
+   |
+help: the trait `Numeric` is implemented for `Number`
+  --> src/update.rs
+   |
+   | impl Numeric for wire::Number {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `update::<impl Attr<R, T, P, tabulary::Mutable, C>>::increment`
+  --> src/update.rs
+   |
+   |     pub fn increment(self, delta: T) -> Action<R>
+   |            --------- required by a bound in this associated function
+   |     where
+   |         C::Wire: Numeric,
+   |                  ^^^^^^^ required by this bound in `update::<impl Attr<R, T, P, Mutable, C>>::increment`
+
+error[E0277]: the trait bound `Wire: Numeric` is not satisfied
+  --> tests/ui/converters/capabilities.rs:17:42
+   |
+17 |     InvoiceAttrs::TOTAL.if_not_exists(1).plus(1);
+   |                                          ^^^^ the trait `Numeric` is not implemented for `Wire`
+   |
+help: the trait `Numeric` is implemented for `Number`
+  --> src/update.rs
+   |
+   | impl Numeric for wire::Number {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `SetOperand::<R, T, C>::plus`
+  --> src/update.rs
+   |
+   |     pub fn plus(self, delta: T) -> SetExpression<R, T, C>
+   |            ---- required by a bound in this associated function
+   |     where
+   |         C::Wire: Numeric,
+   |                  ^^^^^^^ required by this bound in `SetOperand::<R, T, C>::plus`
+
+error[E0308]: mismatched types
+  --> tests/ui/converters/capabilities.rs:18:28
+   |
+18 |     InvoiceAttrs::TOTAL.eq("1".to_owned());
+   |                         -- ^^^^^^^^^^^^^^ expected `u128`, found `String`
+   |                         |
+   |                         arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/condition.rs
+   |
+   |     comparisons!(T; eq => Eq, ne => Ne);
+   |                     ^^
+
+error[E0308]: mismatched types
+  --> tests/ui/converters/capabilities.rs:19:33
+   |
+19 |     InvoiceAttrs::TOTAL.eq_path(InvoiceAttrs::NATIVE);
+   |                         ------- ^^^^^^^^^^^^^^^^^^^^ expected `Attr<Invoice, u128, _, _, Codec>`, found `Attr<Invoice, u128>`
+   |                         |
+   |                         arguments to this method are incorrect
+   |
+   = note: expected struct `Attr<Invoice, u128, _, _, Codec>`
+              found struct `Attr<Invoice, u128, tabulary::Required, tabulary::Mutable, Native<u128>>`
+note: method defined here
+  --> src/condition.rs
+   |
+   |     pub fn eq_path<P2: PresenceMarker, A2: AccessMarker>(
+   |            ^^^^^^^
+
+error[E0277]: the trait bound `SetExpression<Invoice, u128, Codec>: From<SetOperand<Invoice, u128>>` is not satisfied
+  --> tests/ui/converters/capabilities.rs:20:34
+   |
+20 |     InvoiceAttrs::TOTAL.set_expr(InvoiceAttrs::NATIVE.operand());
+   |                         -------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `From<SetOperand<Invoice, u128>>` is not implemented for `SetExpression<Invoice, u128, Codec>`
+   |                         |
+   |                         required by a bound introduced by this call
+   |
+help: the trait `From<SetOperand<Invoice, u128, Native<u128>>>` is not implemented for `SetExpression<Invoice, u128, Codec>`
+      but trait `From<SetOperand<Invoice, u128, Codec>>` is implemented for it
+  --> src/update.rs
+   |
+   | impl<R, T, C> From<SetOperand<R, T, C>> for SetExpression<R, T, C> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Codec`, found `Native<u128>`
+   = note: required for `SetOperand<Invoice, u128>` to implement `Into<SetExpression<Invoice, u128, Codec>>`
+note: required by a bound in `update::<impl Attr<R, T, P, tabulary::Mutable, C>>::set_expr`
+  --> src/update.rs
+   |
+   |     pub fn set_expr(self, expression: impl Into<SetExpression<R, T, C>>) -> Action<R> {
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `update::<impl Attr<R, T, P, Mutable, C>>::set_expr`
+
+error[E0599]: the method `sort_lt` exists for struct `KeyCondition<Invoice, InvoicePrimary, SortKey<u128, Codec>>`, but its trait bounds were not satisfied
+  --> tests/ui/converters/capabilities.rs:21:52
+   |
+21 |     Invoice::primary().partition("invoice".into()).sort_lt(1);
+   |                                                    ^^^^^^^
+   |
+  ::: src/convert.rs
+   |
+   |     pub struct Wire;
+   |     --------------- doesn't satisfy `Wire: Ordered`
+   |
+   = note: the following trait bounds were not satisfied:
+           `Wire: Ordered`
+
+error[E0277]: the trait bound `Codec: PrefixCodec<u128>` is not satisfied
+  --> tests/ui/converters/capabilities.rs:22:52
+   |
+22 |     Invoice::primary().partition("invoice".into()).sort_begins_with(1);
+   |                                                    ^^^^^^^^^^^^^^^^ the trait `PrefixCodec<u128>` is not implemented for `Codec`
+   |
+help: the trait `PrefixCodec<T>` is implemented for `Native<T>`
+  --> src/key_condition.rs
+   |
+   | / impl<T: Value> PrefixCodec<T> for Native<T>
+   | | where
+   | |     T::Wire: Prefix,
+   | |____________________^
+
+error[E0277]: the trait bound `Wire: tabulary::condition::Prefix` is not satisfied
+  --> tests/ui/converters/capabilities.rs:22:52
+   |
+22 |     Invoice::primary().partition("invoice".into()).sort_begins_with(1);
+   |                                                    ^^^^^^^^^^^^^^^^ the trait `tabulary::condition::Prefix` is not implemented for `Wire`
+   |
+help: the following other types implement trait `tabulary::condition::Prefix`
+  --> src/condition.rs
+   |
+   |     ($cap:ident: $($wire:ident),+) => {$(impl $cap for wire::$wire {})+};
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                                          |
+   |                                          `tabulary::wire::Binary`
+   |                                          `tabulary::wire::String`
+...
+   | capabilities!(Prefix: String, Binary);
+   | ------------------------------------- in this macro invocation
+note: required by a bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_begins_with`
+  --> src/key_condition.rs
+   |
+   |     pub fn sort_begins_with(self, value: C::Prefix) -> KeyCondition<R, I, SortComplete>
+   |            ---------------- required by a bound in this associated function
+...
+   |         C::Wire: Prefix,
+   |                  ^^^^^^ required by this bound in `KeyCondition::<R, I, SortKey<T, C>>::sort_begins_with`
+   = note: this error originates in the macro `capabilities` (in Nightly builds, run with -Z macro-backtrace for more info)
