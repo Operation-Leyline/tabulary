@@ -16,9 +16,13 @@ aws-sdk-dynamodb = { version = "1.130.0", default-features = false }
 tabulary-derive = { path = "../tabulary-derive", optional = true }
 
 [dev-dependencies]
+aws-config = { version = "1.13.2", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-dynamodb = { version = "1.130.0", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-smithy-runtime-api = { version = "1.21.0", default-features = false, features = ["client"] }
 aws-smithy-types = { version = "1.9.4", default-features = false }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 trybuild = "1.0.122"
+url = "2.5.8"
 
 [lints]
 workspace = true

@@ -65,3 +65,46 @@ jobs:
         run: cargo +1.97.1 check --workspace --all-targets --locked --${{ matrix.features }}
       - name: Exercise the SDK fixtures
         run: cargo +1.97.1 test --workspace --locked --${{ matrix.features }}
+
+  endpoint:
+    name: Dynoxide endpoint suite / MSRV
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the minimum supported toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build the pinned emulator
+        run: >-
+          cargo install --git https://github.com/nubo-db/dynoxide.git
+          --rev 179e591fac34e362f0fbe40cbacc03f43f162a46 --locked
+          --no-default-features --features native-sqlite,http-server,cli
+          --root "$RUNNER_TEMP/dynoxide" dynoxide-rs
+      - name: Verify runner failure paths
+        run: python -m unittest discover -s scripts -p test_run_endpoint.py
+      - name: Verify ignored invocation fails without an endpoint
+        shell: bash
+        run: |
+          if env -u TABULARY_DYNAMODB_ENDPOINT cargo test -p tabulary --test endpoint --locked -- --ignored; then
+            echo "Endpoint suite unexpectedly passed without an endpoint"
+            exit 1
+          fi
+      - name: Run isolated table lifecycle, CRUD and conditional old-item tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/run_endpoint.py "$RUNNER_TEMP/dynoxide/bin/dynoxide" --port 18038 2>&1 | tee endpoint.log
+      - name: Preserve emulator and endpoint logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: endpoint-logs
+          path: |
+            dynoxide.log
+            endpoint.log
+          if-no-files-found: warn
