@@ -964,6 +964,23 @@ use another `Projection` with the nested
 document as source. Selecting a flattened variant requires the whole tag/payload
 group; disjoint variant fields without a discriminator are rejected.
 
+The first Projection derive accepts concrete, owned named-field structs. Its
+`record = Source` may name a concrete instantiation of a generic source. Mark a
+nested view field `#[tabulary(attribute = SourceAttrs::FIELD, nested)]`; its
+type is another Projection (or `Option<View>` for an optional source). Nested
+selection fetches the whole physical map but decodes only the nested view.
+It requires the native document-map codec; a custom converter cannot be bypassed.
+An inherited nested default is projected by moving its selected fields, without
+encoding the source or applying child defaults again. Existing `None` values
+remain `None`; unselected fields cannot reject the view.
+Select a flattened variant through its existing discriminator handle, with the
+whole Variants enum as the view field type; selecting just the tag is invalid.
+The projection's `attributes()` lists the complete physical selection.
+`check_available(available, transport)` checks non-ALL compatibility against the
+index's full stored namespace (keys plus INCLUDE fields), including separately
+requested transport keys. Index request builders supply that namespace once
+index metadata is implemented; this check never fetches missing attributes.
+
 Batch get automatically adds complete primary keys for response correlation,
 even when the view omits them, and strips them from the user's view.
 `RecordKey::decode_key` decodes only physical keys, parsing composite components
