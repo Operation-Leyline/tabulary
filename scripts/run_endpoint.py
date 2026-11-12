@@ -15,11 +15,20 @@ import urllib.error
 import urllib.request
 
 
-def require_endpoint_evidence(output):
+def endpoint_test_count(output):
+    names = re.findall(r"^(.+): test$", output, re.M)
+    totals = re.findall(r"^(\d+) tests?, 0 benchmarks$", output, re.M)
+    if not names or len(names) != len(set(names)) or totals != [str(len(names))]:
+        raise RuntimeError("endpoint inventory must list every ignored test and be nonempty")
+    return len(names)
+
+
+def require_endpoint_evidence(output, expected):
     summary = re.findall(r"^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;", output, re.M)
-    # Update this explicit gate when later milestones add endpoint tests.
-    if summary != [("6", "0", "0")]:
-        raise RuntimeError("endpoint suite did not execute and pass all 6 required tests")
+    # Ordinary offline tests are filtered by --ignored. Every inventoried endpoint
+    # test must run and pass, so filtering even one of those cannot satisfy this gate.
+    if expected <= 0 or summary != [(str(expected), "0", "0")]:
+        raise RuntimeError(f"endpoint suite did not execute and pass all {expected} required tests")
 
 
 def main():
@@ -71,15 +80,18 @@ def main():
                     pass
                 time.sleep(min(0.1, max(0, deadline - time.monotonic())))
             print(f"dynoxide ready at {endpoint}", flush=True)
+            command = ["cargo", "test", "-p", "tabulary", "--test", "endpoint", "--locked", "--", "--ignored"]
+            options = dict(cwd=Path(__file__).resolve().parents[1], env=env, timeout=600,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            inventory = subprocess.run([*command, "--list", "--format=pretty"], **options)
+            inventory.check_returncode()
+            expected = endpoint_test_count(inventory.stdout)
             result = subprocess.run(
-                ["cargo", "test", "-p", "tabulary", "--test", "endpoint", "--locked",
-                 "--", "--ignored", "--nocapture"],
-                cwd=Path(__file__).resolve().parents[1], env=env, timeout=600,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                [*command, "--nocapture"], **options,
             )
             print(result.stdout, end="", flush=True)
             result.check_returncode()
-            require_endpoint_evidence(result.stdout)
+            require_endpoint_evidence(result.stdout, expected)
         finally:
             process.terminate()
             try:
