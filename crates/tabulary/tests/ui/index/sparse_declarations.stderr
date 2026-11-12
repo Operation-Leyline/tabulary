@@ -1,0 +1,23 @@
+error: sparse index needs at least one optional input
+ --> tests/ui/index/sparse_declarations.rs:2:53
+  |
+2 | #[tabulary(rename_all = "snake_case", index(ident = ByValue, name = "by_value", kind = global, partition = value, sparse, project = a...
+  |                                                     ^^^^^^^
+
+error: non-sparse index inputs must be required
+  --> tests/ui/index/sparse_declarations.rs:11:5
+   |
+11 |     value: Option<String>,
+   |     ^^^^^
+
+error: duplicate index option
+  --> tests/ui/index/sparse_declarations.rs:16:123
+   |
+16 | #[tabulary(rename_all = "snake_case", index(ident = ByValue, name = "by_value", kind = global, partition = value, sparse, sparse, pr...
+   |                                                                                                                           ^^^^^^
+
+error: template sources cannot have defaults
+  --> tests/ui/index/sparse_declarations.rs:26:5
+   |
+26 |     #[tabulary(default = fallback)] value: Option<String>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
