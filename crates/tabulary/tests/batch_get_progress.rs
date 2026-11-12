@@ -292,6 +292,14 @@ fn identity_uses_both_physical_keys_and_normalizes_numeric_spellings() {
             Err(BuildError::Encode(_))
         ));
     }
+    for name in ["number", "suffix"] {
+        let mut key = raw("1", b"a");
+        key.0.remove(name);
+        assert!(matches!(
+            BatchGetProgress::<Invoice, _>::new(vec![key], budget),
+            Err(BuildError::Encode(source)) if source.record == "Invoice" && source.attribute() == Some(name)
+        ));
+    }
     assert!(
         matches!(BatchGetProgress::<Order, _>::new(vec![OrderKey { id: String::new() }], budget), Err(BuildError::Encode(source)) if source.record == "Order" && source.attribute() == Some("id"))
     );

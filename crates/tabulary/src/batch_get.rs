@@ -246,12 +246,6 @@ impl<R, K, P> BatchGetProgress<R, K, P> {
 }
 
 fn canonical_key<R: Record>(mut key: Item) -> Result<Item, BuildError> {
-    let expected = 1 + usize::from(R::SCHEMA.primary.sort.is_some());
-    if key.len() != expected {
-        return Err(BuildError::OperationConstraint {
-            code: "invalid_batch_key_shape",
-        });
-    }
     for (position, max) in [
         (Some(R::SCHEMA.primary.partition), 2048),
         (R::SCHEMA.primary.sort, 1024),
@@ -288,6 +282,12 @@ fn canonical_key<R: Record>(mut key: Item) -> Result<Item, BuildError> {
                 .map_err(|_| cx.error(EncodeFault::NumberRange))?
                 .to_string();
         }
+    }
+    let expected = 1 + usize::from(R::SCHEMA.primary.sort.is_some());
+    if key.len() != expected {
+        return Err(BuildError::OperationConstraint {
+            code: "invalid_batch_key_shape",
+        });
     }
     Ok(key)
 }
