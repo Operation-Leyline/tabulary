@@ -1,6 +1,18 @@
 error[E0308]: mismatched types
  --> tests/ui/record/default_signature.rs:6:26
   |
+1 | #[derive(tabulary::Record)]
+  |          ---------------- expected due to this
+...
+6 |     #[tabulary(default = initial_quantity)]
+  |                          ^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+  |
+  = note: expected fn pointer `fn() -> u64`
+                found fn item `fn() -> std::string::String {initial_quantity}`
+
+error[E0308]: mismatched types
+ --> tests/ui/record/default_signature.rs:6:26
+  |
 6 |     #[tabulary(default = initial_quantity)]
   |                          ^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
 7 |     quantity: u64,

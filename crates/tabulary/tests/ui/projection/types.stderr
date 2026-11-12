@@ -1,0 +1,73 @@
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:10:41
+   |
+ 8 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+ 9 | #[tabulary(record = Order)]
+10 | struct Foreign { #[tabulary(attribute = InvoiceAttrs::ID)] id: String }
+   |                                         ^^^^^^^^^^^^^^^^ expected `Attr<Order, String, Required, KeyOnly>`, found `Attr<Invoice, String, Required, KeyOnly>`
+   |
+   = note: expected struct `Attr<Order, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+              found struct `Attr<Invoice, std::string::String, tabulary::Required, tabulary::KeyOnly, Native<std::string::String>>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn select<S: SourceField<I>, const I: usize>(
+   |        ^^^^^^
+
+error[E0308]: `?` operator has incompatible types
+  --> tests/ui/projection/types.rs:13:63
+   |
+13 | struct WrongType { #[tabulary(attribute = OrderAttrs::COUNT)] count: String }
+   |                                                               ^^^^^ expected `String`, found `u64`
+   |
+   = note: `?` operator cannot convert from `u64` to `std::string::String`
+help: try using a conversion method
+   |
+13 | struct WrongType { #[tabulary(attribute = OrderAttrs::COUNT)] count.to_string(): String }
+   |                                                                    ++++++++++++
+
+error[E0308]: `?` operator has incompatible types
+  --> tests/ui/projection/types.rs:16:70
+   |
+16 | struct OptionalRequired { #[tabulary(attribute = OrderAttrs::COUNT)] count: Option<u64> }
+   |                                                                      ^^^^^ expected `Option<u64>`, found `u64`
+   |
+   = note: `?` operator cannot convert from `u64` to `Option<u64>`
+   = note: expected enum `Option<u64>`
+              found type `u64`
+help: try wrapping the expression in `Some`
+   |
+16 | struct OptionalRequired { #[tabulary(attribute = OrderAttrs::COUNT)] Some(count): Option<u64> }
+   |                                                                      +++++     +
+
+error[E0308]: `?` operator has incompatible types
+  --> tests/ui/projection/types.rs:19:69
+   |
+19 | struct RequiredOptional { #[tabulary(attribute = OrderAttrs::NOTE)] note: String }
+   |                                                                     ^^^^ expected `String`, found `Option<String>`
+   |
+   = note: `?` operator cannot convert from `Option<std::string::String>` to `std::string::String`
+   = note: expected struct `std::string::String`
+                found enum `Option<std::string::String>`
+help: consider using `Option::expect` to unwrap the `Option<std::string::String>` value, panicking if the value is an `Option::None`
+   |
+19 | struct RequiredOptional { #[tabulary(attribute = OrderAttrs::NOTE)] note.expect("REASON"): String }
+   |                                                                         +++++++++++++++++
+
+error[E0308]: mismatched types
+  --> tests/ui/projection/types.rs:29:39
+   |
+27 | #[derive(Projection)]
+   |          ---------- arguments to this function are incorrect
+28 | #[tabulary(record = Order)]
+29 | struct Codec { #[tabulary(attribute = BAD_CODEC)] count: u64 }
+   |                                       ^^^^^^^^^ expected `Attr<Order, u64>`, found `Attr<Order, u64, Required, Mutable, ...>`
+   |
+   = note: expected struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, Native<u64>>`
+              found struct `Attr<Order, u64, tabulary::Required, tabulary::Mutable, OtherCodec>`
+note: function defined here
+  --> src/projection.rs
+   |
+   | pub fn select<S: SourceField<I>, const I: usize>(
+   |        ^^^^^^

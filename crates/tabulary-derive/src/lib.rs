@@ -5,6 +5,9 @@ mod document_parse;
 mod document_validate;
 mod expand;
 mod parse;
+mod projection_expand;
+mod projection_parse;
+mod projection_source;
 mod string_enum_expand;
 mod string_enum_parse;
 mod string_enum_validate;
@@ -14,6 +17,16 @@ mod variants_expand;
 mod variants_flatten;
 mod variants_parse;
 mod variants_validate;
+
+/// Derive a read-only view using typed source-field handles.
+#[proc_macro_derive(Projection, attributes(tabulary))]
+pub fn projection(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    projection_parse::projection(input)
+        .map(|schema| projection_expand::projection(&schema))
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
 
 /// Derive a strict discriminator-selected map, optionally flattened into a document.
 #[proc_macro_derive(Variants, attributes(tabulary))]

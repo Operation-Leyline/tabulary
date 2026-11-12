@@ -1,0 +1,29 @@
+error: Projection needs record = Source
+ --> tests/ui/projection/declarations.rs:2:8
+  |
+2 | struct Missing { value: u64 }
+  |        ^^^^^^^
+
+error: Projection field needs attribute = SourceAttrs::FIELD
+ --> tests/ui/projection/declarations.rs:5:19
+  |
+5 | struct NoHandle { value: u64 }
+  |                   ^^^^^^^^^^
+
+error: Projection fields accept attribute and nested only; codecs and defaults are inherited
+ --> tests/ui/projection/declarations.rs:8:58
+  |
+8 | struct Defaults { #[tabulary(attribute = Missing::VALUE, default = initial)] value: u64 }
+  |                                                          ^^^^^^^
+
+error: Projection requires a named-field struct
+  --> tests/ui/projection/declarations.rs:11:8
+   |
+11 | struct Tuple(u64);
+   |        ^^^^^
+
+error: Projection requires an owned, concrete view type
+  --> tests/ui/projection/declarations.rs:14:16
+   |
+14 | struct Borrowed<'a> { #[tabulary(attribute = Missing::VALUE)] value: &'a str }
+   |                ^^^^

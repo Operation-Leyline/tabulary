@@ -1,0 +1,16 @@
+error[E0308]: `?` operator has incompatible types
+ --> tests/ui/projection/variants.rs:9:61
+  |
+9 | struct TagOnly { #[tabulary(attribute = OrderAttrs::STATE)] tag: StateTag }
+  |                                                             ^^^ expected `StateTag`, found `State`
+  |
+  = note: `?` operator cannot convert from `State` to `StateTag`
+
+error[E0599]: no associated function or constant named `TRACKING` found for struct `OrderAttrs` in the current scope
+  --> tests/ui/projection/variants.rs:12:57
+   |
+ 4 | #[derive(tabulary::Record)]
+   |          ---------------- associated function or constant `TRACKING` not found for this struct
+...
+12 | struct PayloadOnly { #[tabulary(attribute = OrderAttrs::TRACKING)] tracking: String }
+   |                                                         ^^^^^^^^ associated function or constant not found in `OrderAttrs`

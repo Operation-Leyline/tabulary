@@ -17,6 +17,7 @@ mod floats;
 pub mod key_component;
 mod nullable;
 mod numbers;
+pub mod projection;
 mod record;
 mod rendered_expressions;
 mod scalar;
@@ -50,12 +51,15 @@ pub use document::Document;
 pub use errors::*;
 pub use key_component::KeyComponentCodec;
 pub use nullable::{Nullable, NullableWire};
+pub use projection::Projection;
 pub use record::{Item, RecordKey};
 pub use rendered_expressions::RenderedExpressions;
 pub use schema::{FieldAccess, FieldDescriptor, KeyDefinition, Presence, Record, RecordSchema};
 pub use secret::Secret;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Document;
+#[cfg(feature = "derive")]
+pub use tabulary_derive::Projection;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Record;
 #[cfg(feature = "derive")]
