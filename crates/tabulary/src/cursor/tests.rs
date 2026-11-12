@@ -330,3 +330,195 @@ fn canonical_values_refuse_malformed_sets_nulls_and_excess_depth() {
         Err(BuildError::InvalidCursor)
     ));
 }
+
+#[test]
+fn v1_encoding_sorts_service_keys_and_retains_scalar_spellings() {
+    let a = cursor();
+    let mut b = a.clone();
+    let mut entries: Vec<_> = key().into_iter().collect();
+    entries.sort_unstable_by_key(|(name, _)| name.clone());
+    b.key = entries.into_iter().rev().collect();
+    let bytes = a.to_bytes().unwrap();
+    assert_eq!(bytes[0], 1);
+    assert_eq!(bytes, b.to_bytes().unwrap());
+    for private in [b"private-key".as_slice(), b"1.00e1", &[1, 2]] {
+        assert!(bytes.windows(private.len()).any(|v| v == private));
+    }
+    assert!(!format!("{a:?}").contains("private-key"));
+}
+
+fn with_constant(value: AttributeValue) -> Cursor<Row, Primary> {
+    let mut binding = query();
+    binding.filter = Some(CanonicalNode::Predicate(
+        Operator::Eq,
+        vec![CanonicalOperand::Value(canonical(value))],
+    ));
+    binding.cursor(Some(key())).unwrap().unwrap()
+}
+
+#[test]
+fn canonical_encoding_covers_every_value_tag_and_sorts_maps_and_sets() {
+    let values = |reversed| {
+        let mut entries = vec![
+            ("s".into(), AttributeValue::S("private-filter".into())),
+            (
+                "n".into(),
+                AttributeValue::N(if reversed { "10.0" } else { "1e1" }.into()),
+            ),
+            ("b".into(), AttributeValue::B(Blob::new([0, 255]))),
+            ("bool".into(), AttributeValue::Bool(true)),
+            ("null".into(), AttributeValue::Null(true)),
+            (
+                "list".into(),
+                AttributeValue::L(vec![AttributeValue::Bool(false)]),
+            ),
+            (
+                "ss".into(),
+                AttributeValue::Ss(vec!["z".into(), "a".into()]),
+            ),
+            (
+                "ns".into(),
+                AttributeValue::Ns(vec!["2.0".into(), "-1".into()]),
+            ),
+            (
+                "bs".into(),
+                AttributeValue::Bs(vec![Blob::new([2]), Blob::new([1])]),
+            ),
+        ];
+        if reversed {
+            entries.reverse();
+        }
+        AttributeValue::M(entries.into_iter().collect())
+    };
+    let a = with_constant(values(false));
+    let b = with_constant(values(true));
+    assert_eq!(a.to_bytes().unwrap(), b.to_bytes().unwrap());
+    assert!(
+        a.to_bytes()
+            .unwrap()
+            .windows(14)
+            .any(|b| b == b"private-filter")
+    );
+    assert!(!format!("{a:?}").contains("private-filter"));
+    assert_ne!(
+        with_constant(AttributeValue::S("10".into()))
+            .to_bytes()
+            .unwrap(),
+        with_constant(AttributeValue::N("10".into()))
+            .to_bytes()
+            .unwrap()
+    );
+}
+
+#[test]
+fn encoded_identity_keeps_schema_metadata_and_ast_structure() {
+    let base = cursor().to_bytes().unwrap();
+    let changes: Vec<fn(&mut CursorBinding<Row, Primary>)> = vec![
+        |b| b.table = "other_orders".into(),
+        |b| b.schema.ttl = Some(1),
+        |b| b.schema.name = "OtherRow",
+        |b| b.schema.indexes = &[],
+        |b| b.index = Some(INDEX),
+        |b| b.projection = Some(vec!["pk"]),
+        |b| b.consistency = ReadConsistency::Strong,
+        |b| b.operation = Operation::Scan(None),
+        |b| b.operation = Operation::Scan(Some((1, 2))),
+        |b| {
+            if let Operation::Query(_, order) = &mut b.operation {
+                *order = QueryOrder::Descending
+            }
+        },
+    ];
+    for change in changes {
+        let mut b = query();
+        change(&mut b);
+        assert_ne!(
+            base,
+            b.cursor(Some(key())).unwrap().unwrap().to_bytes().unwrap()
+        );
+    }
+    let attr = p::field::<Row, String, Required, KeyOnly, Native<String>>("pk", 0);
+    let bytes = |condition: crate::Condition<Row>| {
+        let mut b = query();
+        b.filter = Some(CanonicalNode::new(condition.build().unwrap().root()).unwrap());
+        b.cursor(Some(key())).unwrap().unwrap().to_bytes().unwrap()
+    };
+    let and = bytes(attr.eq("one".into()).and(attr.ne("two".into())));
+    assert_ne!(and, bytes(attr.eq("one".into()).or(attr.ne("two".into()))));
+    assert_ne!(and, bytes(attr.ne("two".into()).and(attr.eq("one".into()))));
+    assert_ne!(
+        and,
+        bytes(attr.eq("one".into()).and(attr.ne("two".into())).not())
+    );
+}
+
+#[test]
+fn total_encoded_size_accepts_exact_cap_and_refuses_one_more_byte() {
+    let mut cursor = cursor();
+    let base = cursor.to_bytes().unwrap().len();
+    let name = "x".repeat(4 * 1024 * 1024 - base - 10);
+    cursor
+        .key
+        .insert(name.clone(), AttributeValue::S("a".into()));
+    assert_eq!(cursor.to_bytes().unwrap().len(), 4 * 1024 * 1024);
+    cursor.key.remove(&name);
+    cursor
+        .key
+        .insert(format!("{name}x"), AttributeValue::S("a".into()));
+    assert!(matches!(cursor.to_bytes(), Err(BuildError::CursorTooLarge)));
+}
+
+#[test]
+fn request_build_bounds_expression_depth() {
+    for depth in [32, 33] {
+        let attr = p::field::<Row, String, Required, KeyOnly, Native<String>>("pk", 0);
+        let mut filter = attr.eq("private-filter".into());
+        for _ in 0..depth {
+            filter = filter.not();
+        }
+        let filter = filter.build().unwrap();
+        let key = p::partition::<Row, Primary, _, Native<String>>(Ok("partition".into()))
+            .build()
+            .unwrap();
+        let result = CursorBinding::query(
+            &Table::new("orders").unwrap(),
+            None,
+            &key,
+            Some(&filter),
+            None,
+            ReadConsistency::Eventual,
+            QueryOrder::Ascending,
+        );
+        if depth == 32 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(BuildError::InvalidCursor)));
+        }
+    }
+}
+
+#[test]
+fn canonicalization_checks_depth_before_recursing_or_cloning() {
+    let leaf = || ConditionNode::Predicate {
+        operator: Operator::Exists,
+        operands: vec![],
+    };
+    for depth in [32, 33] {
+        for branch in 0..3 {
+            let mut node = leaf();
+            for _ in 0..depth {
+                node = match branch {
+                    0 => ConditionNode::Not(Box::new(node)),
+                    1 => ConditionNode::And(Box::new(node), Box::new(leaf())),
+                    _ => ConditionNode::Or(Box::new(node), Box::new(leaf())),
+                };
+            }
+            let result = CanonicalNode::new(&node);
+            if depth == 32 {
+                assert!(result.is_ok());
+            } else {
+                assert!(matches!(result, Err(BuildError::InvalidCursor)));
+            }
+        }
+    }
+}
