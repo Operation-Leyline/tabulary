@@ -31,7 +31,12 @@ class RunnerFailures(unittest.TestCase):
                   patch.object(run_endpoint.urllib.request, "build_opener") as opener,
                   patch("builtins.print")):
                 opener.return_value.open.return_value.__enter__.return_value = response
-                run_endpoint.main()
+                try:
+                    run_endpoint.main()
+                finally:
+                    if listing_returncode:
+                        cargo.assert_called_once()
+                        child.terminate.assert_called_once()
                 self.assertEqual(cargo.call_count, 2)
                 self.assertEqual(cargo.call_args_list[0].args[0][-3:], ["--ignored", "--list", "--format=pretty"])
                 return opener.return_value.open.call_args.args[0]
