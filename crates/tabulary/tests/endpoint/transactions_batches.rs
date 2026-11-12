@@ -288,10 +288,6 @@ async fn batch_put_delete_and_get_keep_original_input_order() {
             BatchAction::delete(key("b")).unwrap(),
             BatchAction::put(&order("a", 1)).unwrap(),
         ];
-        let expected: Vec<_> = actions
-            .iter()
-            .map(|a| (a.key().clone(), a.item().cloned()))
-            .collect();
         let mut batch = table
             .batch_write(actions, BatchBudget::new(1).unwrap())
             .unwrap();
@@ -311,8 +307,21 @@ async fn batch_put_delete_and_get_keep_original_input_order() {
                 .iter()
                 .map(|a| (a.key().clone(), a.item().cloned()))
                 .collect::<Vec<_>>(),
-            expected
+            vec![
+                (
+                    key("c").encode_key().unwrap(),
+                    Some(order("c", 3).to_item().unwrap())
+                ),
+                (key("b").encode_key().unwrap(), None),
+                (
+                    key("a").encode_key().unwrap(),
+                    Some(order("a", 1).to_item().unwrap())
+                ),
+            ]
         );
+        assert_eq!(read(&client, &table, key("a")).await, Some(order("a", 1)));
+        assert_eq!(read(&client, &table, key("b")).await, None);
+        assert_eq!(read(&client, &table, key("c")).await, Some(order("c", 3)));
         let mut batch = table
             .batch_get(
                 vec![key("c"), key("b"), key("a"), key("missing")],
