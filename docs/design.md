@@ -950,6 +950,19 @@ Both return enums default to `None` and convert to the SDK's `ReturnValue`;
 `WriteResult<R>` retains the optional full record, complete consumed capacity,
 and item-collection metrics supplied by the SDK, without inventing accounting.
 
+Milestone 28 adds `Table<R>::delete(key)` for `R: Record + Document` and
+`K: RecordKey<R>`. `DeleteBuilder<R, K>` owns the table name and key, encoding
+the key and validating its optional `Condition<R>` at `build()`.
+Repeated `.condition(...)` calls AND their predicates, matching UpdateItem.
+Callers can also combine predicates with `.and(...)` or `.or(...)`.
+`PreparedDelete<R>` aliases
+`PreparedRequest<DeleteItemInput, R>`, copies every SDK input field, and derives
+failure-side old-item mode from its immutable input. Success attributes are
+strictly decoded as the complete record: absent attributes mean `None`, while a
+present empty or malformed map yields `WriteError::Decode` with unchanged raw
+attributes, capacity, and collection metrics. Refusals use the milestone 26
+classifier without changing their kind when an old item is absent or invalid.
+
 Milestone 29 adds `Table<R>::update(key)` for `R: Record + Document` and
 `K: RecordKey<R>`. `changes(Update<R>)` replaces the complete mutation set;
 missing or empty changes fail at build. Repeated `condition(Condition<R>)`
