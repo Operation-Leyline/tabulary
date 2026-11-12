@@ -1,6 +1,6 @@
 use aws_sdk_dynamodb::Client;
 use std::error::Error;
-use tabulary::{ReadConsistency, Record, Table};
+use tabulary::{BilledSize, ReadConsistency, Record, Table};
 
 #[derive(Debug, PartialEq, Record)]
 #[tabulary(rename_all = "snake_case")]
@@ -20,7 +20,7 @@ pub fn round_trip() -> Result<(), Box<dyn Error>> {
     };
     let item = order.to_item()?;
     assert_eq!(Order::from_item(&item)?, order);
-    assert!(order.billed_size()?.conservative_item_bytes() > 0);
+    assert!(BilledSize::of_item(&item)?.conservative_item_bytes() > 0);
 
     let mut incomplete = item;
     incomplete.remove(OrderAttrs::QUANTITY.name());
