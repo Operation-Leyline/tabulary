@@ -394,6 +394,35 @@ fn batch_consistency_budget_keys_and_projection_owner_are_compile_gates() {
 }
 
 #[test]
+fn projected_items_without_transport_keys_fail_correlation_and_stay_pending() {
+    for missing in [vec!["id"], vec!["line"], vec!["id", "line"]] {
+        let mut batch = batch(1).select::<Quantity>().unwrap();
+        let request = batch.next_request().unwrap().unwrap();
+        let mut raw = item(1);
+        for name in missing {
+            raw.remove(name);
+        }
+        let error = batch
+            .accept(request.decode(Ok(output(vec![raw], vec![]))))
+            .unwrap_err();
+        assert!(matches!(
+            error.kind,
+            BatchGetFailure::State(State::InvalidResponse)
+        ));
+        assert!(
+            error
+                .partial
+                .entries
+                .iter()
+                .all(|entry| matches!(entry.state, BatchGetState::Pending))
+        );
+        assert_eq!(error.partial.calls_issued, 1);
+        assert_eq!(error.partial.capacity.len(), 1);
+        assert_eq!(batch.next_request().unwrap_err(), State::Frozen);
+    }
+}
+
+#[test]
 fn every_malformed_position_is_identified_while_good_records_are_retained() {
     let mut batch = batch(2);
     let request = batch.next_request().unwrap().unwrap();
