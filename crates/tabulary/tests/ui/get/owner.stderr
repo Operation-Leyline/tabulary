@@ -1,0 +1,38 @@
+error[E0277]: the trait bound `InvoiceKey: RecordKey<Order>` is not satisfied
+  --> tests/ui/get/owner.rs:25:9
+   |
+24 |     let _ = table.get(
+   |                   --- required by a bound introduced by this call
+25 |         InvoiceKey::new("invoice-lime".into()).unwrap(),
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `RecordKey<Order>` is not implemented for `InvoiceKey`
+      but trait `RecordKey<Invoice>` is implemented for it
+  --> tests/ui/get/owner.rs:9:10
+   |
+ 9 | #[derive(tabulary::Record)]
+   |          ^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Invoice`, found `Order`
+note: required by a bound in `tabulary::get::<impl Table<R>>::get`
+  --> src/get.rs
+   |
+   |     pub fn get<K: RecordKey<R>>(&self, key: K, consistency: ReadConsistency) -> GetBuilder<R, K> {
+   |                   ^^^^^^^^^^^^ required by this bound in `tabulary::get::<impl Table<R>>::get`
+   = note: this error originates in the derive macro `tabulary::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<InvoiceId as Projection>::Source == Order`
+  --> tests/ui/get/owner.rs:33:19
+   |
+33 |         .select::<InvoiceId>();
+   |                   ^^^^^^^^^ type mismatch resolving `<InvoiceId as Projection>::Source == Order`
+   |
+note: expected this to be `Order`
+  --> tests/ui/get/owner.rs:16:21
+   |
+16 | #[tabulary(record = Invoice)]
+   |                     ^^^^^^^
+note: required by a bound in `GetBuilder::<R, K, P>::select`
+  --> src/get.rs
+   |
+   |     pub fn select<V: Projection<Source = R>>(self) -> GetBuilder<R, K, V> {
+   |                                 ^^^^^^^^^^ required by this bound in `GetBuilder::<R, K, P>::select`

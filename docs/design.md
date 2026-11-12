@@ -837,6 +837,13 @@ the AWS SDK directly and its raw `AttributeValue` types.
 a binding. It does not describe or create the table. Record definitions never
 embed deployment table names.
 
+Milestone 25 keeps the merged metadata-only `Record` trait: `Table<R>::get`
+requires `R: Record + Document` and accepts an owned `K: RecordKey<R>`.
+Full reads use `Document::decode_map`; selected reads use the projection's own
+decoder. Neither requires a change to generated record or key methods.
+`Table::new` rejects an empty identifier and preserves other names or ARNs
+verbatim; service-side identifier syntax and existence remain caller concerns.
+
 Each operation builder has `build() -> Result<Prepared..., BuildError>`.
 Encoding failures are retained as `BuildError::Encode(EncodeError)`.
 The resulting plan owns the SDK input and its decode metadata. It is immutable
@@ -888,6 +895,17 @@ default `None` means not requested. Preserve the SDK's complete
 Transactions and batch rounds preserve the full vector for each request.
 Decode errors preserve capacity and pagination metadata received with the
 response, so a malformed item does not erase accounting information.
+
+For milestone 25, `Capacity::None` (including the default) omits the SDK field;
+the other choices send `TOTAL` or `INDEXES`. `PreparedGet<P>` aliases the shared
+immutable `PreparedRequest<GetItemInput, P>` storage. Its `input()` and
+`expressions()` describe exactly what `apply` copies, including absent legacy
+fields. `ReadError<E>` holds either a boxed typed `SdkError<E>` or a boxed
+`ReadDecodeError` with `position`, structured `source`, and unchanged `capacity`.
+GetItem's fault position is zero; `raw_items()` explicitly exposes its one raw
+item. `sdk_error()` exposes the original SDK error. Error and prepared-request
+formatting redacts payloads and SDK text. Pagination metadata joins these read
+errors with the page adapters; GetItem has no pagination metadata.
 
 `.return_item(ReturnItem::None | AllOld | AllNew)` is operation-specific.
 Put/delete support None or AllOld; update additionally supports AllNew.
