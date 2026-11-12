@@ -4,6 +4,7 @@
 pub mod __private;
 mod attr;
 mod collections;
+pub mod condition;
 pub mod convert;
 mod decimal;
 mod errors;
@@ -27,6 +28,8 @@ pub use attr::PresenceMarker;
 pub use attr::Required;
 pub use attr::VersionOnly;
 pub use collections::{BinarySet, List, Map, NumberSet, StringSet};
+pub use condition::BuiltCondition;
+pub use condition::Condition;
 pub use convert::{Converter, Native};
 pub use decimal::Decimal;
 pub use errors::*;

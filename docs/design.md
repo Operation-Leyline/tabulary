@@ -661,6 +661,18 @@ described here. A custom converter must declare its wire capabilities; it
 cannot gain numeric operators from a logical `u128` stored as a string.
 Cross-codec comparisons are not inferred.
 
+The condition API declares these capabilities through public `condition::Ordered`,
+`Prefix`, and `SizedWire` traits on wire markers. `condition::Contains<T>` is a
+codec capability with an associated logical `Element` and `ElementCodec`.
+Native string, list, and set codecs provide it; custom codecs opt in explicitly.
+The equality-only `u128_string::Wire` implements none of these capabilities.
+`size()` produces a `u64` operand. `in_values(Vec<T>)` accepts 1 through 100
+values; empty input returns `EmptyOperation`, and excess input returns
+`RequestLimit` before encoding. Constants are owned (`'static`) and encoded by
+`Condition::build`, which returns a record-owned `BuiltCondition` with an
+inspectable tree and redacted Debug. This build step validates descriptors and
+values; textual rendering and expression-size validation belong to later stages.
+
 Nested updates do not create missing parent maps. DynamoDB can reject such a
 path; the caller must create the map explicitly or choose a put.
 The builder rejects duplicate and ancestor/descendant target paths, including
