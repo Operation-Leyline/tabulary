@@ -1,0 +1,43 @@
+error[E0308]: mismatched types
+ --> tests/ui/query/owner.rs:6:17
+  |
+3 | fn foreign<R: Record + Document, T: Record, I: PrimarySchema<T>, S>(
+  |            -                     - found type parameter
+  |            |
+  |            expected type parameter
+...
+6 |     table.query(key, ReadConsistency::Strong);
+  |           ----- ^^^ expected `KeyCondition<R, _, _>`, found `KeyCondition<T, I, S>`
+  |           |
+  |           arguments to this method are incorrect
+  |
+  = note: expected struct `KeyCondition<R, _, _>`
+             found struct `KeyCondition<T, I, S>`
+  = note: a type parameter was expected, but a different one was found; you might be missing a type parameter or trait bound
+  = note: for more information, visit https://doc.rust-lang.org/book/ch10-02-traits.html#traits-as-parameters
+note: method defined here
+ --> src/query.rs
+  |
+  |     pub fn query<I: PrimarySchema<R>, S>(
+  |            ^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/query/owner.rs:11:30
+   |
+ 8 | fn index<R: Record + Document, I: IndexSchema<R> + KeySchema<R>, J: KeySchema<R>, S>(
+   |                                - expected type parameter         - found type parameter
+...
+11 |     table.index(index).query(key, ReadConsistency::Eventual);
+   |                        ----- ^^^ expected `KeyCondition<R, I, _>`, found `KeyCondition<R, J, S>`
+   |                        |
+   |                        arguments to this method are incorrect
+   |
+   = note: expected struct `KeyCondition<R, I, _>`
+              found struct `KeyCondition<R, J, S>`
+   = note: a type parameter was expected, but a different one was found; you might be missing a type parameter or trait bound
+   = note: for more information, visit https://doc.rust-lang.org/book/ch10-02-traits.html#traits-as-parameters
+note: method defined here
+  --> src/query.rs
+   |
+   |     pub fn query<S>(
+   |            ^^^^^
