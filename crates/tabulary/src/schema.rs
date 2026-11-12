@@ -35,7 +35,7 @@ pub struct KeyDefinition {
     pub sort: Option<usize>,
 }
 
-/// Metadata available before record codecs and key constructors are generated.
+/// Static physical metadata shared by record operations and table definitions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RecordSchema {
     pub name: &'static str,
@@ -46,9 +46,18 @@ pub struct RecordSchema {
 }
 
 /// A record owns one static schema. Manual implementations are supported.
-/// Record encoding and key interfaces are added by their owning milestones.
+/// Document encoding and generated key interfaces remain separate contracts.
 pub trait Record: Sized {
     const SCHEMA: RecordSchema;
+
+    /// Encode with this record's document codec and estimate its item size.
+    fn billed_size(&self) -> Result<crate::BilledSize, crate::EncodeError>
+    where
+        Self: crate::Document,
+    {
+        let item = self.encode_map(&mut crate::EncodeContext::new(Self::NAME))?;
+        crate::BilledSize::of_item(&item)
+    }
 
     fn table_definition() -> crate::TableDefinition<Self> {
         crate::TableDefinition::new(Self::SCHEMA)

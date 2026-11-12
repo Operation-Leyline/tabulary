@@ -1,8 +1,10 @@
 # Implementation milestones
 
-Status: **design**. Only the workspace skeleton exists. The proposed API contract
-is [design.md](design.md); the [examples](examples/README.md) are syntax-checked
-source until the owning milestone makes them compile against the real crates.
+Status: **implemented through the final contract review, with documented gaps**.
+The [contract](design.md) distinguishes implemented behavior from remaining work
+and real-service experiments. All seven [examples](examples/README.md) are
+registered test modules with result assertions; CI includes the SDK/MSRV feature
+matrix and the discovered emulator endpoint suite.
 
 Each row is planned as one pull request, targeting **150–400 changed implementation and test
 lines**, excluding generated diagnostic snapshots. A row that exceeds that range
@@ -110,6 +112,6 @@ boundary experiments require real-service evidence before exact billing claims.
 Large tuple ergonomics can be measured after PR 41; cursor cross-major stability
 and token signing are not first-version requirements.
 
-Passing the current skeleton proves only workspace integrity. Completing the
-sequence requires all seven examples to compile against the actual API and
-the endpoint test suite to run in CI.
+Workspace tests, the SDK/MSRV feature matrix, and the emulator endpoint suite
+provide separate evidence. None proves real-service boundary behavior or closes
+the remaining contract gaps listed in design section 16.

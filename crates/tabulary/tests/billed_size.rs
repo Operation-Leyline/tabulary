@@ -14,6 +14,56 @@ fn assert_size(item: &HashMap<String, Av>, estimate: usize, conservative: usize)
 }
 
 #[test]
+fn record_sizing_uses_its_document_codec_and_preserves_encode_faults() {
+    use tabulary::{Document, Record};
+    struct Invoice(u128);
+    impl Record for Invoice {
+        const SCHEMA: tabulary::RecordSchema = tabulary::RecordSchema {
+            name: "Invoice",
+            fields: &[tabulary::FieldDescriptor {
+                name: "number",
+                index: 0,
+                presence: tabulary::Presence::Required,
+                access: tabulary::FieldAccess::KeyOnly,
+                wire: tabulary::DynamoType::N,
+            }],
+            primary: tabulary::KeyDefinition {
+                partition: 0,
+                sort: None,
+            },
+            indexes: &[],
+            ttl: None,
+        };
+    }
+    impl Document for Invoice {
+        const NAME: &'static str = "Invoice";
+        fn encode_map(
+            &self,
+            cx: &mut EncodeContext,
+        ) -> Result<tabulary::Item, tabulary::EncodeError> {
+            let value = <Native<u128> as tabulary::Converter<u128>>::encode(
+                &self.0,
+                &mut cx.at(PathSegment::Attribute("number".into())),
+            )?;
+            Ok(item("number", value))
+        }
+        fn decode_map(
+            _: &tabulary::Item,
+            _: &mut tabulary::DecodeContext,
+        ) -> Result<Self, tabulary::DecodeError> {
+            unreachable!("sizing never decodes")
+        }
+    }
+    let size = Invoice(7).billed_size().unwrap();
+    assert_eq!(size.estimated_item_bytes(), 8);
+    assert_eq!(size.conservative_item_bytes(), 27);
+    let error = Invoice(u128::MAX).billed_size().unwrap_err();
+    assert_eq!(error.kind, EncodeFault::NumberRange);
+    assert_eq!(error.record, "Invoice");
+    assert_eq!(error.attribute(), Some("number"));
+}
+
+#[test]
 fn scalar_bytes_are_utf8_raw_binary_and_one_byte_flags() {
     assert_size(&item("é", Av::S("配送".into())), 8, 8);
     assert_size(&item("b", Av::B(Blob::new([0, 1, 255, 2]))), 5, 5);
