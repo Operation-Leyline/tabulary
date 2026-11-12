@@ -46,6 +46,7 @@ pub struct Record {
     pub indexes: Vec<crate::index_validate::Index>,
     pub ttl: Option<usize>,
     pub version: Option<usize>,
+    pub validate: Option<Path>,
 }
 
 pub fn record(input: DeriveInput) -> syn::Result<Record> {
@@ -118,6 +119,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
         indexes: Vec::new(),
         ttl: None,
         version: None,
+        validate: opts.validate,
     };
     let mut partition = None;
     let mut names = HashMap::new();

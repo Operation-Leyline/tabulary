@@ -6,6 +6,7 @@ pub struct Options {
     pub rename_all: Option<LitStr>,
     pub generated_prefix: Option<LitStr>,
     pub unknown: Option<LitStr>,
+    pub validate: Option<Path>,
     pub crate_path: Option<LitStr>,
     pub default: Option<Path>,
     pub with: Option<Path>,
@@ -29,6 +30,13 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                 .ok_or_else(|| meta.error("expected an option name"))?
                 .to_string();
             let slot = match (container, option.as_str()) {
+                (true, "validate") => {
+                    if result.validate.is_some() {
+                        return Err(meta.error("duplicate validate option"));
+                    }
+                    result.validate = Some(meta.value()?.parse()?);
+                    return Ok(());
+                }
                 (true, "index") => {
                     result.indexes.push(crate::index_parse::declaration(&meta)?);
                     return Ok(());

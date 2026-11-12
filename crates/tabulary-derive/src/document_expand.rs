@@ -1,5 +1,6 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
+use syn::spanned::Spanned;
 
 use crate::{document_validate::bounds, parse, validate::Record};
 
@@ -119,6 +120,29 @@ pub fn implementation(
     let item = format_ident!("item", span = Span::mixed_site());
     let cx = format_ident!("cx", span = Span::mixed_site());
     let validation = crate::variants_flatten::validation(schema);
+    let hook = schema.validate.as_ref().map(|hook| {
+        quote_spanned!(hook.span()=>
+            let __tabulary_validate: fn(&Self) -> ::core::result::Result<(), #path::ValidationFault> = #hook;
+        )
+    });
+    let encode_hook = schema.validate.as_ref().map(|_| {
+        quote! {
+            #hook
+            __tabulary_validate(self).map_err(|fault| fault.into_encode_error(&#cx))?;
+        }
+    });
+    // Preserve the existing expansion exactly when there is no hook.
+    let construction = if schema.validate.is_some() {
+        quote! {
+            let __tabulary_record = Self { #(#values,)* };
+            #hook
+            __tabulary_validate(&__tabulary_record).map_err(|fault| fault.into_decode_error(&#cx))?;
+            #unknown
+            ::core::result::Result::Ok(__tabulary_record)
+        }
+    } else {
+        quote! { #unknown ::core::result::Result::Ok(Self { #(#values,)* }) }
+    };
     let projection_fields = crate::projection_source::fields(schema);
     let declaration = (schema.generics.params.is_empty()
         && schema.fields.iter().any(|f| f.flatten))
@@ -140,6 +164,7 @@ pub fn implementation(
             fn encode_map(&self, #cx: &mut #path::EncodeContext) -> ::core::result::Result<#path::Item, #path::EncodeError> {
                 let #cx = #cx.in_document(<Self as #path::Document>::NAME);
                 #validation
+                #encode_hook
                 let mut #item = #path::Item::new();
                 #(#writes)*
                 ::core::result::Result::Ok(#item)
@@ -148,8 +173,7 @@ pub fn implementation(
                 let #cx = #cx.in_document(<Self as #path::Document>::NAME);
                 #validation
                 #(#reads)*
-                #unknown
-                ::core::result::Result::Ok(Self { #(#values,)* })
+                #construction
             }
         }
         impl #ig #path::Value for #ident #tg #wc {
