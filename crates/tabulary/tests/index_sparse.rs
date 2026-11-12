@@ -246,7 +246,7 @@ fn optional_generic_components_keep_inner_codec_types() {
     assert_eq!(Generic::<[u8; 2]>::from_item(&item).unwrap(), record);
     assert_eq!(
         GenericIndexes::<[u8; 2]>::BY_VALUE
-            .partition([0, 255])
+            .partition_value([0, 255])
             .unwrap()
             .as_str(),
         "00ff"

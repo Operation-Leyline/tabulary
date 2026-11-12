@@ -134,8 +134,15 @@ fn predicate<R: Record, I: KeySchema<R>, T: 'static>(
                     })
                     .into());
             }
-            crate::record::validate_key(&value, if sort { 1024 } else { 2048 })
-                .map_err(|fault| cx.error(fault))?;
+            let max = if std::iter::once(R::SCHEMA.primary)
+                .chain(R::SCHEMA.indexes.iter().map(|index| index.keys))
+                .any(|keys| keys.sort == Some(position))
+            {
+                1024
+            } else {
+                2048
+            };
+            crate::record::validate_key(&value, max).map_err(|fault| cx.error(fault))?;
             operands.push(Operand::Value(value));
         }
         Ok(ConditionNode::Predicate { operator, operands })

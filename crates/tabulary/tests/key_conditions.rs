@@ -7,6 +7,7 @@ use tabulary::{BuildError, EncodeFault};
 #[tabulary(rename_all = "snake_case",
     index(ident = ByLabel, name = "by_label", kind = global, partition = label, sort = bytes, project = all),
     index(ident = ByCount, name = "by_count", kind = local, partition = id, sort = sequence, project = all),
+    index(ident = ByShared, name = "by_shared", kind = global, partition = bytes, sort = label, project = all),
     index(ident = ByHash, name = "by_hash", kind = global, partition = label, project = all))]
 struct Order {
     #[tabulary(partition_key, rename = "order.id")]
@@ -104,6 +105,31 @@ fn index_identity_and_binary_prefixes_use_their_own_key_descriptors() {
 
 #[test]
 fn invalid_key_values_fail_with_record_and_physical_attribute_context() {
+    assert!(
+        OrderIndexes::BY_HASH
+            .partition("x".repeat(1024))
+            .build()
+            .is_ok()
+    );
+    let BuildError::Encode(error) = OrderIndexes::BY_HASH
+        .partition("x".repeat(1025))
+        .build()
+        .unwrap_err()
+    else {
+        panic!("expected encode error")
+    };
+    assert_eq!(error.record, "Order");
+    assert_eq!(error.attribute(), Some("label"));
+    assert_eq!(
+        error.kind,
+        EncodeFault::KeySize {
+            max: 1024,
+            actual: 1025
+        }
+    );
+    assert!(
+        matches!(OrderIndexes::BY_SHARED.partition(vec![1; 1025]).build(), Err(BuildError::Encode(e)) if e.kind == EncodeFault::KeySize { max: 1024, actual: 1025 })
+    );
     for (condition, attribute, fault) in [
         (
             Order::primary().partition(String::new()).sort_eq(1),
@@ -136,7 +162,9 @@ fn invalid_key_values_fail_with_record_and_physical_attribute_context() {
     sort(name = "sk", template = "line!{count:dec20}!{label:text}"),
     index(ident = ByLine, name = "by_line", kind = global,
         partition(name = "gpk", template = "label!{label:hex}"),
-        sort(name = "gsk", template = "line!{count:dec20}!{id:hex}"), project = all))]
+        sort(name = "gsk", template = "line!{count:dec20}!{id:hex}"), project = all),
+    index(ident = ByDecimal, name = "by_decimal", kind = global, partition = id,
+        sort(name = "decimal", template = "{count:dec}"), project = all))]
 struct Parcel {
     id: String,
     count: u64,
@@ -145,6 +173,23 @@ struct Parcel {
 
 #[test]
 fn composite_conditions_reuse_complete_partition_and_prefix_carriers() {
+    let text = ParcelIndexes::BY_DECIMAL
+        .partition("o".into())
+        .sort_ge((9,))
+        .build()
+        .unwrap()
+        .render();
+    assert_eq!(text.key_condition(), Some("(#n0 = :v0 AND #n1 >= :v1)"));
+    assert_eq!(text.values()[":v1"], Av::S("9".into()));
+    let item = Parcel {
+        id: "o".into(),
+        count: 10,
+        label: "line".into(),
+    }
+    .to_item()
+    .unwrap();
+    assert_eq!(item["decimal"], Av::S("10".into()));
+    assert!(item["decimal"].as_s().unwrap() < text.values()[":v1"].as_s().unwrap());
     let prefix = Parcel::primary().sort_prefix((7,)).unwrap();
     let text = Parcel::primary()
         .partition("o".into())

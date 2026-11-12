@@ -975,10 +975,18 @@ returns `BuiltKeyCondition<R, I>` with inspectable `root()` and `render()`;
 rendering populates only `key_condition()` through the ordinary condition
 renderer and request-local aliases. Both unbuilt and built Debug omit values.
 Key constants validate the physical descriptor, codec wire type, scalar domain,
-and partition/sort byte limit before rendering. Native string/binary codecs
+and the strictest byte limit across all primary/index uses of that physical
+attribute before rendering. Native string/binary codecs
 implement `PrefixCodec<T>`; custom codecs must opt in and also declare the
 `condition::Prefix` wire capability. Composite codecs implement it with their
 generated complete-boundary prefix carrier as the associated `Prefix` input.
+
+Sort comparisons use the physical DynamoDB wire order: numeric for `N`, UTF-8
+byte order for `S`, and unsigned byte order for `B`. Composite templates produce
+`S` values, so their ordered predicates compare the formatted strings, not the
+logical component tuples. For example, `{count:dec}` places `10` before `9`;
+use `{count:dec20}` when unsigned numeric order is required. Tuple inputs select
+the encoding, and do not promise an order-preserving mapping for every codec.
 
 Query builders accept `filter(Condition<R>)`, `limit(NonZeroU32)`,
 `order(QueryOrder::Ascending | Descending)`, `select::<P>()`, and
