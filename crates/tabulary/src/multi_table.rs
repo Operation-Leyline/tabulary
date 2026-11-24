@@ -254,7 +254,8 @@ fn rebind(node: &ConditionNode, fields: &'static [FieldDescriptor]) -> Condition
                 .map(|operand| match operand {
                     Operand::Attribute(f) => Operand::Attribute(field(f)),
                     Operand::Size(f) => Operand::Size(field(f)),
-                    Operand::Value(v) => Operand::Value(v.clone()),
+                    // Key conditions name top-level keys only; paths and values pass through.
+                    Operand::Path(_) | Operand::PathSize(_) | Operand::Value(_) => operand.clone(),
                 })
                 .collect(),
         },
