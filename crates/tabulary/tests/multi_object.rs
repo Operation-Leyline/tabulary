@@ -328,11 +328,20 @@ fn entity_queries_narrow_the_sort_key_to_one_member() {
         .unwrap();
     assert_eq!(decoded.items[0].line_no, 4);
     // Strict member decoding still refuses any other member.
-    assert!(
-        lines
-            .decode(Ok(page(vec![header().to_item().unwrap()], None)))
-            .is_err()
+    let Err(ReadError::Decode(error)) =
+        lines.decode(Ok(page(vec![header().to_item().unwrap()], None)))
+    else {
+        panic!("a header must not decode as a line")
+    };
+    assert_eq!(
+        (
+            error.position,
+            error.source.document,
+            error.source.attribute()
+        ),
+        (0, "OrderLine", Some("sk"))
     );
+    assert!(matches!(error.source.kind, DecodeFault::KeyFormat(_)));
 
     let header = orders()
         .query_entity(OrderHeader::primary().partition("ord-teal".into()), Strong)
@@ -420,6 +429,9 @@ fn distinct_members_commit_in_one_transaction_on_the_same_table() {
     let update = items[1].update().unwrap();
     assert_eq!(update.table_name(), "orders");
     assert_eq!(update.key()["sk"], s("LINE#00000000000000000001"));
+    // The existence guard survives transaction conversion.
+    assert_eq!(update.condition_expression(), Some("attribute_exists(#n1)"));
+    assert_eq!(update.expression_attribute_names().unwrap()["#n1"], "pk");
     assert_eq!(
         items[2].delete().unwrap().key()["sk"],
         s("AUDIT#00000000000000000007")
@@ -439,6 +451,29 @@ fn distinct_members_commit_in_one_transaction_on_the_same_table() {
     ))
     .build();
     assert!(twice.is_err());
+}
+
+#[test]
+fn member_updates_never_create_partial_items() {
+    let key = || OrderLineKey::new("ord-teal".into(), 1).unwrap();
+    let guarded = orders()
+        .update(key())
+        .changes(Update::new().and(OrderLineAttrs::QUANTITY.increment(1)))
+        .build()
+        .unwrap();
+    let input = guarded.input();
+    assert_eq!(input.condition_expression(), Some("attribute_exists(#n1)"));
+    assert_eq!(input.expression_attribute_names().unwrap()["#n1"], "pk");
+    let both = orders()
+        .update(key())
+        .changes(Update::new().and(OrderLineAttrs::QUANTITY.increment(1)))
+        .condition(OrderLineAttrs::QUANTITY.lt(9))
+        .build()
+        .unwrap();
+    assert_eq!(
+        both.input().condition_expression(),
+        Some("(attribute_exists(#n1) AND #n0 < :v1)")
+    );
 }
 
 #[test]

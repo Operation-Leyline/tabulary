@@ -175,8 +175,11 @@ pub const fn multi_object_fault<M: MultiObject>() -> Option<&'static str> {
     None
 }
 
-/// Validate that `R` shares `M`'s physical keys and that its key templates
-/// always produce text matching its declared variant's discriminators.
+/// Validate that `R` is the record its declared variant names, that it shares
+/// `M`'s physical keys, and that its key templates always produce text matching
+/// that variant's discriminators. Every `MultiTable` member operation asserts
+/// this at compile time, so a hand-written `MemberOf` for a type the enum does
+/// not hold is rejected rather than writing items another member would decode.
 pub const fn member_fault<M: MultiObject, R: MemberOf<M>>() -> Option<&'static str> {
     let (table, member) = (M::SCHEMA, R::SCHEMA);
     if R::VARIANT >= M::VARIANTS.len() {
@@ -192,6 +195,9 @@ pub const fn member_fault<M: MultiObject, R: MemberOf<M>>() -> Option<&'static s
     }
     if !same_key(table, member, table.primary.sort, member.primary.sort) {
         return Some("member_sort_key_mismatch");
+    }
+    if !crate::key_pattern::same(M::VARIANTS[R::VARIANT].record, <R as Document>::NAME) {
+        return Some("member_record_mismatch");
     }
     let declared = M::VARIANTS[R::VARIANT].keys;
     if !R::KEY_PATTERNS.partition.implies(declared.partition) {

@@ -48,7 +48,8 @@ impl<M: MultiObject> MultiTable<M> {
         &self.name
     }
 
-    /// The ordinary single-record binding for one member.
+    /// The ordinary single-record binding for one member. Its operations are
+    /// the plain `Table<R>` ones; `MultiTable::update` adds an existence guard.
     pub fn member<R: MemberOf<M>>(&self) -> Table<R> {
         const {
             if let Some(fault) = member_fault::<M, R>() {
@@ -67,8 +68,14 @@ impl<M: MultiObject> MultiTable<M> {
     ) -> GetBuilder<R, K> {
         self.member::<R>().get(key, consistency)
     }
+    /// Update an existing member only. The builder starts with an
+    /// `attribute_exists` guard on the partition key, which later conditions
+    /// are ANDed with and transaction conversion keeps. Without it, an update
+    /// of an absent key would create a partial item that the member's strict
+    /// decoder, and therefore every polymorphic page holding it, would refuse.
+    /// Create members with a full-record `put`.
     pub fn update<R: MemberOf<M>, K: RecordKey<R>>(&self, key: K) -> UpdateBuilder<R, K> {
-        self.member::<R>().update(key)
+        self.member::<R>().update(key).condition(exists::<R>())
     }
     pub fn delete<R: MemberOf<M>, K: RecordKey<R>>(&self, key: K) -> DeleteBuilder<R, K> {
         self.member::<R>().delete(key)
@@ -160,6 +167,22 @@ impl<M: MultiObject> fmt::Debug for MultiTable<M> {
             .field("object", &M::SCHEMA.name)
             .finish_non_exhaustive()
     }
+}
+
+fn exists<R: Record>() -> Condition<R> {
+    Condition::new(|| {
+        let position = R::SCHEMA.primary.partition;
+        let field = *R::SCHEMA
+            .fields
+            .get(position)
+            .ok_or(BuildError::OperationConstraint {
+                code: "invalid_key_schema",
+            })?;
+        Ok(ConditionNode::Predicate {
+            operator: crate::condition::Operator::Exists,
+            operands: vec![Operand::Attribute(field)],
+        })
+    })
 }
 
 fn limit(limit: Option<NonZeroU32>) -> Result<Option<i32>, BuildError> {

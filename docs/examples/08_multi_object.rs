@@ -113,16 +113,28 @@ pub async fn read_order(client: &Client) -> Result<Vec<OrderTable>, Box<dyn Erro
 }
 
 /// Read only the lines; the sort key is narrowed to `LINE#` automatically.
+/// A query without a limit still pages at 1 MB, so follow every cursor.
 pub async fn order_lines(client: &Client) -> Result<Vec<OrderLine>, Box<dyn Error>> {
     let orders = MultiTable::<OrderTable>::new("orders")?;
-    let request = orders
-        .query_entity(
+    let mut lines = Vec::new();
+    let mut next = None;
+    for _ in 0..4 {
+        let mut query = orders.query_entity(
             OrderLine::primary().partition("ord-teal".into()),
             ReadConsistency::Eventual,
-        )
-        .build()?;
-    let page = request.decode(request.apply(client.query()).send().await)?;
-    Ok(page.items)
+        );
+        if let Some(cursor) = next.take() {
+            query = query.resume(cursor);
+        }
+        let request = query.build()?;
+        let page = request.decode(request.apply(client.query()).send().await)?;
+        lines.extend(page.items);
+        match page.next {
+            Some(cursor) => next = Some(cursor),
+            None => return Ok(lines),
+        }
+    }
+    Err("order has more line pages than this example reads".into())
 }
 
 // A partition-branched table: the partition prefix alone selects the member.

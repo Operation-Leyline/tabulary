@@ -557,8 +557,16 @@ without the `derive` feature.
 `MultiTable<M>` holds a validated name and no client. Its `put`, `get`, `update`,
 `delete`, `check`, `batch_get`, `batch_write`, `query_entity`, and `member`
 methods accept only `R: MemberOf<M>`; any other record type is a compile error
-naming the table enum. Each returns the ordinary builder for `R`, so write options,
-version policy, conditions, and transaction conversion are unchanged. Several
+naming the table enum. Each asserts `member_fault::<M, R>()` at compile time,
+which also requires the variant's declared record name to equal `R`'s, so a
+hand-written `MemberOf` for a type the enum does not hold is refused. Each
+returns the ordinary builder for `R`, so write options, version policy,
+conditions, and transaction conversion are unchanged, with one addition:
+`update` starts with an `attribute_exists` guard on the partition key. Later
+conditions are ANDed with it and transaction conversion keeps it, so an update
+can never create a partial member that strict polymorphic reads would refuse;
+members are created by a full-record `put`. `member::<R>()` returns the plain
+`Table<R>` binding without that guard. Several
 members of one table therefore join a single transaction as an ordinary action
 tuple, with typed cancellation reasons per position. A `BatchWriteItem` or
 `BatchGetItem` request is still homogeneous: mixed members use one batch per

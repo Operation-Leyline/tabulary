@@ -175,9 +175,10 @@ impl MultiObject for Overlapping {
         unreachable!("an invalid multi-object contract never dispatches")
     }
 }
+// A hand-written membership for a type the enum does not hold. Its keys fit the
+// Device pattern, but the record check refuses it, and every `MultiTable`
+// member operation asserts that check at compile time.
 impl MemberOf<Access> for Tablet {
-    // Declared as the Device variant, but `DEV#TAB#` keys are a narrower
-    // pattern, so the member check passes: every tablet key matches `DEV#`.
     const VARIANT: usize = 1;
     fn into_object(self) -> Access {
         Access::Device(Device { id: self.id })
@@ -228,7 +229,10 @@ fn manual_contracts_are_validated_before_use() {
             code: "overlapping_variant_keys"
         }
     );
-    assert_eq!(tabulary::member_fault::<Access, Tablet>(), None);
+    assert_eq!(
+        tabulary::member_fault::<Access, Tablet>(),
+        Some("member_record_mismatch")
+    );
 }
 
 #[test]

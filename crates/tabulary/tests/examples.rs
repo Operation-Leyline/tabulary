@@ -288,7 +288,8 @@ async fn multi_object_example_writes_reads_and_narrows_members() {
         )
     };
     let audit = r#"{"pk":{"S":"ORD#ord-teal"},"sk":{"S":"AUDIT#00000000000000000001"},"order_ref":{"S":"ord-teal"},"seq":{"N":"1"},"note":{"S":"placed"}}"#;
-    let next = r#"{"pk":{"S":"ORD#ord-teal"},"sk":{"S":"AUDIT#00000000000000000001"}}"#;
+    // Ascending sort order is AUDIT# < LINE# < META; the page ends after line 1.
+    let next = r#"{"pk":{"S":"ORD#ord-teal"},"sk":{"S":"LINE#00000000000000000001"}}"#;
     let (client, replay) = Replay::client(vec![
         step(
             "TransactWriteItems",
@@ -299,21 +300,29 @@ async fn multi_object_example_writes_reads_and_narrows_members() {
             "Query",
             &["\"Limit\":2", "\"ConsistentRead\":true"],
             format!(
-                r#"{{"Items":[{audit},{header}],"Count":2,"ScannedCount":2,"LastEvaluatedKey":{next}}}"#
+                r#"{{"Items":[{audit},{}],"Count":2,"ScannedCount":2,"LastEvaluatedKey":{next}}}"#,
+                line(1)
             ),
         ),
         step(
             "Query",
-            &["ExclusiveStartKey", "AUDIT#00000000000000000001"],
+            &["ExclusiveStartKey", "LINE#00000000000000000001"],
             format!(
-                r#"{{"Items":[{},{}],"Count":2,"ScannedCount":2}}"#,
-                line(1),
+                r#"{{"Items":[{},{header}],"Count":2,"ScannedCount":2}}"#,
                 line(2)
             ),
         ),
         step(
             "Query",
             &["begins_with", "LINE#"],
+            format!(
+                r#"{{"Items":[{}],"Count":1,"ScannedCount":1,"LastEvaluatedKey":{next}}}"#,
+                line(1)
+            ),
+        ),
+        step(
+            "Query",
+            &["begins_with", "ExclusiveStartKey"],
             format!(r#"{{"Items":[{}],"Count":1,"ScannedCount":1}}"#, line(2)),
         ),
         step(
@@ -325,14 +334,14 @@ async fn multi_object_example_writes_reads_and_narrows_members() {
     assert_eq!(multi_object::place_order(&client).await.unwrap(), 4);
     let order = multi_object::read_order(&client).await.unwrap();
     let names: Vec<_> = order.iter().map(|item| item.variant_name()).collect();
-    assert_eq!(names, ["Audit", "Header", "Line", "Line"]);
-    let multi_object::OrderTable::Line(second) = &order[3] else {
+    assert_eq!(names, ["Audit", "Line", "Line", "Header"]);
+    let multi_object::OrderTable::Line(second) = &order[2] else {
         panic!("expected an order line")
     };
     assert_eq!((second.line_no, second.quantity), (2, 4));
     let lines = multi_object::order_lines(&client).await.unwrap();
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0].line_no, 2);
+    let numbers: Vec<_> = lines.iter().map(|line| line.line_no).collect();
+    assert_eq!(numbers, [1, 2]);
     let customer = multi_object::load_customer(&client).await.unwrap().unwrap();
     assert_eq!(customer.display_name, "Sand");
     let account = multi_object::AccountTable::from(customer)
@@ -341,7 +350,7 @@ async fn multi_object_example_writes_reads_and_narrows_members() {
     assert_eq!(account["pk"], Av::S("CUST#cust-sand".into()));
     let stored: Vec<_> = order.iter().map(|item| item.to_item().unwrap()).collect();
     assert_eq!(stored[0]["note"], Av::S("placed".into()));
-    assert_eq!(stored[1]["customer_ref"], Av::S("cust-sand".into()));
+    assert_eq!(stored[3]["customer_ref"], Av::S("cust-sand".into()));
     let requests = replay.requests.lock().unwrap();
     let puts = requests[0]["TransactItems"].as_array().unwrap();
     let sorts: Vec<_> = puts
