@@ -285,10 +285,12 @@ cannot feed any secondary index (as a field key, template component, or
 `include` entry), since an index needs a stored attribute, including an index
 that reuses a primary template. `Document` derives reject the option.
 Adding or removing `key_only` on an existing table changes the stored item
-shape: rows written with the separate attribute fail strict decode under the new
-declaration, and older readers reject rows without it. Treat it as a data
-migration (rewrite every row, or decode with `unknown = "allow"` until the
-backfill completes); the library never infers which shape a row has.
+shape, so treat it as a data migration; the library never infers which shape a
+row has. When adding it, rows that still hold the separate attribute fail strict
+decode until rewritten (or until the backfill completes under `unknown = "allow"`),
+and older readers reject rows without that attribute. When removing it, the
+restored attribute is required again, so every row must be backfilled with it
+before the new declaration reads them; `unknown = "allow"` does not help there.
 Moving keys requires an explicit delete and put, optionally in one transaction.
 
 The template language has literal UTF-8 text, escaped braces `{{` and `}}`,
