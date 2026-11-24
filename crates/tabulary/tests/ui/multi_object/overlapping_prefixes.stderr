@@ -1,0 +1,17 @@
+error: variant `Note` is not disjoint from `Line`: one stored key could match both; give them non-overlapping partition or sort prefixes
+  --> tests/ui/multi_object/overlapping_prefixes.rs:28:5
+   |
+28 |     Note(OrderNote),
+   |     ^^^^
+
+error: variant `Note` is not disjoint from `Line`: one stored key could match both; give them non-overlapping partition or sort prefixes
+  --> tests/ui/multi_object/overlapping_prefixes.rs:38:5
+   |
+38 |     Note(OrderNote),
+   |     ^^^^
+
+error: variant `Note` is not disjoint from `Line`: one stored key could match both; give them non-overlapping partition or sort prefixes
+  --> tests/ui/multi_object/overlapping_prefixes.rs:48:5
+   |
+48 |     Note(OrderNote),
+   |     ^^^^

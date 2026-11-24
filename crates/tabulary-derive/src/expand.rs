@@ -298,6 +298,7 @@ pub fn record(record: &Record) -> TokenStream {
         }))
     });
     let primary_schema = crate::query_expand::primary(record);
+    let key_patterns = key_patterns(record, path);
     let transition = crate::variants_flatten::transition(record);
     quote! {
         #checks
@@ -336,6 +337,7 @@ pub fn record(record: &Record) -> TokenStream {
         impl #ig #path::Record for #ident #tg #wc {
             const SCHEMA: #path::RecordSchema = #path::__private::schema(
                 ::core::stringify!(#ident), &[#(#descriptors,)*], #path::__private::keys(#partition, #sort)) #index_schema #ttl_schema;
+            #key_patterns
         }
         impl #ig #ident #tg #wc {
             #key_check
@@ -349,6 +351,33 @@ pub fn record(record: &Record) -> TokenStream {
             }
         }
         #document
+    }
+}
+
+/// Leading literal text of composite primary keys; omitted when neither has one.
+fn key_patterns(record: &Record, path: &syn::Path) -> TokenStream {
+    use crate::template::Part;
+    let pattern = |position: Option<usize>| {
+        let template = record
+            .templates
+            .iter()
+            .find(|(index, _)| Some(*index) == position)
+            .map(|(_, template)| template);
+        match template.map(|t| (t.parts.first(), t.parts.len())) {
+            Some((Some(Part::Literal(text)), 1)) => Some(quote!(#path::KeyPattern::Exact(#text))),
+            Some((Some(Part::Literal(text)), _)) => Some(quote!(#path::KeyPattern::Prefix(#text))),
+            _ => None,
+        }
+    };
+    let (partition, sort) = (pattern(Some(record.partition)), pattern(record.sort));
+    if partition.is_none() && sort.is_none() {
+        return quote!();
+    }
+    let any = quote!(#path::KeyPattern::Any);
+    let partition = partition.unwrap_or_else(|| any.clone());
+    let sort = sort.unwrap_or(any);
+    quote! {
+        const KEY_PATTERNS: #path::KeyPatterns = #path::KeyPatterns { partition: #partition, sort: #sort };
     }
 }
 

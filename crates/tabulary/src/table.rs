@@ -25,6 +25,13 @@ impl<R: Record> Table<R> {
     pub fn name(&self) -> &str {
         &self.name
     }
+    /// An already validated name, shared by every member of a multi-object table.
+    pub(crate) fn bound(name: &str) -> Self {
+        Self {
+            name: name.into(),
+            marker: PhantomData,
+        }
+    }
 }
 impl<R: Record> Clone for Table<R> {
     fn clone(&self) -> Self {

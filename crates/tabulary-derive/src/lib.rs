@@ -8,6 +8,8 @@ mod index_expand;
 mod index_parse;
 mod index_validate;
 mod key_expand;
+mod multi_object_expand;
+mod multi_object_parse;
 mod parse;
 mod projection_expand;
 mod projection_parse;
@@ -31,6 +33,16 @@ pub fn projection(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     projection_parse::projection(input)
         .map(|schema| projection_expand::projection(&schema))
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derive a closed multi-object table: members, key discriminators, and checks.
+#[proc_macro_derive(MultiObject, attributes(tabulary))]
+pub fn multi_object(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    multi_object_parse::multi_object(input)
+        .map(|object| multi_object_expand::multi_object(&object))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

@@ -18,8 +18,8 @@ use crate::{
 /// A validated zero-based segment and total. Construction never schedules work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScanSegment {
-    segment: u32,
-    total: u32,
+    pub(crate) segment: u32,
+    pub(crate) total: u32,
 }
 impl ScanSegment {
     pub fn new(segment: u32, total: u32) -> Result<Self, BuildError> {
@@ -47,8 +47,8 @@ pub struct ScanBuilder<R: Record, I = (), P = R> {
     decode_item: fn(&Item) -> Result<P, DecodeError>,
 }
 pub struct PreparedScan<R, I = (), P = R> {
-    request: PreparedRequest<ScanInput, P>,
-    binding: CursorBinding<R, I>,
+    pub(crate) request: PreparedRequest<ScanInput, P>,
+    pub(crate) binding: CursorBinding<R, I>,
 }
 impl<R: Record + Document> Table<R> {
     pub fn scan(&self, consistency: ReadConsistency) -> ScanBuilder<R> {
@@ -241,7 +241,7 @@ impl<R, I, P> PreparedScan<R, I, P> {
             .set_expression_attribute_values(input.expression_attribute_values.clone())
     }
 }
-impl<R: Record, I, P> PreparedScan<R, I, P> {
+impl<R, I, P> PreparedScan<R, I, P> {
     pub fn decode(
         &self,
         result: Result<ScanOutput, SdkError<ScanError>>,

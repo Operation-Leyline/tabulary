@@ -143,13 +143,56 @@ impl<R: Record, I> CursorBinding<R, I> {
         if index.is_some_and(|index| !R::SCHEMA.indexes.contains(&index)) {
             return Err(BuildError::IncompatibleIndex);
         }
-        let binding = Self {
-            table: table.name().into(),
-            schema: R::SCHEMA,
+        Self::bind(
+            table.name().into(),
+            R::SCHEMA,
             index,
             operation,
-            filter: filter.map(|f| CanonicalNode::new(f.root())).transpose()?,
-            projection: projection(selection),
+            filter.map(|f| CanonicalNode::new(f.root())).transpose()?,
+            projection(selection),
+            consistency,
+        )
+    }
+}
+impl<R, I> CursorBinding<R, I> {
+    /// A multi-object read: the binding schema holds only the shared physical keys.
+    pub(crate) fn multi(
+        table: &str,
+        schema: RecordSchema,
+        key: Option<(&ConditionNode, QueryOrder)>,
+        segment: Option<(u32, u32)>,
+        consistency: ReadConsistency,
+    ) -> Result<Self, BuildError> {
+        let operation = match key {
+            Some((root, order)) => Operation::Query(CanonicalNode::new(root)?, order),
+            None => Operation::Scan(segment),
+        };
+        Self::bind(
+            table.into(),
+            schema,
+            None,
+            operation,
+            None,
+            None,
+            consistency,
+        )
+    }
+    fn bind(
+        table: String,
+        schema: RecordSchema,
+        index: Option<IndexDefinition>,
+        operation: Operation,
+        filter: Option<CanonicalNode>,
+        projection: Option<Vec<&'static str>>,
+        consistency: ReadConsistency,
+    ) -> Result<Self, BuildError> {
+        let binding = Self {
+            table,
+            schema,
+            index,
+            operation,
+            filter,
+            projection,
             select_count: false,
             consistency,
             marker: PhantomData,
@@ -164,6 +207,9 @@ impl<R: Record, I> CursorBinding<R, I> {
         self.projection = None;
         self.select_count = true;
         self
+    }
+    pub(crate) fn record_name(&self) -> &'static str {
+        self.schema.name
     }
     /// Only absence or an empty map means end; no record decoder is involved.
     pub(crate) fn cursor(&self, key: Option<Item>) -> Result<Option<Cursor<R, I>>, BuildError> {

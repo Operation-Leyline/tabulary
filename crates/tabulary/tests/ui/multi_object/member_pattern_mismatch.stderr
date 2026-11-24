@@ -1,0 +1,17 @@
+error[E0080]: evaluation panicked: member_partition_pattern_mismatch
+  --> tests/ui/multi_object/member_pattern_mismatch.rs:21:5
+   |
+21 |     Customer(Customer),
+   |     ^^^^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: member_partition_pattern_mismatch
+  --> tests/ui/multi_object/member_pattern_mismatch.rs:29:5
+   |
+29 |     Invoice(Invoice),
+   |     ^^^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: member_partition_key_mismatch
+  --> tests/ui/multi_object/member_pattern_mismatch.rs:37:5
+   |
+37 |     Customer(Customer),
+   |     ^^^^^^^^ evaluation of `_` failed here

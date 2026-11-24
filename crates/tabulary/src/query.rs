@@ -31,8 +31,8 @@ pub struct QueryBuilder<R: Record, I: KeySchema<R>, S, P = R> {
     decode_item: fn(&Item) -> Result<P, DecodeError>,
 }
 pub struct PreparedQuery<R, I, P = R> {
-    request: PreparedRequest<QueryInput, P>,
-    binding: CursorBinding<R, I>,
+    pub(crate) request: PreparedRequest<QueryInput, P>,
+    pub(crate) binding: CursorBinding<R, I>,
 }
 impl<R: Record + Document> Table<R> {
     pub fn query<I: PrimarySchema<R>, S>(
@@ -249,7 +249,7 @@ impl<R, I, P> PreparedQuery<R, I, P> {
             .set_expression_attribute_values(input.expression_attribute_values.clone())
     }
 }
-impl<R: Record, I, P> PreparedQuery<R, I, P> {
+impl<R, I, P> PreparedQuery<R, I, P> {
     pub fn decode(
         &self,
         result: Result<QueryOutput, SdkError<QueryError>>,

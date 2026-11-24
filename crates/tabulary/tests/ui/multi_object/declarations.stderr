@@ -1,0 +1,35 @@
+error: MultiObject needs #[tabulary(partition = "...")] naming the shared partition key
+  --> tests/ui/multi_object/declarations.rs:10:6
+   |
+10 | enum MissingPartition {
+   |      ^^^^^^^^^^^^^^^^
+
+error: a sort discriminator needs #[tabulary(sort = "...")] on the enum
+  --> tests/ui/multi_object/declarations.rs:17:16
+   |
+17 |     #[tabulary(sort(prefix = "META"))]
+   |                ^^^^
+
+error: each MultiObject variant holds exactly one record type, as `Name(Record)`
+  --> tests/ui/multi_object/declarations.rs:24:5
+   |
+24 |     Customer { record: Customer },
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: empty key discriminator
+  --> tests/ui/multi_object/declarations.rs:30:35
+   |
+30 |     #[tabulary(partition(prefix = ""))]
+   |                                   ^^
+
+error: this record type is already the member of variant `First`
+  --> tests/ui/multi_object/declarations.rs:40:12
+   |
+40 |     Second(Customer),
+   |            ^^^^^^^^
+
+error: a key discriminator has exactly one prefix or exact
+  --> tests/ui/multi_object/declarations.rs:46:44
+   |
+46 |     #[tabulary(partition(prefix = "CUST#", exact = "CUST#1"))]
+   |                                            ^^^^^

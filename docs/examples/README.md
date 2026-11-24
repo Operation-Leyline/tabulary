@@ -1,6 +1,6 @@
 # Worked API examples
 
-These seven modules compile against the real library in integration tests.
+These eight modules compile against the real library in integration tests.
 The registrations below are under `crates/tabulary/tests/`. In addition,
 `examples.rs` imports every module and calls every public function with assertions
 on its results. Async examples use deterministic SDK responses through an in-memory
@@ -18,8 +18,9 @@ They require the `derive` feature; runtime tests also run without that feature.
 | [05_transaction.rs](05_transaction.rs) | Three record types in three tables, put/update/check, typed cancellation tuple. | `transaction_decode.rs`; `examples.rs` |
 | [06_query_batch.rs](06_query_batch.rs) | Bounded caller pagination and explicit bounded unprocessed-key submissions. | `batch_get_adapter.rs`; `examples.rs` |
 | [07_values_projection_scan.rs](07_values_projection_scan.rs) | Value types, nested document paths, explicit defaults, projection, and parallel scan. | `field_converters.rs`, `endpoint/indexed.rs`; `examples.rs` |
+| [08_multi_object.rs](08_multi_object.rs) | Closed multi-object tables branched on partition and sort prefixes, a cross-member transaction, a paginated polymorphic query, a narrowed member query, and a member-only read. | `multi_object.rs`; `examples.rs` |
 
-Rustfmt checks the example source. None of the seven example files was changed
+Rustfmt checks the example source. None of the first seven example files was changed
 for the final registration review. SDK retries remain the caller's choice;
 `examples.rs` explicitly disables them when checking call order and count.
 Real-service boundary checks remain unexecuted as listed in

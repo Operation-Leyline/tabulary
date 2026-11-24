@@ -1,5 +1,5 @@
 use super::*;
-use crate::{__private as p, KeyOnly, KeySchema, Native, NoSort, Required, Value};
+use crate::{__private as p, KeyOnly, KeySchema, Native, NoSort, Record, Required, Value};
 use aws_sdk_dynamodb::types::AttributeValue as Av;
 
 struct Row;
