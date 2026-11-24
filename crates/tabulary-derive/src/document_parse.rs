@@ -20,7 +20,7 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<crate::parse
             "Document cannot declare indexes",
         ));
     }
-    if opts.partition_key || opts.sort_key {
+    if opts.partition_key || opts.sort_key || opts.key_only {
         return Err(syn::Error::new_spanned(
             &attrs[0],
             "Document fields cannot declare keys",

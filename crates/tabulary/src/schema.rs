@@ -16,6 +16,9 @@ pub enum FieldAccess {
     VersionOnly,
     IndexSourceOnly,
     DerivedOnly,
+    /// A primary template component stored only inside its synthesized keys.
+    /// It has no attribute of its own and no generated attribute handle.
+    KeyComponent,
 }
 
 /// A field's physical metadata, without a value or a runtime registry.

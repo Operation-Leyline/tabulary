@@ -90,7 +90,7 @@ pub fn unknown_check(schema: &Record) -> TokenStream {
     let names = schema
         .fields
         .iter()
-        .filter(|f| !f.flatten)
+        .filter(|f| !f.flatten && !f.key_only)
         .map(|field| &field.name);
     let variants = crate::variants_flatten::known(schema);
     let exclude = schema
@@ -149,6 +149,7 @@ pub fn implementation(
     .then(|| quote!(const _: () = { #validation };));
     let descriptors = schema.fields.iter().enumerate().map(|(i, field)| {
         if field.flatten { return crate::variants_flatten::descriptor(schema, i); }
+        if field.key_only { return crate::key_expand::key_component_descriptor(schema, i); }
         let (ty, name) = (&field.ty, &field.name);
         let codec = field.codec(path);
         let presence = if field.optional { quote!(#path::Optional) } else { quote!(#path::Required) };

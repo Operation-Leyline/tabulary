@@ -1,0 +1,17 @@
+error[E0599]: no associated function or constant named `TENANT` found for struct `SessionAttrs` in the current scope
+  --> tests/ui/key_only/handle.rs:13:42
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ---------------- associated function or constant `TENANT` not found for this struct
+...
+13 |     #[tabulary(attribute = SessionAttrs::TENANT)]
+   |                                          ^^^^^^ associated function or constant not found in `SessionAttrs`
+
+error[E0599]: no associated function or constant named `TENANT` found for struct `SessionAttrs` in the current scope
+  --> tests/ui/key_only/handle.rs:19:27
+   |
+ 1 | #[derive(tabulary::Record)]
+   |          ---------------- associated function or constant `TENANT` not found for this struct
+...
+19 |     let _ = SessionAttrs::TENANT.eq("north".into());
+   |                           ^^^^^^ associated function or constant not found in `SessionAttrs`

@@ -92,9 +92,10 @@ struct Order {
 ```
 
 A named struct is a record; tuple structs and unions are rejected. Every ordinary
-field is one attribute, with two explicit exceptions: a flattened `Variants`
-field occupies its declared tag and payload attributes, and composite keys add
-declared synthesized attributes. No field is silently skipped.
+field is one attribute, with three explicit exceptions: a flattened `Variants`
+field occupies its declared tag and payload attributes, composite keys add
+declared synthesized attributes, and a `key_only` template component (§3.1) is
+stored only inside its synthesized primary keys. No field is silently skipped.
 
 Each field must have an explicit `rename` or inherit a container `rename_all`.
 Supported rules are `snake_case`, `camelCase`, `PascalCase`, and
@@ -104,7 +105,7 @@ derive at the offending field. Empty names are rejected.
 
 The derive emits peer types `OrderAttrs`, `OrderKey`, `OrderPrimary`,
 and `OrderIndexes`.
-Each field has a constant handle, such as `OrderAttrs::QUANTITY`.
+Each stored field has a constant handle, such as `OrderAttrs::QUANTITY`.
 `OrderAttrs::GIFT_NOTE.name()` returns its declared wire name. Access patterns
 never repeat wire names as string literals. Generated peer visibility matches
 the record; each handle is no more visible than its source field.
@@ -125,7 +126,10 @@ contract; the document/key supertraits and methods sketched below arrive with
 their owning milestones. `RecordSchema` initially contains `name`, static
 `fields`, and a primary `KeyDefinition` of partition/sort field positions.
 `FieldDescriptor` contains the wire name, declaration index, presence, access,
-and codec's DynamoDB category. Index, TTL, and version schema metadata arrive
+and codec's DynamoDB category. Descriptor access additionally has
+`FieldAccess::KeyComponent` for a `key_only` template component; that field has
+no handle or access marker, and its descriptor reports the `S` category of the
+key that stores it. Index, TTL, and version schema metadata arrive
 with their owning milestones. The doc-hidden `field(name, index)`,
 `keys(partition, sort)`, and three-argument `schema(name, fields, primary)`
 helpers construct this initial surface; §15 sketches the completed surface.
@@ -242,9 +246,51 @@ struct Parcel {
 
 `ParcelKey::new(shop_code, parcel_token, parcel_no)` uses the template.
 `ParcelAttrs::PARTITION` exposes the synthesized key; field keys retain their
-own named handles. Template output is an `S`. Each referenced source remains
-stored under its own declared attribute: no implicit elision or double meaning.
-Changing a composite source in place is forbidden, as with a primary key field.
+own named handles. Template output is an `S`. By default each referenced source
+remains stored under its own declared attribute: no implicit elision or double
+meaning. Changing a composite source in place is forbidden, as with a primary key field.
+
+`#[tabulary(key_only)]` on a source field is the explicit opt-out from that
+duplicate attribute:
+
+```rust,ignore
+#[derive(tabulary::Record)]
+#[tabulary(rename_all = "camelCase",
+    partition(name = "pk", template = "session!{tenant:text}!{session_id:hex}"),
+    sort(name = "sk", template = "seq!{sequence:dec20}"))]
+struct Session {
+    #[tabulary(key_only)]
+    tenant: String,
+    #[tabulary(key_only)]
+    session_id: [u8; 4],
+    sequence: u64,
+    device: Option<String>,
+}
+```
+
+A key-only field must be a component of a primary partition or sort template.
+Encoding writes no attribute for it; full decode and `RecordKey::decode_key`
+parse it from the first primary key that contains it, and every other primary
+key repeating it must agree (`KeyMismatch`). A missing key is `Missing`, and a
+key that does not match the template is a `KeyFormat` fault at the physical key
+plus component path, exactly as for stored sources. A stored attribute under the
+field's name is an ordinary unknown attribute: under `unknown = "deny"` it is
+`UnknownAttribute`, never a fallback value. The field has no `Attr` handle, so
+conditions, updates, projections, and validation paths cannot name an attribute
+that does not exist; its schema descriptor keeps the declaration position with
+`FieldAccess::KeyComponent`. Its name follows `rename_all` when present and the
+Rust name otherwise; explicit `rename` is rejected. Key-only fields cannot be
+optional, defaulted, converted, physical keys, versions, TTL, or flattened, and
+cannot feed any secondary index (as a field key, template component, or
+`include` entry), since an index needs a stored attribute, including an index
+that reuses a primary template. `Document` derives reject the option.
+Adding or removing `key_only` on an existing table changes the stored item
+shape, so treat it as a data migration; the library never infers which shape a
+row has. When adding it, rows that still hold the separate attribute fail strict
+decode until rewritten (or until the backfill completes under `unknown = "allow"`),
+and older readers reject rows without that attribute. When removing it, the
+restored attribute is required again, so every row must be backfilled with it
+before the new declaration reads them; `unknown = "allow"` does not help there.
 Moving keys requires an explicit delete and put, optionally in one transaction.
 
 The template language has literal UTF-8 text, escaped braces `{{` and `}}`,
@@ -456,7 +502,7 @@ Codecs validate DynamoDB limits both on encode and decode.
 | Rust type | DynamoDB representation and rule |
 | --- | --- |
 | `String` | `S`; empty allowed except keys. No coercion from another type. |
-| `u64`, `i64` | `N`; exact integer conversion, checked range, no fractional truncation. Mathematically integral exponent forms are accepted. |
+| `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64` | `N`; exact integer conversion, checked range, no fractional truncation or wrapping. Mathematically integral exponent forms are accepted. All share one codec, comparison, and arithmetic surface. |
 | `u128` | `N` when representable; reject values outside the service's precision domain with `NumberRange`. See the explicit full-range alternative below. |
 | `f64` | `N` using a shortest round-trip decimal. Reject NaN, infinities, negative zero, and values outside the service number domain. |
 | `Decimal` | `N`; a built-in canonical sign/coefficient/exponent decimal, exact mathematical value, checked significant digits and exponent. Parsing never rounds. Scale and spelling are not preserved. |
@@ -1207,6 +1253,23 @@ preserves the service's row order and never sorts, truncates, or fills a page.
 There is no automatic paginator or collection loop. Pages and scans are not
 snapshot isolation, even when each read is strong.
 
+`query.count()` turns a full-record Query builder into a `CountQueryBuilder`
+that sets `Select::Count`. It keeps `filter`, `limit`, `order`, `capacity`, and
+`resume` but has no `select`, and a builder that already selected a projection
+has no `count`, so the two cannot combine. A record that is also its own
+`Projection` keeps the full-record output type after `select`, so `build()`
+refuses any explicit selection with `OperationConstraint { code:
+"count_with_projection" }`. `build()` returns a
+`PreparedCountQuery` whose `decode` yields `CountPage { count: u64,
+scanned_count: u64, next_cursor: Option<Cursor<R, I>>, capacity }` without
+decoding any item. A negative count, a ScannedCount below Count, returned items,
+or an invalid continuation is a page-level decode fault (`invalid_page_count`,
+`invalid_scanned_count`, `unexpected_count_items`, `invalid_page_cursor`) with
+the raw metadata retained. A count on a non-ALL index needs no projection, but
+its filter must still stay inside the stored index namespace. Count cursors
+bind a count read: they resume only an equivalent count, never an item read,
+and item cursors never resume a count.
+
 Milestone 34's shared `page` module retains the SDK's `i32` counts. It refuses
 negative counts, a Count that differs from the returned item count, a ScannedCount
 below Count, and invalid service continuation keys. These page-level faults use
@@ -1266,7 +1329,7 @@ Batch get automatically adds complete primary keys for response correlation,
 even when the view omits them, and strips them from the user's view.
 `RecordKey::decode_key` decodes only physical keys, parsing composite components
 without requiring separately stored sources; full-record decode still requires
-and compares those sources. Batch identity compares canonical physical key
+and compares those sources, except `key_only` components, which have none. Batch identity compares canonical physical key
 values, including normalized numeric values, rather than Rust field equality.
 Query/scan use the service's last-evaluated key directly; they never infer
 pagination from the last projected item. A non-ALL index must contain all
@@ -1289,7 +1352,8 @@ and index definitions), by value without hashing or Rust type identity. Codec
 implementation bodies and nested document decode rules are not represented by
 that metadata. Projection identity is the sorted, deduplicated physical attribute
 set returned by `Projection::attributes()`, with a full-record read distinct from
-an explicit selection. Two view types fetching the same physical attributes have
+an explicit selection, and a `Select::Count` read distinct from both. Two view
+types fetching the same physical attributes have
 the same request binding, including nested views that fetch a whole map.
 Condition identity retains AST operators, grouping, operand order, and wire tags;
 numeric constants normalize through `Decimal`, maps sort by name, and sets sort
@@ -1317,7 +1381,9 @@ construct a resumable cursor.
 followed by the canonical binding and the complete key map sorted by name.
 Lengths and collection counts are big-endian `u32`; schema positions are
 big-endian `u64`. Tagged schema, expression, and value fields retain the existing
-structural identity, including declaration order in schema metadata. Key number
+structural identity, including declaration order in schema metadata. The read
+shape tag is 0 for a full record, 1 for an explicit selection followed by its
+names, and 2 for a count; access tags follow `FieldAccess` declaration order. Key number
 spellings remain unchanged; only binding constants normalize through `Decimal`.
 The size check at request build counts the binding and the minimum envelope
 without allocating an output buffer. Encoding also checks the complete cursor,
@@ -1369,6 +1435,8 @@ defined by the [Scan API](https://docs.aws.amazon.com/amazondynamodb/latest/APIR
 page of one segment. An unsegmented scan has a distinct cursor binding.
 The Scan builder also accepts `filter`, `limit`, `select`, and `capacity`, with
 the same read rules as Query; Scan filters may include key attributes.
+`scan.count()` returns a `CountScanBuilder` with the same count rules as Query,
+keeping `segment`, and decodes through `PreparedCountScan` into `CountPage`.
 Table scans use `Cursor<R, ()>` because `Record` remains metadata-only.
 Index scans use `Cursor<R, I>` with the generated
 index peer. Both retain the full schema and operation binding described above.

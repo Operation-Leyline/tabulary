@@ -92,6 +92,12 @@ pub fn record(record: &Record) -> TokenStream {
         if !synthetic {
             values.push(quote!(#id: #local));
         }
+        if f.key_only {
+            // Parsed back from the primary keys; no attribute, handle or write.
+            descriptors.push((i, key_expand::key_component_descriptor(record, i)));
+            reads.push(key_expand::parsed_binding(record, i));
+            continue;
+        }
         let handle = format_ident!(
             "{}",
             parse::rename(

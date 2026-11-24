@@ -51,7 +51,8 @@ pub fn fields(s: &Record) -> TokenStream {
             part_values.push(quote!(::core::option::Option::Some(self.#field)));
         }
     }
-    let fields = s.fields.iter().enumerate().map(|(i, f)| {
+    // Key-only components have no handle, so no projection can select them.
+    let fields = s.fields.iter().enumerate().filter(|(_, f)| !f.key_only).map(|(i, f)| {
         let (ty, name) = (&f.ty, &f.name);
         let codec = if f.flatten { quote!(#path::Native<<#ty as #path::Variants>::Tag>) } else { f.codec(path) };
         let presence = if f.optional { quote!(#path::Optional) } else { quote!(#path::Required) };

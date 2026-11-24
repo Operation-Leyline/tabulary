@@ -1,0 +1,54 @@
+error: key_only requires a component of a primary composite key template
+ --> tests/ui/key_only/declarations.rs:7:5
+  |
+7 |     device: String,
+  |     ^^^^^^
+
+error: primary template sources cannot be optional
+  --> tests/ui/key_only/declarations.rs:14:5
+   |
+14 | /     #[tabulary(key_only)]
+15 | |     tenant: Option<String>,
+   | |__________________________^
+
+error: key_only fields are required template components without a key, rename, default, converter, version, TTL or flatten
+  --> tests/ui/key_only/declarations.rs:23:5
+   |
+23 |     tenant: u128,
+   |     ^^^^^^
+
+error: key_only fields have no attribute of their own and cannot feed or be projected into an index
+  --> tests/ui/key_only/declarations.rs:32:5
+   |
+32 |     tenant: String,
+   |     ^^^^^^
+
+error: key_only fields have no attribute of their own and cannot feed or be projected into an index
+  --> tests/ui/key_only/declarations.rs:42:5
+   |
+42 |     tenant: String,
+   |     ^^^^^^
+
+error: key_only fields have no attribute of their own and cannot feed or be projected into an index
+  --> tests/ui/key_only/declarations.rs:53:5
+   |
+53 |     tenant: String,
+   |     ^^^^^^
+
+error: key_only fields have no attribute of their own and cannot feed or be projected into an index
+  --> tests/ui/key_only/declarations.rs:64:5
+   |
+64 |     shop: String,
+   |     ^^^^
+
+error: duplicate key_only option
+  --> tests/ui/key_only/declarations.rs:74:26
+   |
+74 |     #[tabulary(key_only, key_only)]
+   |                          ^^^^^^^^
+
+error: Document fields cannot declare keys
+  --> tests/ui/key_only/declarations.rs:81:5
+   |
+81 |     #[tabulary(key_only)]
+   |     ^^^^^^^^^^^^^^^^^^^^^

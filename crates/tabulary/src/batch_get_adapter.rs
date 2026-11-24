@@ -144,7 +144,7 @@ impl<R: Record + Document> Table<R> {
 impl<R: Record, K, P> BatchGet<R, K, P> {
     pub fn select<V: Projection<Source = R>>(self) -> Result<BatchGet<R, K, V>, BuildError> {
         let names = V::attributes()?;
-        crate::read_selection::validate_selection::<R>(None, Some(&names), None)?;
+        crate::read_selection::validate_selection::<R>(None, Some(&names), None, false)?;
         let mut names = names;
         for position in [Some(R::SCHEMA.primary.partition), R::SCHEMA.primary.sort]
             .into_iter()

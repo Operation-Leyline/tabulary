@@ -206,6 +206,7 @@ fn key(
                 default: None,
                 with: None,
                 flatten: false,
+                key_only: false,
             });
             record.templates.push((i, template));
             Ok(i)

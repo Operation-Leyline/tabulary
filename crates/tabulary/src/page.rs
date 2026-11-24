@@ -17,6 +17,17 @@ pub struct Page<P, C> {
     pub capacity: Option<ConsumedCapacity>,
 }
 
+/// One `Select::Count` page: service counts and continuation, never items.
+#[derive(Debug)]
+pub struct CountPage<C> {
+    /// Items matching the key condition and filter in this page.
+    pub count: u64,
+    /// Items evaluated before filtering in this page.
+    pub scanned_count: u64,
+    pub next_cursor: Option<C>,
+    pub capacity: Option<ConsumedCapacity>,
+}
+
 /// Unmodified SDK page accounting, retained even when a row cannot be decoded.
 pub struct PageMetadata {
     pub count: i32,
@@ -59,21 +70,14 @@ impl RawPage {
         binding: &CursorBinding<R, I>,
         decode_item: fn(&Item) -> Result<P, DecodeError>,
     ) -> Result<Page<P, Cursor<R, I>>, Box<ReadDecodeError>> {
-        let invalid = |attribute, code| {
-            DecodeContext::new(R::SCHEMA.name)
-                .at(PathSegment::Attribute(attribute))
-                .error(DecodeFault::Custom { code })
-        };
         if usize::try_from(self.metadata.count).ok() != Some(self.items.len()) {
-            return Err(self.fault(0, invalid("Count".into(), "invalid_page_count")));
+            return Err(self.fault(0, invalid::<R>("Count".into(), "invalid_page_count")));
         }
         if self.metadata.scanned_count < self.metadata.count {
-            return Err(self.fault(0, invalid("ScannedCount".into(), "invalid_scanned_count")));
+            let source = invalid::<R>("ScannedCount".into(), "invalid_scanned_count");
+            return Err(self.fault(0, source));
         }
-        let next = binding
-            .cursor(self.metadata.last_evaluated_key.clone())
-            .map_err(|_| invalid("LastEvaluatedKey".into(), "invalid_page_cursor"));
-        let next = match next {
+        let next = match self.next(binding) {
             Ok(next) => next,
             Err(source) => return Err(self.fault(0, source)),
         };
@@ -92,6 +96,48 @@ impl RawPage {
             capacity: self.capacity,
         })
     }
+    fn next<R: Record, I>(
+        &self,
+        binding: &CursorBinding<R, I>,
+    ) -> Result<Option<Cursor<R, I>>, DecodeError> {
+        binding
+            .cursor(self.metadata.last_evaluated_key.clone())
+            .map_err(|_| invalid::<R>("LastEvaluatedKey".into(), "invalid_page_cursor"))
+    }
+    /// Decode a `Select::Count` page. Returned items are a protocol fault.
+    pub(crate) fn decode_count<R: Record, I>(
+        self,
+        binding: &CursorBinding<R, I>,
+    ) -> Result<CountPage<Cursor<R, I>>, Box<ReadDecodeError>> {
+        let Ok(count) = u64::try_from(self.metadata.count) else {
+            return Err(self.fault(0, invalid::<R>("Count".into(), "invalid_page_count")));
+        };
+        if !self.items.is_empty() {
+            return Err(self.fault(0, invalid::<R>("Items".into(), "unexpected_count_items")));
+        }
+        let scanned_count = match u64::try_from(self.metadata.scanned_count) {
+            Ok(scanned) if scanned >= count => scanned,
+            _ => {
+                let source = invalid::<R>("ScannedCount".into(), "invalid_scanned_count");
+                return Err(self.fault(0, source));
+            }
+        };
+        let next_cursor = match self.next(binding) {
+            Ok(next) => next,
+            Err(source) => return Err(self.fault(0, source)),
+        };
+        Ok(CountPage {
+            count,
+            scanned_count,
+            next_cursor,
+            capacity: self.capacity,
+        })
+    }
+}
+fn invalid<R: Record>(attribute: String, code: &'static str) -> DecodeError {
+    DecodeContext::new(R::SCHEMA.name)
+        .at(PathSegment::Attribute(attribute))
+        .error(DecodeFault::Custom { code })
 }
 
 #[cfg(test)]
