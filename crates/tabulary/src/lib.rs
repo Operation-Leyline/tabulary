@@ -28,6 +28,9 @@ mod index_attributes;
 mod index_table;
 pub mod key_component;
 mod key_condition;
+mod key_pattern;
+mod multi_object;
+mod multi_table;
 mod nullable;
 mod numbers;
 mod page;
@@ -141,6 +144,18 @@ pub use key_condition::OrderedKeyCodec;
 pub use key_condition::PrefixCodec;
 pub use key_condition::PrimarySchema;
 pub use key_condition::SortComplete;
+pub use key_pattern::KeyPattern;
+pub use key_pattern::KeyPatterns;
+pub use multi_object::MemberOf;
+pub use multi_object::MultiObject;
+pub use multi_object::MultiVariant;
+pub use multi_object::decode_object;
+pub use multi_object::member_fault;
+pub use multi_object::multi_object_fault;
+pub use multi_table::MultiPartition;
+pub use multi_table::MultiQueryBuilder;
+pub use multi_table::MultiScanBuilder;
+pub use multi_table::MultiTable;
 pub use nullable::{Nullable, NullableWire};
 pub use page::CountPage;
 pub use page::Page;
@@ -172,6 +187,8 @@ pub use table_definition::TableDefinition;
 pub use table_definition::Throughput;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Document;
+#[cfg(feature = "derive")]
+pub use tabulary_derive::MultiObject;
 #[cfg(feature = "derive")]
 pub use tabulary_derive::Projection;
 #[cfg(feature = "derive")]

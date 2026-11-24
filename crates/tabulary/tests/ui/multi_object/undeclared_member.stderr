@@ -1,0 +1,72 @@
+error[E0277]: `Session` is not a declared member of multi-object table `AccountTable`
+  --> tests/ui/multi_object/undeclared_member.rs:27:26
+   |
+27 |     let _ = accounts.put(&session);
+   |                      --- ^^^^^^^^ unsatisfied trait bound
+   |                      |
+   |                      required by a bound introduced by this call
+   |
+help: the trait `MemberOf<AccountTable>` is not implemented for `Session`
+  --> tests/ui/multi_object/undeclared_member.rs:11:1
+   |
+11 | struct Session {
+   | ^^^^^^^^^^^^^^
+   = note: add a variant holding `Session` to `AccountTable`, or use a table bound to `Session`
+help: the trait `MemberOf<AccountTable>` is implemented for `Customer`
+  --> tests/ui/multi_object/undeclared_member.rs:19:5
+   |
+19 |     Customer(Customer),
+   |     ^^^^^^^^
+note: required by a bound in `MultiTable::<M>::put`
+  --> src/multi_table.rs
+   |
+   |     pub fn put<'a, R: MemberOf<M>>(&self, record: &'a R) -> PutBuilder<'a, R> {
+   |                       ^^^^^^^^^^^ required by this bound in `MultiTable::<M>::put`
+
+error[E0277]: `Session` is not a declared member of multi-object table `AccountTable`
+  --> tests/ui/multi_object/undeclared_member.rs:28:22
+   |
+28 |     let _ = accounts.get(SessionKey::new("ses-plum".into()).unwrap(), ReadConsistency::Strong);
+   |                      ^^^ unsatisfied trait bound
+   |
+help: the trait `MemberOf<AccountTable>` is not implemented for `Session`
+  --> tests/ui/multi_object/undeclared_member.rs:11:1
+   |
+11 | struct Session {
+   | ^^^^^^^^^^^^^^
+   = note: add a variant holding `Session` to `AccountTable`, or use a table bound to `Session`
+help: the trait `MemberOf<AccountTable>` is implemented for `Customer`
+  --> tests/ui/multi_object/undeclared_member.rs:19:5
+   |
+19 |     Customer(Customer),
+   |     ^^^^^^^^
+note: required by a bound in `MultiTable::<M>::get`
+  --> src/multi_table.rs
+   |
+   |     pub fn get<R: MemberOf<M>, K: RecordKey<R>>(
+   |                   ^^^^^^^^^^^ required by this bound in `MultiTable::<M>::get`
+
+error[E0277]: `Session` is not a declared member of multi-object table `AccountTable`
+  --> tests/ui/multi_object/undeclared_member.rs:29:31
+   |
+29 |     let _ = accounts.member::<Session>();
+   |                      ------   ^^^^^^^ unsatisfied trait bound
+   |                      |
+   |                      required by a bound introduced by this call
+   |
+help: the trait `MemberOf<AccountTable>` is not implemented for `Session`
+  --> tests/ui/multi_object/undeclared_member.rs:11:1
+   |
+11 | struct Session {
+   | ^^^^^^^^^^^^^^
+   = note: add a variant holding `Session` to `AccountTable`, or use a table bound to `Session`
+help: the trait `MemberOf<AccountTable>` is implemented for `Customer`
+  --> tests/ui/multi_object/undeclared_member.rs:19:5
+   |
+19 |     Customer(Customer),
+   |     ^^^^^^^^
+note: required by a bound in `MultiTable::<M>::member`
+  --> src/multi_table.rs
+   |
+   |     pub fn member<R: MemberOf<M>>(&self) -> Table<R> {
+   |                      ^^^^^^^^^^^ required by this bound in `MultiTable::<M>::member`

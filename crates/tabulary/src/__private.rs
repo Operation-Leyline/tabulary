@@ -47,3 +47,29 @@ pub const fn schema(
         ttl: None,
     }
 }
+
+/// One shared key descriptor of a multi-object schema, typed from a member.
+/// A missing member key yields `Unknown`, which the schema checks reject.
+pub const fn multi_key<R: crate::Record>(
+    name: &'static str,
+    index: usize,
+    sort: bool,
+) -> FieldDescriptor {
+    let primary = R::SCHEMA.primary;
+    let position = if sort {
+        primary.sort
+    } else {
+        Some(primary.partition)
+    };
+    let wire = match position {
+        Some(position) if position < R::SCHEMA.fields.len() => R::SCHEMA.fields[position].wire,
+        _ => crate::DynamoType::Unknown,
+    };
+    FieldDescriptor {
+        name,
+        index,
+        presence: crate::Presence::Required,
+        access: crate::FieldAccess::KeyOnly,
+        wire,
+    }
+}

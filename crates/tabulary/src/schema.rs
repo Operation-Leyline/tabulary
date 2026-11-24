@@ -52,6 +52,10 @@ pub struct RecordSchema {
 /// Document encoding and generated key interfaces remain separate contracts.
 pub trait Record: Sized {
     const SCHEMA: RecordSchema;
+    /// Static text every encoded primary key starts with or equals. Derives
+    /// take it from composite key templates; field keys promise nothing.
+    /// Multi-object tables check member discriminators against it.
+    const KEY_PATTERNS: crate::KeyPatterns = crate::KeyPatterns::ANY;
 
     /// Encode with this record's document codec and estimate its item size.
     fn billed_size(&self) -> Result<crate::BilledSize, crate::EncodeError>

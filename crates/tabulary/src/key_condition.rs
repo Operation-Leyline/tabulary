@@ -74,6 +74,37 @@ impl<R: Record, I: KeySchema<R>, S> KeyCondition<R, I, S> {
         })
     }
 }
+impl<R: Record, I: KeySchema<R>, S> KeyCondition<R, I, S> {
+    /// AND an open sort slot with a multi-object member's static discriminator.
+    pub(crate) fn restrict_sort(self, pattern: crate::KeyPattern) -> Self {
+        let (operator, text) = match pattern {
+            crate::KeyPattern::Any => return self,
+            crate::KeyPattern::Prefix(text) => (Operator::BeginsWith, text),
+            crate::KeyPattern::Exact(text) => (Operator::Eq, text),
+        };
+        let restriction = Condition::new(move || {
+            let invalid = BuildError::OperationConstraint {
+                code: "invalid_key_schema",
+            };
+            let position = I::KEYS.sort.ok_or(invalid.clone())?;
+            let field = *R::SCHEMA.fields.get(position).ok_or(invalid.clone())?;
+            if field.index != position || field.wire != DynamoType::S {
+                return Err(invalid);
+            }
+            Ok(ConditionNode::Predicate {
+                operator,
+                operands: vec![
+                    Operand::Attribute(field),
+                    Operand::Value(AttributeValue::S(text.into())),
+                ],
+            })
+        });
+        KeyCondition {
+            condition: self.condition.and(restriction),
+            marker: PhantomData,
+        }
+    }
+}
 impl<R, I> BuiltKeyCondition<R, I> {
     pub fn root(&self) -> &ConditionNode {
         self.condition.root()

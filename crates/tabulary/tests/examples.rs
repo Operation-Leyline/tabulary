@@ -25,6 +25,8 @@ mod batch;
 mod composite;
 #[path = "../../../docs/examples/04_conditional_update.rs"]
 mod conditional;
+#[path = "../../../docs/examples/08_multi_object.rs"]
+mod multi_object;
 #[path = "../../../docs/examples/01_simple.rs"]
 mod simple;
 #[path = "../../../docs/examples/03_status_record.rs"]
@@ -273,6 +275,115 @@ async fn transaction_example_preserves_commit_and_typed_cancellation_results() {
         panic!("expected old stock")
     };
     assert_eq!(stock.to_item().unwrap()["on_hand"], Av::N("0".into()));
+    replay.done();
+}
+
+#[tokio::test]
+async fn multi_object_example_writes_reads_and_narrows_members() {
+    let header = r#"{"pk":{"S":"ORD#ord-teal"},"sk":{"S":"META"},"order_ref":{"S":"ord-teal"},"customer_ref":{"S":"cust-sand"}}"#;
+    let line = |n: u64| {
+        format!(
+            r#"{{"pk":{{"S":"ORD#ord-teal"}},"sk":{{"S":"LINE#{n:020}"}},"order_ref":{{"S":"ord-teal"}},"line_no":{{"N":"{n}"}},"quantity":{{"N":"{}"}}}}"#,
+            n * 2
+        )
+    };
+    let audit = r#"{"pk":{"S":"ORD#ord-teal"},"sk":{"S":"AUDIT#00000000000000000001"},"order_ref":{"S":"ord-teal"},"seq":{"N":"1"},"note":{"S":"placed"}}"#;
+    // Ascending sort order is AUDIT# < LINE# < META; the page ends after line 1.
+    let next = r#"{"pk":{"S":"ORD#ord-teal"},"sk":{"S":"LINE#00000000000000000001"}}"#;
+    let (client, replay) = Replay::client(vec![
+        step(
+            "TransactWriteItems",
+            &["\"TableName\":\"orders\"", "LINE#00000000000000000002"],
+            "{}",
+        ),
+        step(
+            "Query",
+            &["\"Limit\":2", "\"ConsistentRead\":true"],
+            format!(
+                r#"{{"Items":[{audit},{}],"Count":2,"ScannedCount":2,"LastEvaluatedKey":{next}}}"#,
+                line(1)
+            ),
+        ),
+        step(
+            "Query",
+            &["ExclusiveStartKey", "LINE#00000000000000000001"],
+            format!(
+                r#"{{"Items":[{},{header}],"Count":2,"ScannedCount":2}}"#,
+                line(2)
+            ),
+        ),
+        step(
+            "Query",
+            &["begins_with", "LINE#"],
+            format!(
+                r#"{{"Items":[{}],"Count":1,"ScannedCount":1,"LastEvaluatedKey":{next}}}"#,
+                line(1)
+            ),
+        ),
+        step(
+            "Query",
+            &["begins_with", "ExclusiveStartKey"],
+            format!(r#"{{"Items":[{}],"Count":1,"ScannedCount":1}}"#, line(2)),
+        ),
+        step(
+            "GetItem",
+            &["CUST#cust-sand", "\"TableName\":\"accounts\""],
+            r#"{"Item":{"pk":{"S":"CUST#cust-sand"},"customer_ref":{"S":"cust-sand"},"display_name":{"S":"Sand"}}}"#,
+        ),
+    ]);
+    assert_eq!(multi_object::place_order(&client).await.unwrap(), 4);
+    let order = multi_object::read_order(&client).await.unwrap();
+    let names: Vec<_> = order.iter().map(|item| item.variant_name()).collect();
+    assert_eq!(names, ["Audit", "Line", "Line", "Header"]);
+    let multi_object::OrderTable::Line(second) = &order[2] else {
+        panic!("expected an order line")
+    };
+    assert_eq!((second.line_no, second.quantity), (2, 4));
+    let lines = multi_object::order_lines(&client).await.unwrap();
+    let numbers: Vec<_> = lines.iter().map(|line| line.line_no).collect();
+    assert_eq!(numbers, [1, 2]);
+    let customer = multi_object::load_customer(&client).await.unwrap().unwrap();
+    assert_eq!(customer.display_name, "Sand");
+    let account = multi_object::AccountTable::from(customer)
+        .to_item()
+        .unwrap();
+    assert_eq!(account["pk"], Av::S("CUST#cust-sand".into()));
+    let stored: Vec<_> = order.iter().map(|item| item.to_item().unwrap()).collect();
+    assert_eq!(stored[0]["note"], Av::S("placed".into()));
+    assert_eq!(stored[3]["customer_ref"], Av::S("cust-sand".into()));
+    let requests = replay.requests.lock().unwrap();
+    let puts = requests[0]["TransactItems"].as_array().unwrap();
+    let sorts: Vec<_> = puts
+        .iter()
+        .map(|put| put["Put"]["Item"]["sk"]["S"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        sorts,
+        [
+            "META",
+            "LINE#00000000000000000001",
+            "LINE#00000000000000000002",
+            "AUDIT#00000000000000000001"
+        ]
+    );
+    assert_eq!(
+        requests[1],
+        json!({
+            "TableName": "orders", "ConsistentRead": true, "ScanIndexForward": true,
+            "Limit": 2, "KeyConditionExpression": "#n0 = :v0",
+            "ExpressionAttributeNames": {"#n0": "pk"},
+            "ExpressionAttributeValues": {":v0": {"S": "ORD#ord-teal"}}
+        })
+    );
+    assert_eq!(
+        requests[3]["KeyConditionExpression"],
+        json!("(#n0 = :v0 AND begins_with(#n1, :v1))")
+    );
+    assert_eq!(
+        requests[3]["ExpressionAttributeValues"][":v1"],
+        json!({"S": "LINE#"})
+    );
+    drop(requests);
     replay.done();
 }
 

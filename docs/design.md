@@ -4,7 +4,7 @@ Status: **implemented library with documented verification limits**. Record code
 derives, typed expressions, prepared operations, cursor bytes, batches,
 transactions, and table definitions have unit, compile-fail, and SDK-fixture
 coverage. CI runs the SDK/MSRV feature matrix and the discovered endpoint suite
-against a pinned dynoxide emulator. All seven [examples](examples/README.md)
+against a pinned dynoxide emulator. All eight [examples](examples/README.md)
 compile as real test modules and their public functions have result assertions.
 Section 16 lists API boundaries and real-service verification gaps; passing these
 tests does not establish exact DynamoDB equivalence.
@@ -22,8 +22,10 @@ An application can inspect the entire input before it sends it.
 
 The library does not plan queries, migrate schemas, infer access patterns, or
 require single-table modeling. Different records may bind to the same table only
-when their physical key and index schemas agree. It does not create registries,
-inject entity tags, or decide tenancy and authorization.
+when their physical key schemas agree. Single-table modeling is opt-in: a closed
+multi-object enum (§3.4) declares every record a table may hold and the static key
+text that selects each one. There is no global registry, injected entity tag, or
+run-time type discovery, and the library does not decide tenancy or authorization.
 
 All examples use invented retail and delivery models. The public design includes
 no application-specific schema or workload measurements.
@@ -54,8 +56,9 @@ struct conversion. tabulary does not depend on an SDK roadmap commitment.
 
 - `tabulary`: codecs, schema metadata, handles, expressions, prepared operations,
   errors, cursors, batch state, and table definitions.
-- `tabulary-derive`: `Record`, `Document`, `StringEnum`, `Variants`, and
-  `Projection` derives, re-exported by the runtime's `derive` feature.
+- `tabulary-derive`: `Record`, `Document`, `StringEnum`, `Variants`,
+  `Projection`, and `MultiObject` derives, re-exported by the runtime's `derive`
+  feature.
 
 Both use edition 2024, MSRV **1.97.1**, Apache-2.0, and
 `#![forbid(unsafe_code)]`. The runtime uses `aws-sdk-dynamodb = "1.130.0"`
@@ -181,6 +184,7 @@ pub trait Document: Sized {
 
 pub trait Record: Sized {
     const SCHEMA: RecordSchema;
+    const KEY_PATTERNS: KeyPatterns = KeyPatterns::ANY; // provided default
     fn billed_size(&self) -> Result<BilledSize, EncodeError> where Self: Document;
     fn table_definition() -> TableDefinition<Self>; // provided default
 }
@@ -493,6 +497,120 @@ so a reindex containing primary inputs fails with `reindex_requires_key`; the
 ordinary UpdateItem build supplies that key, including transaction conversion.
 `ReindexSchema<R>` describes generated bindings using the same expansion path;
 manual typed reindex bindings are outside the supported API.
+
+### 3.4 Multi-object tables
+
+A table that holds several record types is declared as a closed enum. Each
+variant holds exactly one `Record` type, and each record keeps its own strict
+codec, key templates, conditions, and updates. The enum adds two things: the
+complete list of types the table may hold, and the static key text that selects
+one of them for a stored item.
+
+```rust,ignore
+#[derive(tabulary::MultiObject)]
+#[tabulary(partition = "pk", sort = "sk")]
+enum OrderTable {
+    #[tabulary(partition(prefix = "ORD#"), sort(exact = "META"))]
+    Header(OrderHeader), // partition(template = "ORD#{order_ref:text}"), sort(template = "META")
+    #[tabulary(partition(prefix = "ORD#"), sort(prefix = "LINE#"))]
+    Line(OrderLine),     // sort(template = "LINE#{line_no:dec20}")
+}
+let orders = tabulary::MultiTable::<OrderTable>::new("orders")?;
+```
+
+A table that branches on the partition key alone omits `sort`, both on the enum
+and on its variants. `prefix = "..."` matches values that begin with the text;
+`exact = "..."` matches only the literal. An omitted discriminator matches any
+value. Patterns are nonempty and apply only to `S` keys.
+
+**Static checks.** `Record` has a provided `KEY_PATTERNS: KeyPatterns`
+constant. The record derive sets it from composite primary templates: the leading
+literal of a template is a `Prefix`, a literal-only template is `Exact`, and a
+template that starts with a component or a plain field key is `Any`. Manual
+records may declare it; as with other manual schema metadata, the declaring
+module is trusted. The `MultiObject` derive rejects, at the offending variant:
+generic enums, variants that do not hold exactly one record type, a record type
+held twice, empty or doubled discriminators, sort discriminators without a
+declared sort key, and any two variants whose partition patterns overlap and
+whose sort patterns also overlap. Two patterns overlap when one string could
+match both: an `Any`, two prefixes where one starts with the other, an exact
+literal that starts with a prefix, or two equal literals. Disjoint variants
+therefore select at most one member for any stored key.
+
+The derive also emits `const` assertions, evaluated by `cargo check`, of
+`multi_object_fault::<M>()` and `member_fault::<M, R>()` for every member. A member
+fails to compile when its physical key names or wire types differ from the
+enum's, or when its `KEY_PATTERNS` do not imply its variant's discriminators
+(for example, a template that starts `CUST#` declared under `prefix = "INV#"`, or
+an unprefixed field key under any prefix). Manual implementations call the same
+`const fn`s; `MultiTable::new` also refuses an invalid contract with
+`OperationConstraint` carrying the same stable code.
+
+**Runtime contract.** `MultiObject` has a keys-only `SCHEMA` (the shared
+partition and optional sort descriptors, no indexes or TTL), static `VARIANTS`
+(`MultiVariant { name, record, keys }`), `decode_variant`, and a generic
+`MemberSeal<R>` type. `MemberOf<M>` for `R` requires
+`const SEAL: M::MemberSeal<R>`, a value only the enum's declaring module can
+construct. A real member's seal names that member's type, so it cannot be
+reused for another type. The derive declares its seal in an anonymous scope with
+a private field, so no other module or crate can construct a seal for a derived
+enum. Every member operation goes through `MultiTable::member`, whose inline
+`const` block evaluates `R::SEAL` and `member_fault::<M, R>()`. So a seal that
+diverges (`const SEAL: ... = panic!()`) instead of being constructed fails when
+the operation is monomorphized, which happens in every build. `cargo check`
+alone does not monomorphize, so it does not report that case; a `compile_fail`
+doctest on `MultiTable::member` covers it. Manual enums use a type such as
+`pub struct Seal<R>(PhantomData<R>);`. As with manual schema metadata, the declaring module
+itself remains trusted. The derive
+implements `MemberOf<M>` for every member, with its variant position and
+`into_object`, plus `From<Member> for M`, and inherent `from_item`, `to_item`, and
+`variant_name`. Manual implementations of all of these are supported and tested
+without the `derive` feature.
+
+`MultiTable<M>` holds a validated name and no client. Its `put`, `get`, `update`,
+`delete`, `check`, `batch_get`, `batch_write`, `query_entity`, and `member`
+methods accept only `R: MemberOf<M>`; any other record type is a compile error
+naming the table enum. Each asserts `member_fault::<M, R>()` at compile time,
+which also requires the variant's declared record name to equal `R`'s, catching
+a mistaken membership inside the declaring module. Each
+returns the ordinary builder for `R`, so write options, version policy,
+conditions, and transaction conversion are unchanged, with one addition:
+`update` starts with an `attribute_exists` guard on the partition key. Later
+conditions are ANDed with it and transaction conversion keeps it, so an update
+can never create a partial member that strict polymorphic reads would refuse;
+members are created by a full-record `put`. `member::<R>()` returns the plain
+`Table<R>` binding without that guard. Several
+members of one table therefore join a single transaction as an ordinary action
+tuple, with typed cancellation reasons per position. A `BatchWriteItem` or
+`BatchGetItem` request is still homogeneous: mixed members use one batch per
+member or a transaction.
+
+`query_entity(key, consistency)` accepts a member key condition with its sort
+slot still open, and narrows that slot to the member's sort discriminator:
+`begins_with` for a prefix, equality for an exact literal. The result is an
+ordinary `QueryBuilder<R, ...>` whose items decode strictly as `R`; disjointness
+means no other member can satisfy both key predicates.
+
+`query(key, consistency)` takes any member's key condition, since members share
+the physical keys, and returns a `MultiQueryBuilder` with `capacity`, `order`,
+`limit`, and `resume`. `scan(consistency)` returns a `MultiScanBuilder` with
+`capacity`, `limit`, `segment`, and `resume`. Neither offers filters or
+projections, which are defined per record. Both prepare an ordinary
+`PreparedQuery<M, MultiPartition, M>` or `PreparedScan<M, (), M>` and decode
+`Page<M, Cursor<M, _>>` in service order. Cursors bind to the enum's keys-only
+schema, the table, the key condition (rebound to the shared key descriptors),
+the order or segment, and consistency; a cursor resumes a query built from any
+member's key condition for the same partition, and nothing else.
+
+Polymorphic decoding fails closed. The partition (and, if declared, sort) key
+must be present (`Missing`) and a string when any variant discriminates on it
+(`WrongType`). A key that matches no variant is `UnknownVariant` at the sort key
+when the partition alone matched some member, otherwise at the partition key.
+The selected member then decodes strictly with the enum as the error's `record`
+and the member as its `document`, so a corrupt attribute or a key its own
+template refuses names the enum, the member, and the attribute. A failed row
+fails the page with its position and the raw page, exactly as in §8; no item is
+skipped or defaulted.
 
 ## 4. Value mapping and validation
 
@@ -2246,6 +2364,7 @@ operations described above:
 | `EncodeContext`, `DecodeContext`, `AttributePath`, `PathSegment` | Manual codec traversal via `new`, `at`, `in_document`, `enter_container`, `error`, `segments`, and `attribute`; child contexts preserve their parent. |
 | `Cursor::last_evaluated_key`, `PageMetadata::last_evaluated_key` | Explicit raw continuation-key access; Debug remains redacted. Page metadata retains SDK counts. |
 | `Batch*Progress`, `Batch*Chunk`, `Batch*Entry`, `Batch*State`, `Batch*Complete`, `Batch*Incomplete`, `Batch*Partial` | Public pure progress cores and ordered results in section 10. `positions`, `keys`, `entries`, and `calls_issued` inspect state without issuing work. Adapter round/result/error names specialize each API. `BatchAction::key/item` explicitly expose frozen raw values. |
+| `KeyPattern`, `KeyPatterns`, `MultiVariant`, `decode_object`, `multi_object_fault`, `member_fault` | Static multi-object metadata and the checks the `MultiObject` derive asserts (§3.4); public so manual implementations get the same compile-time and run-time validation. |
 | `Redacted::new/expose/into_inner`, `OldItem::decode`, `Table::name`, `BatchBudget::max_calls` | Explicit wrapping/raw access, standalone old-record decoding, binding identifier and budget inspection. |
 
 Reserved public hooks also exist outside `__private`: doc-hidden
@@ -2257,7 +2376,7 @@ support cross-crate expansion. These names need public visibility to appear in
 associated types or generated bounds; they are not independent application APIs.
 Typed projections and their `ProjectionSource` hooks are generated only; manual
 projection implementations are outside the supported API.
-The seven worked examples and README use no `__private` items.
+The eight worked examples and README use no `__private` items.
 
 Follow-up work implements the two missing-feature findings from this review:
 record/document validation hooks and flattened scoped variant payload conditions.
@@ -2323,6 +2442,7 @@ those choices are fixed above.
 | --- | --- |
 | Struct derive, names declared once, constants/handles | 2 |
 | Field/composite keys and inverse parse | 3.1 |
+| Closed multi-object (single-table) declarations and polymorphic reads | 3.4 |
 | Secondary and sparse indexes | 3.2–3.3 |
 | Scalars, exact numbers, binary, sets, lists, maps, Option/NULL | 4 |
 | TTL/timestamps, converters, explicit defaults, secret redaction | 4.1–4.2 |
