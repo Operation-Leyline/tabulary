@@ -105,9 +105,12 @@ impl TransactGet {
         V::Source: Record,
         K: RecordKey<V::Source>,
     {
-        let selection =
-            V::attributes().and_then(crate::batch_get_adapter::transport_projection::<V::Source>);
-        self.push(table, &key, Some(selection), V::from_item)
+        self.push(
+            table,
+            &key,
+            Some(crate::batch_get_adapter::projection_for::<V>),
+            V::from_item,
+        )
     }
 
     /// Request-wide ReturnConsumedCapacity; `Capacity::None` omits it.
@@ -119,7 +122,7 @@ impl TransactGet {
         &mut self,
         table: &Table<R>,
         key: &K,
-        selection: Option<Result<RenderedExpressions, BuildError>>,
+        selection: Option<fn() -> Result<RenderedExpressions, BuildError>>,
         decode: fn(&Item) -> Result<P, DecodeError>,
     ) -> GetSlot<P> {
         let position = self.requested;
@@ -136,7 +139,10 @@ impl TransactGet {
         }
         let entry = (|| {
             let key = crate::batch_get::canonical_key::<R>(key.encode_key()?)?;
-            let expressions = selection.transpose()?.unwrap_or_default();
+            let expressions = selection
+                .map(|render| render())
+                .transpose()?
+                .unwrap_or_default();
             let names = (!expressions.names().is_empty()).then(|| expressions.names().clone());
             let get = Get::builder()
                 .table_name(table.name.clone())

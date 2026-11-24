@@ -298,3 +298,78 @@ fn over_limit_or_faulty_requests_stop_encoding_further_keys() {
     assert_eq!(ENCODED.swap(0, SeqCst), 0);
     assert_eq!(batch.build().unwrap_err(), BuildError::EmptyOperation);
 }
+
+/// A test-only projection that counts how often its selection is rendered.
+static RENDERED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+impl tabulary::projection::ProjectionSource for Order {
+    type Parts = Self;
+    fn into_parts(self) -> Self {
+        self
+    }
+}
+struct OrderQuantity {
+    quantity: u64,
+}
+impl tabulary::Projection for OrderQuantity {
+    type Source = Order;
+    fn attributes() -> Result<Vec<&'static str>, BuildError> {
+        RENDERED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(vec!["quantity"])
+    }
+    fn decode_map(item: &Item, cx: &mut DecodeContext) -> Result<Self, DecodeError> {
+        Order::decode_map(item, cx).map(|order| Self {
+            quantity: order.quantity,
+        })
+    }
+    fn project_source(source: Order, _: &mut DecodeContext) -> Result<Self, DecodeError> {
+        Ok(Self {
+            quantity: source.quantity,
+        })
+    }
+}
+
+#[test]
+fn projections_after_the_cap_or_a_fault_are_never_rendered() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let orders = Table::<Order>::new("orders").unwrap();
+    let mut tx = TransactGet::new();
+    for i in 0..120 {
+        tx.get_projected::<OrderQuantity, _>(&orders, OrderKey(format!("order-{i}")));
+    }
+    assert_eq!(RENDERED.swap(0, SeqCst), 100);
+    assert!(matches!(
+        tx.build(),
+        Err(BuildError::RequestLimit { actual: 120, .. })
+    ));
+
+    let mut batch = MultiBatchGet::new();
+    batch.get(
+        &orders,
+        vec![OrderKey(String::new())],
+        ReadConsistency::Strong,
+    );
+    for i in 0..10 {
+        batch.get_projected::<OrderQuantity, _>(
+            &Table::new(format!("orders-{i}")).unwrap(),
+            vec![OrderKey("order-1".into())],
+            ReadConsistency::Strong,
+        );
+    }
+    assert_eq!(RENDERED.swap(0, SeqCst), 0);
+    assert!(matches!(batch.build(), Err(BuildError::Encode(_))));
+
+    // A prepared projection still decodes its own view.
+    let mut tx = TransactGet::new();
+    let slot = tx.get_projected::<OrderQuantity, _>(&orders, OrderKey("order-1".into()));
+    let request = tx.build().unwrap();
+    let output = TransactGetItemsOutput::builder()
+        .responses(
+            ItemResponse::builder()
+                .set_item(Some(order("order-1", 4)))
+                .build(),
+        )
+        .build();
+    let response = request.decode(Ok(output)).unwrap();
+    assert_eq!(response.get(&slot).unwrap().unwrap().quantity, 4);
+    RENDERED.store(0, SeqCst);
+}

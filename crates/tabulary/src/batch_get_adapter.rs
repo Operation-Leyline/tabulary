@@ -175,6 +175,15 @@ pub(crate) fn transport_projection<R: Record>(
     Ok(expressions)
 }
 
+/// Render a projection's selection with its transport keys, only when called.
+pub(crate) fn projection_for<V>() -> Result<RenderedExpressions, BuildError>
+where
+    V: Projection,
+    V::Source: Record,
+{
+    transport_projection::<V::Source>(V::attributes()?)
+}
+
 impl<R: Record, K, P> BatchGet<R, K, P> {
     pub fn select<V: Projection<Source = R>>(self) -> Result<BatchGet<R, K, V>, BuildError> {
         let expressions = transport_projection::<R>(V::attributes()?)?;

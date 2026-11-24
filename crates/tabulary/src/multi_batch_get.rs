@@ -110,9 +110,13 @@ impl MultiBatchGet {
         V::Source: Record,
         K: RecordKey<V::Source>,
     {
-        let selection =
-            V::attributes().and_then(crate::batch_get_adapter::transport_projection::<V::Source>);
-        self.push(table, &keys, consistency, Some(selection), V::from_item)
+        self.push(
+            table,
+            &keys,
+            consistency,
+            Some(crate::batch_get_adapter::projection_for::<V>),
+            V::from_item,
+        )
     }
 
     /// Request-wide ReturnConsumedCapacity; `Capacity::None` omits it.
@@ -125,7 +129,7 @@ impl MultiBatchGet {
         table: &Table<R>,
         keys: &[K],
         consistency: ReadConsistency,
-        selection: Option<Result<RenderedExpressions, BuildError>>,
+        selection: Option<fn() -> Result<RenderedExpressions, BuildError>>,
         decode_item: fn(&Item) -> Result<P, DecodeError>,
     ) -> BatchGetSlot<K, P> {
         let position = self.added;
@@ -154,7 +158,10 @@ impl MultiBatchGet {
                 }
                 encoded.push(key);
             }
-            let expressions = selection.transpose()?.unwrap_or_default();
+            let expressions = selection
+                .map(|render| render())
+                .transpose()?
+                .unwrap_or_default();
             let names = (!expressions.names().is_empty()).then(|| expressions.names().clone());
             let attributes = KeysAndAttributes::builder()
                 .set_keys(Some(encoded))
