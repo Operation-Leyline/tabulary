@@ -119,55 +119,65 @@ impl<R: Record + Document> Table<R> {
             capacities: Vec::new(),
             expressions: RenderedExpressions::default(),
             decode_item: |item| R::decode_map(item, &mut DecodeContext::new(R::NAME)),
-            key: |item, key_only| {
-                let mut key = Item::new();
-                for position in [Some(R::SCHEMA.primary.partition), R::SCHEMA.primary.sort]
-                    .into_iter()
-                    .flatten()
-                {
-                    let field = R::SCHEMA
-                        .fields
-                        .get(position)
-                        .ok_or(BuildError::EmptyOperation)?;
-                    if let Some(value) = item.get(field.name) {
-                        key.insert(field.name.into(), value.clone());
-                    }
-                }
-                if key_only && key.len() != item.len() {
-                    return Err(BuildError::EmptyOperation);
-                }
-                crate::batch_get::canonical_key::<R>(key)
-            },
+            key: response_key::<R>,
         })
     }
 }
+/// Extract a returned item's canonical physical key; `key_only` refuses other attributes.
+pub(crate) fn response_key<R: Record>(item: &Item, key_only: bool) -> Result<Item, BuildError> {
+    let mut key = Item::new();
+    for position in [Some(R::SCHEMA.primary.partition), R::SCHEMA.primary.sort]
+        .into_iter()
+        .flatten()
+    {
+        let field = R::SCHEMA
+            .fields
+            .get(position)
+            .ok_or(BuildError::EmptyOperation)?;
+        if let Some(value) = item.get(field.name) {
+            key.insert(field.name.into(), value.clone());
+        }
+    }
+    if key_only && key.len() != item.len() {
+        return Err(BuildError::EmptyOperation);
+    }
+    crate::batch_get::canonical_key::<R>(key)
+}
+
+/// Render a validated selection followed by any omitted physical primary-key attributes,
+/// so every returned item can be correlated by its full key.
+pub(crate) fn transport_projection<R: Record>(
+    mut names: Vec<&'static str>,
+) -> Result<RenderedExpressions, BuildError> {
+    crate::read_selection::validate_selection::<R>(None, Some(&names), None, false)?;
+    for position in [Some(R::SCHEMA.primary.partition), R::SCHEMA.primary.sort]
+        .into_iter()
+        .flatten()
+    {
+        let name = R::SCHEMA
+            .fields
+            .get(position)
+            .ok_or(BuildError::EmptyOperation)?
+            .name;
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let mut expressions = RenderedExpressions::default();
+    expressions.projection = Some(
+        names
+            .iter()
+            .map(|name| expressions.aliases.name(name))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    expressions.validate()?;
+    Ok(expressions)
+}
+
 impl<R: Record, K, P> BatchGet<R, K, P> {
     pub fn select<V: Projection<Source = R>>(self) -> Result<BatchGet<R, K, V>, BuildError> {
-        let names = V::attributes()?;
-        crate::read_selection::validate_selection::<R>(None, Some(&names), None, false)?;
-        let mut names = names;
-        for position in [Some(R::SCHEMA.primary.partition), R::SCHEMA.primary.sort]
-            .into_iter()
-            .flatten()
-        {
-            let name = R::SCHEMA
-                .fields
-                .get(position)
-                .ok_or(BuildError::EmptyOperation)?
-                .name;
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-        let mut expressions = RenderedExpressions::default();
-        expressions.projection = Some(
-            names
-                .iter()
-                .map(|name| expressions.aliases.name(name))
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        expressions.validate()?;
+        let expressions = transport_projection::<R>(V::attributes()?)?;
         let mut template = self.template;
         template.projection_expression = expressions.projection.clone();
         template.expression_attribute_names = Some(expressions.names().clone());

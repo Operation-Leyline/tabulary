@@ -192,7 +192,7 @@ impl<A> fmt::Debug for PreparedTransaction<A> {
     }
 }
 
-fn table_identity(table: &str) -> (Option<(&str, &str, &str)>, &str) {
+pub(crate) fn table_identity(table: &str) -> (Option<(&str, &str, &str)>, &str) {
     let parts: Vec<_> = table.splitn(6, ':').collect();
     if let ["arn", partition, "dynamodb", region, account, resource] = parts.as_slice()
         && let Some(name) = resource.strip_prefix("table/")
@@ -201,19 +201,8 @@ fn table_identity(table: &str) -> (Option<(&str, &str, &str)>, &str) {
     }
     (None, table)
 }
-fn validate(
-    items: &[TransactWriteItem],
-    targets: &[(String, Item)],
-) -> Result<TransactionSize, BuildError> {
-    if items.is_empty() {
-        return Err(BuildError::EmptyOperation);
-    }
-    if items.len() > 100 {
-        return Err(BuildError::RequestLimit {
-            max: 100,
-            actual: items.len(),
-        });
-    }
+/// Same-location tables and distinct physical targets, treating names and ARNs as aliases.
+pub(crate) fn validate_targets(targets: &[(String, Item)]) -> Result<(), BuildError> {
     let mut location = None;
     for (i, (table, key)) in targets.iter().enumerate() {
         let (scope, name) = table_identity(table);
@@ -230,6 +219,22 @@ fn validate(
             return Err(constraint("duplicate_transaction_target"));
         }
     }
+    Ok(())
+}
+fn validate(
+    items: &[TransactWriteItem],
+    targets: &[(String, Item)],
+) -> Result<TransactionSize, BuildError> {
+    if items.is_empty() {
+        return Err(BuildError::EmptyOperation);
+    }
+    if items.len() > 100 {
+        return Err(BuildError::RequestLimit {
+            max: 100,
+            actual: items.len(),
+        });
+    }
+    validate_targets(targets)?;
     let mut known = 0usize;
     for put in items.iter().filter_map(|item| item.put.as_ref()) {
         let size = BilledSize::of_item(&put.item)?;
