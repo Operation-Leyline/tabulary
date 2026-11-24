@@ -1259,6 +1259,8 @@ and can outlive all records used to create it.
 | `batch_get(keys, consistency, budget)` | Explicit batch state (§10) | Records/missing keys in input order, or typed partial error. |
 | `batch_write(actions, budget)` | Explicit batch state (§10) | Processed action identities and pending actions. |
 | `check(key, condition)` | Transaction-only action | One typed condition check; never a standalone network call. |
+| `MultiBatchGet::get(&table, keys, consistency)` | `BatchGetItemInput` across tables (§10.1) | Per-table found records, missing keys and typed unprocessed keys for one round. |
+| `TransactGet::get(&table, key)` | `TransactGetItemsInput` (§11.4) | One `Option<P>` per typed slot, or typed per-slot cancellation reasons. |
 
 `P = R` until a projection is selected. Get, query, scan, and batch get all
 require a consistency argument, with `ReadConsistency::{Strong, Eventual}`.
@@ -1689,8 +1691,9 @@ disappear, and tabulary cannot retry or hide calls. Batch state prepares the
 next request only when the caller asks. It performs no I/O and does not sleep.
 All subsequent unprocessed submissions are visible calls in application code.
 
-The first version has a homogeneous record type and one table per batch. The
-application can run several batches for several tables. Batch get rejects more
+`Table::batch_get` and `Table::batch_write` keep a homogeneous record type and
+one table per batch. Reads from several tables in one BatchGetItem call use the
+single-round `MultiBatchGet` in section 10.1. Batch get rejects more
 than 100 keys, duplicates, and empty key lists; batch write rejects more than
 25 actions, duplicates of the same table/key, and empty action lists. There is
 no implicit chunking. Wire request-size checks are separate from item-size
@@ -1824,6 +1827,71 @@ error. If the caller abandons an outstanding call without a result, it must use
 `abort_round(BatchRoundAbort::Deadline)` to settle the state. This freezes it;
 `finish` then returns the abort cause and partial state. Neither path treats
 abandoned or timed-out writes as safe retries.
+
+### 10.1 One BatchGetItem round across several tables
+
+`MultiBatchGet::new()` collects keyed reads from distinct `Table<R>` bindings of
+any record types. `get(&table, keys, consistency)` reads complete records and
+`get_projected::<V, _>(&table, keys, consistency)` reads a typed projection of
+`V::Source`. Each table has its own explicit `ReadConsistency` and optional
+projection. Each call returns a `BatchGetSlot<K, P>` that carries the table's
+key and output decoders and the identity of its request. Adding a table never
+fails. `build()` first requires at least one table (`EmptyOperation`) and at most
+100 keys in total across all tables (`RequestLimit { max: 100, actual }`, where
+`actual` counts every supplied key). It then reports the first fault in
+insertion order: a table's key encoding or canonical physical-key check (as in
+`BatchGetProgress::new`), an empty key list (`EmptyOperation`), or duplicate
+canonical keys within that table (`duplicate_batch_key`). Once the running total
+exceeds 100 or a fault is recorded, later tables are neither encoded, compared
+nor retained, so the builder holds at most 100 keys and one fault whatever the
+caller adds. Finally `build` requires explicit ARNs to share a partition and
+region (`batch_table_location`), because one regional endpoint serves the
+request; accounts may differ. Tables must be distinct (`duplicate_batch_table`):
+two explicit ARNs name the same table only when their partition, region, account
+and table name all match, and a bare table name is an alias of any ARN with that
+name. The same key in two different tables is not a
+duplicate. `set_capacity(Capacity)` selects the request-wide
+ReturnConsumedCapacity.
+
+`PreparedMultiBatchGet` is one immutable request. `input()`, `expressions()`
+(one binding per table, in insertion order) and `apply` follow the other
+adapters. A projection lists its selected attributes followed by any omitted
+physical primary-key attributes, exactly like `BatchGet::select`, so every
+returned item can be correlated. This adapter is a single round with no budget
+and no state machine: tabulary never issues, splits or retries anything.
+
+```rust,ignore
+let mut batch = MultiBatchGet::new();
+let order_slot = batch.get(&orders, order_keys, ReadConsistency::Strong);
+let invoice_slot =
+    batch.get_projected::<InvoiceTotal, _>(&invoices, invoice_keys, ReadConsistency::Eventual);
+batch.set_capacity(Capacity::Total);
+let request = batch.build()?;
+let response = request.decode(request.apply(client.batch_get_item()).send().await)?;
+let orders_read = response.get(&order_slot)?; // BatchGetTableResult<OrderKey, Order>
+let retry = orders_read.unprocessed; // Vec<OrderKey>: the caller decides whether to resubmit.
+```
+
+`decode` returns `MultiBatchGetResponse` or `MultiBatchGetError::{Sdk,
+InvalidResponse { capacity }}`. It correlates every returned item and every
+unprocessed key by its full canonical physical key, independent of response
+order. A table that was not requested, a malformed or unrequested key, a key
+returned twice, a key both returned and unprocessed, or an unprocessed entry with
+non-key attributes rejects the whole response; the received capacity is kept.
+A requested key absent from both lists is missing. The response's `capacity`
+is the SDK's optional vector, unchanged.
+
+`response.get(&slot)` returns `BatchGetTableResult<K, P> { found, missing,
+unprocessed }`, each list in the table's original key order. Found items decode
+strictly with the slot's record or projection decoder. Missing and unprocessed
+keys decode as the caller's `K` through `RecordKey::decode_key` on the issued
+canonical key, so the unprocessed list feeds a new `MultiBatchGet` or
+`Table::batch_get` directly. Any malformed item or key fails that table with
+`BatchGetSlotError::Decode { failures }`, listing every failed key position
+with its structured error; other tables still decode. A slot from another
+request is `BatchGetSlotError::Foreign`. Slot access borrows the response, so it
+can be repeated. Formatting requests, responses and results redacts keys and
+payloads without requiring `Debug` on records or keys.
 
 ## 11. Single-write failures and mixed-record transactions
 
@@ -2059,6 +2127,69 @@ or type bounds on the record beyond those already checked during preparation.
 The application decides what conflicts, throttles, and failed conditions mean
 to its business operation. There is no prioritized summary that discards other
 item reasons and no built-in retryability policy.
+
+### 11.4 Typed read transactions
+
+`TransactGet::new()` collects up to 100 keyed reads from any record types and
+table bindings into one TransactGetItems request. `get(&table, key)` reads a
+complete record and returns `GetSlot<R>`; `get_projected::<V, _>(&table, key)`
+reads a typed projection and returns `GetSlot<V>`. TransactGetItems is always
+serializable, so there is no consistency argument. Adding a read never fails.
+`build()` rejects an empty request (`EmptyOperation`) and more than 100 reads
+(`RequestLimit { max: 100, actual }`), then reports the first key-encoding,
+canonical-key or projection fault in request order. Reads added after the
+hundredth or after the first fault are neither prepared nor retained. It applies the write
+transaction's target rules: duplicate table/key targets
+(`duplicate_transaction_target`, including a full and a projected read of one
+item, and a table name and its ARN as aliases) and ARNs in different locations
+(`transaction_table_location`) are refused. `set_capacity(Capacity)` selects
+the request-wide ReturnConsumedCapacity.
+
+Reads are added one at a time, often in loops, and have no per-action old item,
+so the request does not use the `TxActions` tuple shape. Instead, each slot
+stores its position, a plain function pointer for its own decoder, and the
+request's identity. A slot therefore decodes only its own type, cannot be used
+with another request's response, and needs no erased record object or downcast.
+
+```rust,ignore
+let mut tx = TransactGet::new();
+let order_slot = tx.get(&orders, order_key);
+let total_slot = tx.get_projected::<InvoiceTotal, _>(&invoices, invoice_key);
+tx.set_capacity(Capacity::Total);
+let request = tx.build()?;
+let response = request.decode(request.apply(client.transact_get_items()).send().await)?;
+let order: Option<Order> = response.get(&order_slot)?;
+let total: Option<InvoiceTotal> = response.get(&total_slot)?;
+```
+
+`PreparedTransactGet` exposes `input()`, `expressions()` (one binding per read,
+in request order) and `apply`, which copies every modeled field. A projection
+also selects any omitted physical key attributes. `decode` returns
+`TransactGetResponse` or `TransactGetError`:
+
+- `Cancelled(TransactGetCancellation)` for `TransactionCanceledException`.
+  `reason(&slot)` returns that slot's `FailureKind`, classified by machine code
+  exactly as in section 11.3; `reasons()` lists them in request order.
+  `completeness` and `raw_reasons()` follow the write transaction: an absent or
+  misaligned vector is never guessed, and every slot is then `Unavailable`.
+- `Sdk` for every other SDK failure.
+- `ResponseCount { expected, actual, capacity }` when the response vector is
+  absent or its length differs from the request.
+- `KeyMismatch { position, capacity }` when a present item's physical key is
+  absent, malformed or differs from the requested key, including a present
+  empty map. None of that response is trusted.
+
+The service reports a missing item as an `ItemResponse` with no `Item` member;
+the SDK decodes it as `item: None`, which is the slot's `None`. The SDK refuses a
+literal `null` entry, so it becomes `Sdk` and is never read as a missing item.
+
+`response.get(&slot)` returns `Result<Option<P>, GetSlotError>`. An absent item
+is `None`; a present item decodes strictly, and a malformed one is
+`GetSlotError::Decode` with its full attribute path, without affecting other
+slots. `GetSlotError::Foreign` rejects a slot from another request, in both
+`get` and `reason`. Slot access borrows the response and can be repeated;
+`raw_items()` gives explicit raw access. `capacity` is the SDK's optional vector,
+unchanged. Formatting redacts keys, items, messages and SDK sources.
 
 ## 12. Opt-in optimistic locking
 
@@ -2453,7 +2584,9 @@ those choices are fixed above.
 | Get, put, delete, update, consumed capacity, no hidden calls/retries | 8 |
 | Query key schema, pagination, projections, parallel scan | 9 |
 | Batch get/write and bounded visible unprocessed submissions | 10 |
+| Multi-table batch get with typed per-table unprocessed keys | 10.1 |
 | Conditional failures, transactions, item reasons and typed old records | 11 |
+| Typed read transactions with per-slot results and reasons | 11.4 |
 | Opt-in optimistic versions | 12 |
 | Billed item sizing and numerical precision of the estimate | 13 |
 | Test table/index/TTL definitions | 14 |

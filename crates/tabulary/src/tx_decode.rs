@@ -125,17 +125,8 @@ impl<A: TxActions> PreparedTransaction<A> {
                     return Err(TxError::Sdk(Box::new(source)));
                 };
                 let expected = self.input().transact_items().len();
-                let (completeness, reasons) = match error.cancellation_reasons.as_deref() {
-                    None => (ReasonCompleteness::Missing, &[][..]),
-                    Some(raw) if raw.len() != expected => (
-                        ReasonCompleteness::MalformedLength {
-                            expected,
-                            actual: raw.len(),
-                        },
-                        &[][..],
-                    ),
-                    Some(raw) => (ReasonCompleteness::Complete, raw),
-                };
+                let (completeness, reasons) =
+                    completeness(error.cancellation_reasons.as_deref(), expected);
                 let reasons = self.actions().decode_reasons(&mut reasons.iter());
                 Err(TxError::Cancelled(Cancellation {
                     reasons,
@@ -147,23 +138,44 @@ impl<A: TxActions> PreparedTransaction<A> {
     }
 }
 
+/// Classify one positional reason by its machine code only; absent means unavailable.
+pub(crate) fn failure_kind(reason: Option<&CancellationReason>) -> FailureKind {
+    match reason.map(|reason| reason.code()) {
+        None => FailureKind::Unavailable,
+        Some(None | Some("None")) => FailureKind::NoFailureReported,
+        Some(Some("ConditionalCheckFailed")) => FailureKind::ConditionFailed,
+        Some(Some("TransactionConflict")) => FailureKind::TransactionConflict,
+        Some(Some("ProvisionedThroughputExceeded")) => FailureKind::ProvisionedThroughputExceeded,
+        Some(Some("ThrottlingError")) => FailureKind::Throttled,
+        Some(Some("ItemCollectionSizeLimitExceeded")) => {
+            FailureKind::ItemCollectionSizeLimitExceeded
+        }
+        Some(Some("ValidationError")) => FailureKind::Validation,
+        Some(Some(code)) => FailureKind::UnknownServiceCode(code.into()),
+    }
+}
+
+/// Align a reason vector with a request length without guessing alignment.
+pub(crate) fn completeness(
+    reasons: Option<&[CancellationReason]>,
+    expected: usize,
+) -> (ReasonCompleteness, &[CancellationReason]) {
+    match reasons {
+        None => (ReasonCompleteness::Missing, &[][..]),
+        Some(raw) if raw.len() != expected => (
+            ReasonCompleteness::MalformedLength {
+                expected,
+                actual: raw.len(),
+            },
+            &[][..],
+        ),
+        Some(raw) => (ReasonCompleteness::Complete, raw),
+    }
+}
+
 impl<R> TxAction<R> {
     pub(crate) fn decode_reason(&self, reason: Option<&CancellationReason>) -> Failure<R> {
-        let kind = match reason.map(|reason| reason.code()) {
-            None => FailureKind::Unavailable,
-            Some(None | Some("None")) => FailureKind::NoFailureReported,
-            Some(Some("ConditionalCheckFailed")) => FailureKind::ConditionFailed,
-            Some(Some("TransactionConflict")) => FailureKind::TransactionConflict,
-            Some(Some("ProvisionedThroughputExceeded")) => {
-                FailureKind::ProvisionedThroughputExceeded
-            }
-            Some(Some("ThrottlingError")) => FailureKind::Throttled,
-            Some(Some("ItemCollectionSizeLimitExceeded")) => {
-                FailureKind::ItemCollectionSizeLimitExceeded
-            }
-            Some(Some("ValidationError")) => FailureKind::Validation,
-            Some(Some(code)) => FailureKind::UnknownServiceCode(code.into()),
-        };
+        let kind = failure_kind(reason);
         let input = self.input();
         let requested = [
             input
