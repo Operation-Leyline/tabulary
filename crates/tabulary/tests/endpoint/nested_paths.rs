@@ -48,6 +48,14 @@ fn tags(values: &[&str]) -> StringSet {
     StringSet::try_from(values.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>()).unwrap()
 }
 
+/// Service set order is unspecified; compare sets by sorted members.
+fn canonical(mut shipment: Shipment) -> Shipment {
+    let mut members = shipment.shipping.tags.into_inner();
+    members.sort();
+    shipment.shipping.tags = StringSet::try_from(members).unwrap();
+    shipment
+}
+
 fn shipment() -> Shipment {
     Shipment {
         id: "shipment-1".into(),
@@ -77,6 +85,12 @@ async fn nested_conditions_and_updates_reach_the_expression_parser() {
     crate::support::with_table::<Shipment, _, _>(|client, name| async move {
         let table = Table::<Shipment>::new(name).unwrap();
         let seed = table.put(&shipment()).build().unwrap();
+        seed.decode(seed.apply(client.put_item()).send().await)
+            .unwrap();
+        // A second shipment that the nested scan filter below must exclude.
+        let mut other = shipment();
+        other.id = "shipment-2".into();
+        let seed = table.put(&other).build().unwrap();
         seed.decode(seed.apply(client.put_item()).send().await)
             .unwrap();
 
@@ -140,7 +154,7 @@ async fn nested_conditions_and_updates_reach_the_expression_parser() {
         expected.shipping.tags = tags(&["fragile", "late"]);
         expected.shipping.counters =
             Map([("scan.count".to_owned(), 5), ("new".to_owned(), 5)].into());
-        assert_eq!(updated, expected);
+        assert_eq!(canonical(updated), expected);
 
         // A false nested predicate is a modeled conditional refusal.
         let refused = table
@@ -197,7 +211,9 @@ async fn nested_conditions_and_updates_reach_the_expression_parser() {
             .build()
             .unwrap();
         let page = scan.decode(scan.apply(client.scan()).send().await).unwrap();
-        assert_eq!(page.items, vec![expected]);
+        assert_eq!(page.scanned_count, 2);
+        let items: Vec<_> = page.items.into_iter().map(canonical).collect();
+        assert_eq!(items, vec![expected]);
     })
     .await;
 }
