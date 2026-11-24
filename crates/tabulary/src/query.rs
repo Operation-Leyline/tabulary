@@ -13,6 +13,7 @@ use crate::{
 use aws_sdk_dynamodb::{
     error::SdkError,
     operation::query::{QueryError, QueryInput, QueryOutput, builders::QueryFluentBuilder},
+    types::Select,
 };
 
 type Selection = fn() -> Result<Vec<&'static str>, BuildError>;
@@ -115,6 +116,10 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
         }
     }
     pub fn build(self) -> Result<PreparedQuery<R, I, P>, BuildError> {
+        self.prepare(false)
+    }
+    /// Shared by item reads and `Select::Count` reads, which bind distinct cursors.
+    pub(crate) fn prepare(self, count: bool) -> Result<PreparedQuery<R, I, P>, BuildError> {
         let keys = self.index.map_or(R::SCHEMA.primary, |index| index.keys);
         if keys != I::KEYS {
             return Err(BuildError::IncompatibleIndex);
@@ -143,7 +148,7 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
             })?;
         }
         let selection = self.selection.map(|select| select()).transpose()?;
-        validate_selection::<R>(self.index, selection.as_deref(), filter.as_ref())?;
+        validate_selection::<R>(self.index, selection.as_deref(), filter.as_ref(), count)?;
         let binding = CursorBinding::query(
             &self.table,
             self.index,
@@ -153,6 +158,7 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
             self.consistency,
             self.order,
         )?;
+        let binding = if count { binding.counting() } else { binding };
         let start = self
             .resume
             .as_ref()
@@ -178,6 +184,7 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
         let input = QueryInput::builder()
             .table_name(self.table.name())
             .set_index_name(self.index.map(|index| index.name.into()))
+            .set_select(count.then_some(Select::Count))
             .consistent_read(self.consistency == ReadConsistency::Strong)
             .scan_index_forward(self.order == QueryOrder::Ascending)
             .set_limit(limit)
@@ -203,6 +210,9 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
     }
 }
 impl<R, I, P> PreparedQuery<R, I, P> {
+    pub(crate) fn binding(&self) -> &CursorBinding<R, I> {
+        &self.binding
+    }
     pub fn input(&self) -> &QueryInput {
         self.request.input()
     }

@@ -1,13 +1,13 @@
-error[E0599]: the method `encode_map` exists for struct `Envelope<u8>`, but its trait bounds were not satisfied
+error[E0599]: the method `encode_map` exists for struct `Envelope<char>`, but its trait bounds were not satisfied
  --> tests/ui/document/bounds.rs:7:19
   |
 4 | struct Envelope<T> { payload: T }
-  | ------------------ method `encode_map` not found for this struct because it doesn't satisfy `Envelope<u8>: Document`
+  | ------------------ method `encode_map` not found for this struct because it doesn't satisfy `Envelope<char>: Document`
 ...
 7 |     let _ = value.encode_map(&mut tabulary::EncodeContext::new("Envelope"));
-  |                   ^^^^^^^^^^ method cannot be called on `Envelope<u8>` due to unsatisfied trait bounds
+  |                   ^^^^^^^^^^ method cannot be called on `Envelope<char>` due to unsatisfied trait bounds
   |
-note: trait bound `u8: tabulary::Value` was not satisfied
+note: trait bound `char: tabulary::Value` was not satisfied
  --> tests/ui/document/bounds.rs:2:10
   |
 2 | #[derive(tabulary::Document)]

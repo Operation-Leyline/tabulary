@@ -31,6 +31,7 @@ const ACCESS: &[FieldAccess] = &[
     FieldAccess::VersionOnly,
     FieldAccess::IndexSourceOnly,
     FieldAccess::DerivedOnly,
+    FieldAccess::KeyComponent,
 ];
 const OPS: &[Operator] = &[
     Operator::Exists,
@@ -322,7 +323,12 @@ impl Writer {
         if let Some(node) = &b.filter {
             self.node(node, 0)?;
         }
-        self.byte(u8::from(b.projection.is_some()))?;
+        // 0: full record, 1: explicit selection, 2: Select::Count (no items).
+        self.byte(if b.select_count {
+            2
+        } else {
+            u8::from(b.projection.is_some())
+        })?;
         if let Some(names) = &b.projection {
             self.names(names)?;
         }
@@ -489,7 +495,7 @@ impl<'a> Reader<'a> {
         let name = self.text()?;
         self.position()?;
         self.tag(1)?;
-        self.tag(4)?;
+        self.tag(ACCESS.len() as u8 - 1)?;
         Ok((name, self.tag(10)?))
     }
     fn names(&mut self) -> Result<(), CursorError> {
@@ -543,7 +549,7 @@ impl<'a> Reader<'a> {
         if self.tag(1)? == 1 {
             self.node(0)?;
         }
-        if self.tag(1)? == 1 {
+        if self.tag(2)? == 1 {
             self.names()?;
         }
         self.tag(1)?;

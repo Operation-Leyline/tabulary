@@ -64,6 +64,8 @@ pub(crate) struct CursorBinding<R, I> {
     operation: Operation,
     filter: Option<CanonicalNode>,
     projection: Option<Vec<&'static str>>,
+    /// A `Select::Count` read; distinct from full and selected item reads.
+    select_count: bool,
     consistency: ReadConsistency,
     marker: Invariant<R, I>,
 }
@@ -76,6 +78,7 @@ impl<R, I> Clone for CursorBinding<R, I> {
             operation: self.operation.clone(),
             filter: self.filter.clone(),
             projection: self.projection.clone(),
+            select_count: self.select_count,
             consistency: self.consistency,
             marker: PhantomData,
         }
@@ -147,12 +150,19 @@ impl<R: Record, I> CursorBinding<R, I> {
             operation,
             filter: filter.map(|f| CanonicalNode::new(f.root())).transpose()?,
             projection: projection(selection),
+            select_count: false,
             consistency,
             marker: PhantomData,
         };
         // Count without allocating the output; reserve room for version and key count.
         bytes::binding_size(&binding)?;
         Ok(binding)
+    }
+    /// Bind a `Select::Count` read, which never selects or returns attributes.
+    pub(crate) fn counting(mut self) -> Self {
+        debug_assert!(self.projection.is_none());
+        self.select_count = true;
+        self
     }
     /// Only absence or an empty map means end; no record decoder is involved.
     pub(crate) fn cursor(&self, key: Option<Item>) -> Result<Option<Cursor<R, I>>, BuildError> {
@@ -219,6 +229,7 @@ impl<R: Record, I> CursorBinding<R, I> {
             || self.operation != other.operation
             || self.filter != other.filter
             || self.projection != other.projection
+            || self.select_count != other.select_count
             || self.consistency != other.consistency
         {
             return Err(BuildError::CursorMismatch);

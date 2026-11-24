@@ -4,6 +4,7 @@ use std::{fmt, num::NonZeroU32};
 use aws_sdk_dynamodb::{
     error::SdkError,
     operation::scan::{ScanError, ScanInput, ScanOutput, builders::ScanFluentBuilder},
+    types::Select,
 };
 
 use crate::cursor::CursorBinding;
@@ -116,6 +117,10 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
         }
     }
     pub fn build(self) -> Result<PreparedScan<R, I, P>, BuildError> {
+        self.prepare(false)
+    }
+    /// Shared by item reads and `Select::Count` reads, which bind distinct cursors.
+    pub(crate) fn prepare(self, count: bool) -> Result<PreparedScan<R, I, P>, BuildError> {
         crate::read_selection::validate_consistency(self.index, self.consistency)?;
         let limit = self
             .limit
@@ -132,6 +137,7 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
             self.index,
             selection.as_deref(),
             filter.as_ref(),
+            count,
         )?;
         let binding = CursorBinding::scan(
             &self.table,
@@ -141,6 +147,7 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
             self.consistency,
             self.segment.map(|segment| (segment.segment, segment.total)),
         )?;
+        let binding = if count { binding.counting() } else { binding };
         let start = self
             .resume
             .as_ref()
@@ -166,6 +173,7 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
         let input = ScanInput::builder()
             .table_name(self.table.name())
             .set_index_name(self.index.map(|index| index.name.into()))
+            .set_select(count.then_some(Select::Count))
             .consistent_read(self.consistency == ReadConsistency::Strong)
             .set_limit(limit)
             .set_segment(self.segment.map(|segment| segment.segment as i32))
@@ -195,6 +203,9 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
     }
 }
 impl<R, I, P> PreparedScan<R, I, P> {
+    pub(crate) fn binding(&self) -> &CursorBinding<R, I> {
+        &self.binding
+    }
     pub fn input(&self) -> &ScanInput {
         self.request.input()
     }

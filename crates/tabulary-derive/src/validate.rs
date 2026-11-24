@@ -20,6 +20,8 @@ pub struct Field {
     pub default: Option<Path>,
     pub with: Option<Path>,
     pub flatten: bool,
+    /// A primary template component stored only inside its synthesized keys.
+    pub key_only: bool,
 }
 
 impl Field {
@@ -198,13 +200,29 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
                 ));
             }
         }
+        if opts.key_only
+            && (opts.partition_key
+                || opts.sort_key
+                || opts.flatten
+                || opts.ttl
+                || opts.version
+                || opts.default.is_some()
+                || opts.with.is_some()
+                || opts.rename.is_some()
+                || optional(&field.ty).is_some())
+        {
+            return Err(error(
+                &ident,
+                "key_only fields are required template components without a key, rename, default, converter, version, TTL or flatten",
+            ));
+        }
         let name_span = opts
             .rename
             .as_ref()
             .map_or(ident.span(), |name| name.span());
         let name = match opts.rename {
             Some(name) => name.value(),
-            None if opts.flatten => rust_name.clone(),
+            None if opts.flatten || (opts.key_only && rule.is_none()) => rust_name.clone(),
             None => parse::rename(
                 &rust_name,
                 rule.as_deref()
@@ -258,6 +276,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             default: opts.default,
             with: opts.with,
             flatten: opts.flatten,
+            key_only: opts.key_only,
         });
     }
     for ((declaration, is_partition), template) in [(opts.partition, true), (opts.sort, false)]
@@ -289,6 +308,7 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
             default: None,
             with: None,
             flatten: false,
+            key_only: false,
         });
     }
     if record {
@@ -304,8 +324,40 @@ pub fn structure(input: DeriveInput, record: bool) -> syn::Result<Record> {
                 "version cannot be a composite key source",
             ));
         }
+        key_only(&result)?;
     }
     Ok(result)
+}
+
+/// Key-only fields live solely inside primary template keys, never in an index.
+fn key_only(record: &Record) -> syn::Result<()> {
+    for (i, field) in record.fields.iter().enumerate() {
+        if !field.key_only {
+            continue;
+        }
+        if !crate::key_expand::source(record, i) {
+            return Err(error(
+                &field.ident,
+                "key_only requires a component of a primary composite key template",
+            ));
+        }
+        if crate::key_expand::index_source(record, i)
+            || record.indexes.iter().any(|index| {
+                index.partition == i
+                    || index.sort == Some(i)
+                    || index
+                        .include
+                        .as_ref()
+                        .is_some_and(|names| names.contains(&field.name))
+            })
+        {
+            return Err(error(
+                &field.ident,
+                "key_only fields have no attribute of their own and cannot feed or be projected into an index",
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub fn optional(ty: &Type) -> Option<Type> {

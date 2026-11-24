@@ -21,6 +21,7 @@ pub(crate) fn validate_selection<R: Record>(
     index: Option<IndexDefinition>,
     selection: Option<&[&str]>,
     filter: Option<&BuiltCondition<R>>,
+    count: bool,
 ) -> Result<(), BuildError> {
     if selection.is_some_and(|names| names.is_empty()) {
         return Err(BuildError::EmptyOperation);
@@ -41,9 +42,11 @@ pub(crate) fn validate_selection<R: Record>(
         if let IndexProjection::Include(names) = index.projection {
             available.extend_from_slice(names);
         }
-        if selection
-            .as_ref()
-            .is_none_or(|names| names.iter().any(|name| !available.contains(name)))
+        // A count returns no attributes; its filter must still stay in the index.
+        if !count
+            && selection
+                .as_ref()
+                .is_none_or(|names| names.iter().any(|name| !available.contains(name)))
         {
             return Err(BuildError::OperationConstraint {
                 code: "projection_not_available",

@@ -13,6 +13,7 @@ pub struct Options {
     pub partition_key: bool,
     pub sort_key: bool,
     pub flatten: bool,
+    pub key_only: bool,
     pub ttl: bool,
     pub version: bool,
     pub partition: Option<crate::template::Declaration>,
@@ -70,6 +71,13 @@ pub fn options(attrs: &[Attribute], container: bool) -> syn::Result<Options> {
                         return Err(meta.error("duplicate version option"));
                     }
                     result.version = true;
+                    return Ok(());
+                }
+                (false, "key_only") => {
+                    if result.key_only {
+                        return Err(meta.error("duplicate key_only option"));
+                    }
+                    result.key_only = true;
                     return Ok(());
                 }
                 (false, "flatten") => {

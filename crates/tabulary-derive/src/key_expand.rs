@@ -251,18 +251,45 @@ fn checks_for(record: &Record, field: usize, primary_only: bool) -> TokenStream 
 }
 
 pub fn key_bindings(record: &Record) -> TokenStream {
-    let path = &record.crate_path;
     let bindings = inputs(record).into_iter().map(|field| {
-        if primary(record, field) { return checks_for(record, field, true); }
-        let key = record.templates.iter().find(|(key, t)| primary(record, *key) && components(&t.parts).any(|i| i == field)).unwrap().0;
-        let parsed = parsed(key, field); let local = local(field);
-        let checks = record.templates.iter().filter(|(i, t)| primary(record, *i) && *i != key && components(&t.parts).any(|i| i == field)).map(|(other_key, _)| {
-            let other = self::parsed(*other_key, field); let cx = component_context(record, *other_key, Some(field));
-            quote! { if #parsed != #other { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
-        });
-        quote! { #(#checks)* let #local = #parsed; }
+        if primary(record, field) {
+            checks_for(record, field, true)
+        } else {
+            parsed_binding(record, field)
+        }
     });
     quote!(#(#bindings)*)
+}
+/// Bind a primary template component from its first parsed key, requiring
+/// every other primary key that repeats it to agree.
+pub fn parsed_binding(record: &Record, field: usize) -> TokenStream {
+    let path = &record.crate_path;
+    let key = record
+        .templates
+        .iter()
+        .find(|(key, t)| primary(record, *key) && components(&t.parts).any(|i| i == field))
+        .unwrap()
+        .0;
+    let parsed = parsed(key, field);
+    let local = local(field);
+    let checks = record.templates.iter().filter(|(i, t)| primary(record, *i) && *i != key && components(&t.parts).any(|i| i == field)).map(|(other_key, _)| {
+        let other = self::parsed(*other_key, field); let cx = component_context(record, *other_key, Some(field));
+        quote! { if #parsed != #other { return ::core::result::Result::Err(#cx.error(#path::DecodeFault::KeyMismatch)); } }
+    });
+    quote! { #(#checks)* let #local = #parsed; }
+}
+/// Schema metadata for a key-only component: it keeps its declaration
+/// position but names no stored attribute and has no typed handle.
+pub fn key_component_descriptor(record: &Record, index: usize) -> TokenStream {
+    let path = &record.crate_path;
+    let name = &record.fields[index].name;
+    quote!(#path::FieldDescriptor {
+        name: #name,
+        index: #index,
+        presence: #path::Presence::Required,
+        access: #path::FieldAccess::KeyComponent,
+        wire: #path::DynamoType::S,
+    })
 }
 
 pub fn helpers(record: &Record) -> TokenStream {

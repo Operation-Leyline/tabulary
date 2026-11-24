@@ -1,0 +1,45 @@
+error[E0599]: no method named `select` found for struct `CountQueryBuilder<R, I, S>` in the current scope
+  --> tests/ui/count/projection.rs:20:75
+   |
+20 |     let _ = table.query(key(), tabulary::ReadConsistency::Strong).count().select::<Total>();
+   |                   -----------------------------------------------         ^^^^^^ method not found in `CountQueryBuilder<Invoice, InvoicePrimary, NoSort>`
+   |                   |
+   |                   method `select` is available on `QueryBuilder<Invoice, InvoicePrimary, NoSort>`
+
+error[E0599]: `QueryBuilder<Invoice, InvoicePrimary, NoSort, Total>` is not an iterator
+  --> tests/ui/count/projection.rs:22:85
+   |
+22 |     let _ = table.query(key(), tabulary::ReadConsistency::Strong).select::<Total>().count();
+   |                                                                                     ^^^^^ `QueryBuilder<Invoice, InvoicePrimary, NoSort, Total>` is not an iterator
+   |
+  ::: src/query.rs
+   |
+   | pub struct QueryBuilder<R: Record, I: KeySchema<R>, S, P = R> {
+   | ------------------------------------------------------------- doesn't satisfy `_: Iterator`
+   |
+   = note: the following trait bounds were not satisfied:
+           `QueryBuilder<Invoice, InvoicePrimary, NoSort, Total>: Iterator`
+           which is required by `&mut QueryBuilder<Invoice, InvoicePrimary, NoSort, Total>: Iterator`
+
+error[E0599]: no method named `select` found for struct `CountScanBuilder<R, I>` in the current scope
+  --> tests/ui/count/projection.rs:23:67
+   |
+23 |     let _ = table.scan(tabulary::ReadConsistency::Strong).count().select::<Total>();
+   |                   ---------------------------------------         ^^^^^^ method not found in `CountScanBuilder<Invoice>`
+   |                   |
+   |                   method `select` is available on `ScanBuilder<Invoice>`
+
+error[E0599]: `ScanBuilder<Invoice, (), Total>` is not an iterator
+  --> tests/ui/count/projection.rs:24:77
+   |
+24 |     let _ = table.scan(tabulary::ReadConsistency::Strong).select::<Total>().count();
+   |                                                                             ^^^^^ `ScanBuilder<Invoice, (), Total>` is not an iterator
+   |
+  ::: src/scan.rs
+   |
+   | pub struct ScanBuilder<R: Record, I = (), P = R> {
+   | ------------------------------------------------ doesn't satisfy `ScanBuilder<Invoice, (), Total>: Iterator`
+   |
+   = note: the following trait bounds were not satisfied:
+           `ScanBuilder<Invoice, (), Total>: Iterator`
+           which is required by `&mut ScanBuilder<Invoice, (), Total>: Iterator`
