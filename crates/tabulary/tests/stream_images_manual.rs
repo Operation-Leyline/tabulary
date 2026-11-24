@@ -403,3 +403,82 @@ fn invalid_manual_schemas_are_typed_faults_not_panics() {
         );
     }
 }
+
+/// A manual record schema whose partition key position is out of range.
+#[derive(Debug)]
+struct Loose;
+struct LooseKey;
+impl Record for Loose {
+    const SCHEMA: RecordSchema = RecordSchema {
+        name: "Loose",
+        fields: &[PK],
+        primary: KeyDefinition {
+            partition: 5,
+            sort: None,
+        },
+        indexes: &[],
+        ttl: None,
+    };
+}
+impl Document for Loose {
+    const NAME: &'static str = "Loose";
+    fn encode_map(&self, _: &mut EncodeContext) -> Result<Item, EncodeError> {
+        Ok(Item::new())
+    }
+    fn decode_map(_: &Item, _: &mut DecodeContext) -> Result<Self, DecodeError> {
+        Ok(Self)
+    }
+}
+impl RecordKey<Loose> for LooseKey {
+    fn encode_key(&self) -> Result<Item, EncodeError> {
+        Ok(Item::new())
+    }
+    fn decode_key(_: &Item) -> Result<Self, DecodeError> {
+        Ok(Self)
+    }
+}
+
+#[test]
+fn invalid_manual_record_schemas_are_typed_faults_not_panics() {
+    let decoder = StreamDecoder::<Loose, LooseKey>::record();
+    let keys = key("SES#moss");
+    let open = row("SES#moss", "open");
+    for images in [
+        StreamImages {
+            event: StreamEventName::Insert,
+            keys: &keys,
+            old_image: None,
+            new_image: Some(&open),
+        },
+        StreamImages {
+            event: StreamEventName::Remove,
+            keys: &keys,
+            old_image: None,
+            new_image: None,
+        },
+    ] {
+        let error = match images.new_image.is_some() {
+            true => images.new_and_old(decoder).map(drop).unwrap_err(),
+            false => images.keys_only(decoder).map(drop).unwrap_err(),
+        };
+        let StreamError::Decode { image, source } = error else {
+            panic!("expected a decode fault, got {error:?}")
+        };
+        assert_eq!((image, source.record), (StreamImage::Keys, "Loose"));
+        assert_eq!(
+            source.kind,
+            DecodeFault::Custom {
+                code: "invalid_key_schema"
+            }
+        );
+    }
+    let error = tabulary::decode_record_key::<Loose, LooseKey>(&keys)
+        .err()
+        .unwrap();
+    assert_eq!(
+        error.kind,
+        DecodeFault::Custom {
+            code: "invalid_key_schema"
+        }
+    );
+}
