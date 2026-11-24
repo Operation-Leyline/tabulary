@@ -35,14 +35,20 @@ error: key_only fields have no attribute of their own and cannot feed or be proj
 53 |     tenant: String,
    |     ^^^^^^
 
-error: duplicate key_only option
-  --> tests/ui/key_only/declarations.rs:61:26
+error: key_only fields have no attribute of their own and cannot feed or be projected into an index
+  --> tests/ui/key_only/declarations.rs:64:5
    |
-61 |     #[tabulary(key_only, key_only)]
+64 |     shop: String,
+   |     ^^^^
+
+error: duplicate key_only option
+  --> tests/ui/key_only/declarations.rs:74:26
+   |
+74 |     #[tabulary(key_only, key_only)]
    |                          ^^^^^^^^
 
 error: Document fields cannot declare keys
-  --> tests/ui/key_only/declarations.rs:68:5
+  --> tests/ui/key_only/declarations.rs:81:5
    |
-68 |     #[tabulary(key_only)]
+81 |     #[tabulary(key_only)]
    |     ^^^^^^^^^^^^^^^^^^^^^

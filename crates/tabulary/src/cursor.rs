@@ -159,8 +159,9 @@ impl<R: Record, I> CursorBinding<R, I> {
         Ok(binding)
     }
     /// Bind a `Select::Count` read, which never selects or returns attributes.
+    /// Callers refuse a projection first; a count has no attribute selection.
     pub(crate) fn counting(mut self) -> Self {
-        debug_assert!(self.projection.is_none());
+        self.projection = None;
         self.select_count = true;
         self
     }

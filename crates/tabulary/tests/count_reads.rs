@@ -30,6 +30,27 @@ struct Total {
     total: u64,
 }
 
+/// A record that is also its own projection keeps the full-record output type.
+struct Ledger(Invoice);
+impl tabulary::Projection for Invoice {
+    type Source = Invoice;
+    fn attributes() -> Result<Vec<&'static str>, BuildError> {
+        Ok(vec!["account", "line"])
+    }
+    fn decode_map(
+        item: &Item,
+        cx: &mut tabulary::DecodeContext,
+    ) -> Result<Self, tabulary::DecodeError> {
+        <Invoice as tabulary::Document>::decode_map(item, cx)
+    }
+    fn project_source(
+        source: Invoice,
+        _: &mut tabulary::DecodeContext,
+    ) -> Result<Self, tabulary::DecodeError> {
+        Ok(Ledger(source).0)
+    }
+}
+
 fn table() -> Table<Invoice> {
     Table::new("invoices").unwrap()
 }
@@ -304,6 +325,21 @@ fn non_all_index_counts_need_no_selection_but_filters_stay_in_the_index() {
         .unwrap();
     assert_eq!(scan.input().select, Some(Select::Count));
     assert!(index.scan(Strong).count().build().is_err());
+}
+
+#[test]
+fn a_self_projection_cannot_reach_a_count_build() {
+    let refused = BuildError::OperationConstraint {
+        code: "count_with_projection",
+    };
+    let query = table()
+        .query(partition(), Strong)
+        .select::<Invoice>()
+        .count()
+        .build();
+    assert_eq!(query.unwrap_err(), refused);
+    let scan = table().scan(Strong).select::<Invoice>().count().build();
+    assert_eq!(scan.unwrap_err(), refused);
 }
 
 #[test]

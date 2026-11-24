@@ -25,6 +25,8 @@ pub fn bounds(schema: &crate::validate::Record) -> Generics {
             generics.make_where_clause().predicates.push(
                 syn::parse_quote_spanned!(field.ident.span()=> #codec: #path::Converter<#ty>),
             );
+        } else if field.key_only {
+            // Parsed only by its template codec, bounded in key_expand::bounds.
         } else if !references_self(quote::quote!(#ty), &schema.ident) {
             generics
                 .make_where_clause()

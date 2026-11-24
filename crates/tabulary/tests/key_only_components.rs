@@ -37,6 +37,18 @@ struct OrderLine {
     quantity: u32,
 }
 
+/// Generic records need no `Value` codec for a key-only component type.
+#[derive(Debug, PartialEq, tabulary::Record)]
+#[tabulary(
+    rename_all = "snake_case",
+    partition(name = "pk", template = "bin!{slot:dec}")
+)]
+struct Bin<T> {
+    #[tabulary(key_only)]
+    slot: usize,
+    payload: T,
+}
+
 #[derive(Debug, PartialEq, tabulary::Projection)]
 #[tabulary(record = Session)]
 struct Device {
@@ -94,6 +106,18 @@ fn components_are_stored_only_inside_their_keys_and_round_trip() {
     assert_eq!(item.len(), 3);
     assert_eq!(item["sk"], Av::S("east#00000000000000000007".into()));
     assert_eq!(OrderLine::from_item(&item).unwrap(), shared);
+}
+
+#[test]
+fn generic_records_accept_key_only_components_without_value_codecs() {
+    let bin = Bin {
+        slot: usize::MAX,
+        payload: 7u8,
+    };
+    let item = bin.to_item().unwrap();
+    assert_eq!(item["pk"], Av::S(format!("bin!{}", usize::MAX)));
+    assert_eq!(item.len(), 2);
+    assert_eq!(Bin::<u8>::from_item(&item).unwrap(), bin);
 }
 
 #[test]

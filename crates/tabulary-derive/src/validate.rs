@@ -341,10 +341,17 @@ fn key_only(record: &Record) -> syn::Result<()> {
                 "key_only requires a component of a primary composite key template",
             ));
         }
+        // An index may reuse a primary template, so inspect each index key's
+        // resolved components rather than only index-only templates.
+        let feeds = |key: usize| {
+            key == i
+                || crate::key_expand::template(record, key)
+                    .is_some_and(|t| crate::key_expand::components(&t.parts).any(|c| c == i))
+        };
         if crate::key_expand::index_source(record, i)
             || record.indexes.iter().any(|index| {
-                index.partition == i
-                    || index.sort == Some(i)
+                feeds(index.partition)
+                    || index.sort.is_some_and(feeds)
                     || index
                         .include
                         .as_ref()

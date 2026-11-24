@@ -282,8 +282,13 @@ that does not exist; its schema descriptor keeps the declaration position with
 Rust name otherwise; explicit `rename` is rejected. Key-only fields cannot be
 optional, defaulted, converted, physical keys, versions, TTL, or flattened, and
 cannot feed any secondary index (as a field key, template component, or
-`include` entry), since an index needs a stored attribute. `Document` derives
-reject the option.
+`include` entry), since an index needs a stored attribute, including an index
+that reuses a primary template. `Document` derives reject the option.
+Adding or removing `key_only` on an existing table changes the stored item
+shape: rows written with the separate attribute fail strict decode under the new
+declaration, and older readers reject rows without it. Treat it as a data
+migration (rewrite every row, or decode with `unknown = "allow"` until the
+backfill completes); the library never infers which shape a row has.
 Moving keys requires an explicit delete and put, optionally in one transaction.
 
 The template language has literal UTF-8 text, escaped braces `{{` and `}}`,
@@ -1249,7 +1254,10 @@ snapshot isolation, even when each read is strong.
 `query.count()` turns a full-record Query builder into a `CountQueryBuilder`
 that sets `Select::Count`. It keeps `filter`, `limit`, `order`, `capacity`, and
 `resume` but has no `select`, and a builder that already selected a projection
-has no `count`, so the two cannot combine. `build()` returns a
+has no `count`, so the two cannot combine. A record that is also its own
+`Projection` keeps the full-record output type after `select`, so `build()`
+refuses any explicit selection with `OperationConstraint { code:
+"count_with_projection" }`. `build()` returns a
 `PreparedCountQuery` whose `decode` yields `CountPage { count: u64,
 scanned_count: u64, next_cursor: Option<Cursor<R, I>>, capacity }` without
 decoding any item. A negative count, a ScannedCount below Count, returned items,

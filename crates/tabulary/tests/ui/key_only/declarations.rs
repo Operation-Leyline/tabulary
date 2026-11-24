@@ -56,6 +56,19 @@ struct IncludedComponent {
 
 #[derive(tabulary::Record)]
 #[tabulary(rename_all = "camelCase",
+    partition(name = "pk", template = "shop!{shop:text}"),
+    index(ident = ByQuantity, name = "by_quantity", kind = local,
+        partition(name = "pk", template = "shop!{shop:text}"), sort = quantity, project = all))]
+struct SharedIndexTemplate {
+    #[tabulary(key_only)]
+    shop: String,
+    #[tabulary(sort_key)]
+    line: u64,
+    quantity: u64,
+}
+
+#[derive(tabulary::Record)]
+#[tabulary(rename_all = "camelCase",
     partition(name = "pk", template = "session!{tenant:text}"))]
 struct DuplicateOption {
     #[tabulary(key_only, key_only)]

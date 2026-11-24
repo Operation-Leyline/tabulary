@@ -121,6 +121,13 @@ impl<R: Record, I, P> ScanBuilder<R, I, P> {
     }
     /// Shared by item reads and `Select::Count` reads, which bind distinct cursors.
     pub(crate) fn prepare(self, count: bool) -> Result<PreparedScan<R, I, P>, BuildError> {
+        // A record may also be its own Projection, so the output type alone
+        // cannot prove a full read; refuse any explicit selection here.
+        if count && self.selection.is_some() {
+            return Err(BuildError::OperationConstraint {
+                code: "count_with_projection",
+            });
+        }
         crate::read_selection::validate_consistency(self.index, self.consistency)?;
         let limit = self
             .limit
