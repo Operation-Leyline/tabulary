@@ -70,23 +70,26 @@ mod accounts {
         Customer(Customer),
     }
 }
-use accounts::{AccountTable, Customer};
+use accounts::AccountTable;
 use tabulary::{MemberOf, MultiObject, MultiTable};
 
-#[derive(tabulary::Record)]
-#[tabulary(rename_all = "snake_case", partition(name = "pk", template = "CUST#{customer_ref:text}"))]
-struct Impostor { customer_ref: String }
+// Same record name, keys and prefix as the real member, so only the seal differs.
+mod impostor {
+    #[derive(tabulary::Record)]
+    #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "CUST#{customer_ref:text}"))]
+    pub struct Customer { pub customer_ref: String }
+}
 
-impl MemberOf<AccountTable> for Impostor {
+impl MemberOf<AccountTable> for impostor::Customer {
     const VARIANT: usize = 0;
     const SEAL: <AccountTable as MultiObject>::MemberSeal<Self> = panic!("no seal");
     fn into_object(self) -> AccountTable {
-        AccountTable::Customer(Customer { customer_ref: self.customer_ref })
+        AccountTable::Customer(accounts::Customer { customer_ref: self.customer_ref })
     }
 }
 
 let accounts = MultiTable::<AccountTable>::new("accounts").unwrap();
-let _ = accounts.member::<Impostor>();
+let _ = accounts.member::<impostor::Customer>();
 ```
 "#
     )]
