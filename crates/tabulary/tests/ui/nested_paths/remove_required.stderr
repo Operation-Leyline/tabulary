@@ -1,0 +1,15 @@
+error[E0599]: no method named `remove` found for struct `tabulary::Path<Order, u64>` in the current scope
+  --> tests/ui/nested_paths/remove_required.rs:34:57
+   |
+34 |     OrderAttrs::SHIPPING.field(ShippingAttrs::ATTEMPTS).remove();
+   |                                                         ^^^^^^ method not found in `tabulary::Path<Order, u64>`
+   |
+   = note: the method was found for `tabulary::Path<R, T, tabulary::Optional, tabulary::Mutable, C>`
+
+error[E0599]: no method named `remove` found for struct `tabulary::Path<Order, std::string::String>` in the current scope
+  --> tests/ui/nested_paths/remove_required.rs:35:48
+   |
+35 |     OrderAttrs::GIFT.field(GiftAttrs::MESSAGE).remove();
+   |                                                ^^^^^^ method not found in `tabulary::Path<Order, std::string::String>`
+   |
+   = note: the method was found for `tabulary::Path<R, T, tabulary::Optional, tabulary::Mutable, C>`

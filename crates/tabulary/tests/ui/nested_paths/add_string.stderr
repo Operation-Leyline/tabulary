@@ -1,0 +1,25 @@
+error[E0277]: the trait bound `tabulary::wire::String: Addable` is not satisfied
+  --> tests/ui/nested_paths/add_string.rs:33:56
+   |
+33 |     OrderAttrs::SHIPPING.field(ShippingAttrs::CARRIER).add("express".to_owned());
+   |                                                        ^^^ the trait `Addable` is not implemented for `tabulary::wire::String`
+   |
+help: the following other types implement trait `Addable`
+  --> src/update.rs
+   |
+   | impl Addable for wire::Number {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Number`
+   | impl Addable for wire::StringSet {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `tabulary::wire::StringSet`
+   | impl Addable for wire::NumberSet {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `tabulary::wire::NumberSet`
+   | impl Addable for wire::BinarySet {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `tabulary::wire::BinarySet`
+note: required by a bound in `tabulary::Path::<R, T, P>::add`
+  --> src/update_path.rs
+   |
+   |     pub fn add(self, value: T) -> Action<R>
+   |            --- required by a bound in this associated function
+   |     where
+   |         T::Wire: Addable,
+   |                  ^^^^^^^ required by this bound in `Path::<R, T, P>::add`

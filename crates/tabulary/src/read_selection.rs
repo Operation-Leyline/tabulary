@@ -53,8 +53,8 @@ pub(crate) fn validate_selection<R: Record>(
             });
         }
         if let Some(filter) = filter {
-            visit(filter.root(), &mut |field| {
-                if available.contains(&field.name) {
+            visit(filter.root(), &mut |root, _| {
+                if available.contains(&root) {
                     Ok(())
                 } else {
                     Err(BuildError::OperationConstraint {
@@ -66,15 +66,24 @@ pub(crate) fn validate_selection<R: Record>(
     }
     Ok(())
 }
+/// Visit each attribute operand's top-level name, with its schema position when
+/// the operand is a top-level field. A nested path reports its root attribute.
 pub(crate) fn visit(
     node: &ConditionNode,
-    check: &mut impl FnMut(&crate::FieldDescriptor) -> Result<(), BuildError>,
+    check: &mut impl FnMut(&str, Option<usize>) -> Result<(), BuildError>,
 ) -> Result<(), BuildError> {
     match node {
         ConditionNode::Predicate { operands, .. } => {
             for operand in operands {
-                if let Operand::Attribute(field) | Operand::Size(field) = operand {
-                    check(field)?;
+                match operand {
+                    Operand::Attribute(field) | Operand::Size(field) => {
+                        check(field.name, Some(field.index))?
+                    }
+                    Operand::Path(path) | Operand::PathSize(path) => {
+                        // Typed nested paths always start at a named attribute.
+                        check(path.attribute().unwrap_or_default(), None)?
+                    }
+                    Operand::Value(_) => {}
                 }
             }
             Ok(())

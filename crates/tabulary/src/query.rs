@@ -144,8 +144,9 @@ impl<R: Record, I: KeySchema<R>, S, P> QueryBuilder<R, I, S, P> {
         let key = self.key.build()?;
         let filter = self.filter.map(Condition::build).transpose()?;
         if let Some(filter) = &filter {
-            visit(filter.root(), &mut |field| {
-                if field.index == keys.partition || Some(field.index) == keys.sort {
+            // Nested paths start at a map attribute, which can never be a key.
+            visit(filter.root(), &mut |_, index| {
+                if index.is_some_and(|index| index == keys.partition || Some(index) == keys.sort) {
                     Err(BuildError::OperationConstraint {
                         code: "query_key_in_filter",
                     })

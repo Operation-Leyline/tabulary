@@ -2,15 +2,15 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    AccessMarker, Attr, BuildError, Converter, EncodeContext, FieldDescriptor, List, Mutable,
-    Native, Optional, PresenceMarker, Record, Value, WireType, condition::Operand,
-    update_path::UpdatePath, wire,
+    AccessMarker, Attr, BuildError, Converter, FieldDescriptor, List, Mutable, Native, Optional,
+    PresenceMarker, Record, Value, WireType, condition::Operand, update_path::UpdatePath, wire,
 };
 
 /// Wire categories supporting numeric SET arithmetic. Custom codecs opt in explicitly.
 pub trait Numeric: WireType {}
 impl Numeric for wire::Number {}
-/// Native categories supporting top-level ADD.
+/// Native categories supporting ADD on a top-level attribute or a nested
+/// document field or map entry (never a list element).
 pub trait Addable: WireType {}
 impl Addable for wire::Number {}
 impl Addable for wire::StringSet {}
@@ -57,6 +57,10 @@ pub enum ActionNode {
     },
     NestedRemove {
         target: crate::AttributePath,
+    },
+    NestedAdd {
+        target: crate::AttributePath,
+        value: Operand,
     },
     Set {
         target: FieldDescriptor,
@@ -294,11 +298,7 @@ pub(crate) fn constant<R: Record, T, C: Converter<T>>(
     field: &UpdatePath,
     value: &T,
 ) -> Result<Operand, BuildError> {
-    let mut cx = EncodeContext::new(R::SCHEMA.name).in_document(field.document);
-    for segment in field.path.segments() {
-        cx = cx.at(segment.clone());
-    }
-    Ok(Operand::Value(C::encode(value, &mut cx)?))
+    Ok(Operand::Value(C::encode(value, &mut field.context::<R>())?))
 }
 impl<R: Record, T: 'static, C: Converter<T> + 'static> SetOperand<R, T, C> {
     pub(crate) fn combine(
@@ -359,6 +359,10 @@ impl<R: Record, T: 'static, P: PresenceMarker, C: Converter<T> + 'static>
             crate::index::validate_set::<R>(target, &value)?;
             Ok(ActionNode::Set { target, value })
         })
+    }
+    /// `SET path = if_not_exists(path, value)`: write only when the attribute is absent.
+    pub fn set_if_not_exists(self, value: T) -> Action<R> {
+        self.set_expr(self.if_not_exists(value))
     }
     pub fn increment(self, delta: T) -> Action<R>
     where

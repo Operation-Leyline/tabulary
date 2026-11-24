@@ -1,9 +1,15 @@
 //! Typed physical paths; no segment is interpreted as expression syntax.
 use crate::{
-    AccessMarker, Attr, AttributePath, BuildError, Converter, Document, FieldAccess,
-    FieldDescriptor, List, Map, Mutable, Native, Optional, PathSegment, PresenceMarker, Record,
-    Required, Value,
-    update::{Action, ActionNode, Append, Numeric, SetExpression, SetNode, SetOperand, constant},
+    AccessMarker, Attr, AttributePath, BuildError, Condition, Converter, Document, EncodeContext,
+    FieldAccess, FieldDescriptor, List, Map, Mutable, Native, Optional, PathSegment,
+    PresenceMarker, Record, Required, Value,
+    condition::{
+        Contains, Operand, Operator, Ordered, Prefix, Size, SizedWire, Subject, comparisons,
+        ordered_comparisons, predicate,
+    },
+    update::{
+        Action, ActionNode, Addable, Append, Numeric, SetExpression, SetNode, SetOperand, constant,
+    },
 };
 use std::{fmt, marker::PhantomData};
 
@@ -40,6 +46,14 @@ impl UpdatePath {
                 && Some(field.index) != R::SCHEMA.primary.sort,
             field,
         }
+    }
+    /// Encode constants at the complete physical path, inside the leaf's document.
+    pub(crate) fn context<R: Record>(&self) -> EncodeContext {
+        let mut cx = EncodeContext::new(R::SCHEMA.name).in_document(self.document);
+        for segment in self.path.segments() {
+            cx = cx.at(segment.clone());
+        }
+        cx
     }
     pub(crate) fn operand(&self) -> SetNode {
         if self.path.segments().len() == 1 {
@@ -79,8 +93,11 @@ impl UpdatePath {
 
 type Invariant<T> = PhantomData<fn(T) -> T>;
 
-/// Root-owned nested update handle. Required fields have no remove method, and
-/// ADD/DELETE are available only on top-level attributes.
+/// Root-owned nested path handle for conditions and updates. Every attribute
+/// segment is aliased separately when rendered (`#n0.#n1`), so reserved words and
+/// literal dots in wire names are safe. Required fields have no remove method,
+/// ADD is available on document fields and map entries but not list elements,
+/// and DELETE remains top-level only.
 /// ```compile_fail
 /// use tabulary::{List, Attr, Record};
 /// fn nested<R: Record>(a: Attr<R, List<u64>>) { a.at(0).add(1); }
@@ -89,6 +106,18 @@ type Invariant<T> = PhantomData<fn(T) -> T>;
 /// use tabulary::{Document, Value, Attr, Record};
 /// fn required<R: Record, D: Document + Value + 'static>(a: Attr<R, D>, b: Attr<D, u64>) {
 ///     a.field(b).remove();
+/// }
+/// ```
+/// ```compile_fail
+/// use tabulary::{Document, Value, Attr, Record};
+/// fn text<R: Record, D: Document + Value + 'static>(a: Attr<R, D>, b: Attr<D, String>) {
+///     a.field(b).add("gift".to_owned());
+/// }
+/// ```
+/// ```compile_fail
+/// use tabulary::{Document, Value, Attr, Record};
+/// fn ordering<R: Record, D: Document + Value + 'static>(a: Attr<R, D>, b: Attr<D, bool>) {
+///     a.field(b).lt(true);
 /// }
 /// ```
 pub struct Path<R, T, P = Required, A = Mutable, C = Native<T>> {
@@ -124,6 +153,69 @@ impl<R: Record, T: 'static, P, A, C: Converter<T> + 'static> Path<R, T, P, A, C>
         })
     }
 }
+impl<R: Record, T: 'static, P, A, C: Converter<T> + 'static> Path<R, T, P, A, C> {
+    fn subject(self) -> Result<Subject, BuildError> {
+        self.path.map(Subject::Path)
+    }
+    fn predicate(self, operator: Operator, values: Vec<T>) -> Condition<R> {
+        predicate::<R, T, C>(self.subject(), false, operator, values)
+    }
+    comparisons!(T; eq => Eq, ne => Ne);
+    /// `attribute_exists` on the full path; false when any ancestor map is absent.
+    pub fn exists(self) -> Condition<R> {
+        self.predicate(Operator::Exists, vec![])
+    }
+    /// `attribute_not_exists` on the full path; true when any ancestor map is absent.
+    pub fn not_exists(self) -> Condition<R> {
+        self.predicate(Operator::NotExists, vec![])
+    }
+    pub fn in_values(self, values: Vec<T>) -> Condition<R> {
+        self.predicate(Operator::In, values)
+    }
+    /// Compare two paths of the same owner, logical type, and codec.
+    pub fn eq_path<P2, A2>(self, other: Path<R, T, P2, A2, C>) -> Condition<R> {
+        let (left, right) = (self.path, other.path);
+        Condition::new(move || {
+            Ok(crate::condition::ConditionNode::Predicate {
+                operator: Operator::Eq,
+                operands: vec![Operand::Path(left?.path), Operand::Path(right?.path)],
+            })
+        })
+    }
+    pub fn begins_with(self, value: T) -> Condition<R>
+    where
+        C::Wire: Prefix,
+    {
+        self.predicate(Operator::BeginsWith, vec![value])
+    }
+    pub fn size(self) -> Size<R>
+    where
+        C::Wire: SizedWire,
+    {
+        Size {
+            field: self.subject(),
+            guard: None,
+            owner: PhantomData,
+        }
+    }
+    pub fn contains(self, value: C::Element) -> Condition<R>
+    where
+        C: Contains<T>,
+    {
+        predicate::<R, C::Element, C::ElementCodec>(
+            self.subject(),
+            false,
+            Operator::Contains,
+            vec![value],
+        )
+    }
+}
+impl<R: Record, T: 'static, P, A, C: Converter<T> + 'static> Path<R, T, P, A, C>
+where
+    C::Wire: Ordered,
+{
+    ordered_comparisons!(T);
+}
 impl<R: Record, T: 'static, P, C: Converter<T> + 'static> Path<R, T, P, Mutable, C> {
     pub fn set(self, value: T) -> Action<R> {
         let operand = SetOperand::new(self.path.clone(), move |path| {
@@ -138,6 +230,11 @@ impl<R: Record, T: 'static, P, C: Converter<T> + 'static> Path<R, T, P, Mutable,
             let value = (expression.build)(expression.field?)?;
             Ok(ActionNode::NestedSet { target, value })
         })
+    }
+    /// `SET path = if_not_exists(path, value)`. The parent map must already exist.
+    pub fn set_if_not_exists(self, value: T) -> Action<R> {
+        let rhs = self.clone().if_not_exists(value);
+        self.set_expr(rhs)
     }
     pub fn increment(self, value: T) -> Action<R>
     where
@@ -181,6 +278,24 @@ impl<R: Record, T: 'static, P, C: Converter<T> + 'static> Path<R, T, P, Mutable,
 impl<R: Record, T: 'static, C: Converter<T> + 'static> Path<R, T, Optional, Mutable, C> {
     pub fn remove(self) -> Action<R> {
         self.remove_action()
+    }
+}
+impl<R: Record, T: Value + 'static, P: PresenceMarker> Path<R, T, P, Mutable, Native<T>> {
+    /// DynamoDB ADD on a nested document field or map entry. An absent leaf is
+    /// initialized by service semantics; an absent parent map is rejected.
+    #[allow(clippy::should_implement_trait)] // DynamoDB ADD, not Rust arithmetic.
+    pub fn add(self, value: T) -> Action<R>
+    where
+        T::Wire: Addable,
+    {
+        Action::new(move || {
+            let path = self.path?.mutation()?;
+            let value = constant::<R, T, Native<T>>(&path, &value)?;
+            Ok(ActionNode::NestedAdd {
+                target: path.path,
+                value,
+            })
+        })
     }
 }
 impl<R: Record, T: 'static, C: Converter<T> + 'static> Path<R, T, Element, Mutable, C> {

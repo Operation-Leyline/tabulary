@@ -1,7 +1,9 @@
 //! V1: version byte, binding, then sorted scalar key entries. All lengths/counts
 //! are big-endian u32; schema positions are u64. Tags below are wire constants.
 use super::*;
-use crate::{DynamoType, FieldAccess, IndexKind, IndexProjection, KeyDefinition, Presence};
+use crate::{
+    DynamoType, FieldAccess, IndexKind, IndexProjection, KeyDefinition, PathSegment, Presence,
+};
 use aws_sdk_dynamodb::primitives::Blob;
 
 const MAX: usize = 4 * 1024 * 1024;
@@ -267,6 +269,24 @@ impl Writer {
         self.position(k.partition)?;
         self.optional_position(k.sort)
     }
+    // Nested filter paths: segment count, then 0 + name or 1 + u64 list index.
+    fn path(&mut self, path: &AttributePath) -> Result<(), BuildError> {
+        self.count(path.segments().len())?;
+        for segment in path.segments() {
+            match segment {
+                PathSegment::Attribute(name) => {
+                    self.byte(0)?;
+                    self.blob(name.as_bytes())?;
+                }
+                PathSegment::Index(index) => {
+                    self.byte(1)?;
+                    self.position(*index)?;
+                }
+                PathSegment::Component(_) => return Err(BuildError::InvalidCursor),
+            }
+        }
+        Ok(())
+    }
     fn field(&mut self, f: FieldDescriptor) -> Result<(), BuildError> {
         self.blob(f.name.as_bytes())?;
         self.position(f.index)?;
@@ -356,6 +376,14 @@ impl Writer {
                         CanonicalOperand::Value(v) => {
                             self.byte(2)?;
                             self.value(v, 0)?;
+                        }
+                        CanonicalOperand::Path(p) => {
+                            self.byte(3)?;
+                            self.path(p)?;
+                        }
+                        CanonicalOperand::PathSize(p) => {
+                            self.byte(4)?;
+                            self.path(p)?;
                         }
                     }
                 }
@@ -498,6 +526,20 @@ impl<'a> Reader<'a> {
         self.tag(ACCESS.len() as u8 - 1)?;
         Ok((name, self.tag(10)?))
     }
+    fn path(&mut self) -> Result<(), CursorError> {
+        let count = self.count(5)?;
+        if count == 0 {
+            return Err(CursorError::InvalidFormat);
+        }
+        for _ in 0..count {
+            if self.tag(1)? == 0 {
+                self.text()?;
+            } else {
+                self.position()?;
+            }
+        }
+        Ok(())
+    }
     fn names(&mut self) -> Result<(), CursorError> {
         for _ in 0..self.count(4)? {
             self.text()?;
@@ -563,10 +605,12 @@ impl<'a> Reader<'a> {
             0 => {
                 self.tag(11)?;
                 for _ in 0..self.count(1)? {
-                    if self.tag(2)? == 2 {
-                        self.value(0)?;
-                    } else {
-                        self.field()?;
+                    match self.tag(4)? {
+                        2 => self.value(0)?,
+                        3 | 4 => self.path()?,
+                        _ => {
+                            self.field()?;
+                        }
                     }
                 }
             }
