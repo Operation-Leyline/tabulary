@@ -95,9 +95,9 @@ enum Access {
     Device(Device),
 }
 /// Only this module can construct the seal, so only it can declare members.
-pub struct AccessSeal(());
+pub struct AccessSeal<R>(std::marker::PhantomData<R>);
 impl MultiObject for Access {
-    type MemberSeal = AccessSeal;
+    type MemberSeal<R> = AccessSeal<R>;
     const SCHEMA: RecordSchema = RecordSchema {
         name: "Access",
         fields: KEYS_ONLY,
@@ -140,14 +140,14 @@ impl MultiObject for Access {
 }
 impl MemberOf<Access> for Session {
     const VARIANT: usize = 0;
-    const SEAL: AccessSeal = AccessSeal(());
+    const SEAL: AccessSeal<Self> = AccessSeal(std::marker::PhantomData);
     fn into_object(self) -> Access {
         Access::Session(self)
     }
 }
 impl MemberOf<Access> for Device {
     const VARIANT: usize = 1;
-    const SEAL: AccessSeal = AccessSeal(());
+    const SEAL: AccessSeal<Self> = AccessSeal(std::marker::PhantomData);
     fn into_object(self) -> Access {
         Access::Device(self)
     }
@@ -161,7 +161,7 @@ const _: () = assert!(tabulary::member_fault::<Access, Device>().is_none());
 #[derive(Debug)]
 struct Overlapping;
 impl MultiObject for Overlapping {
-    type MemberSeal = ();
+    type MemberSeal<R> = R;
     const SCHEMA: RecordSchema = RecordSchema {
         name: "Overlapping",
         ..Access::SCHEMA
@@ -187,7 +187,7 @@ impl MultiObject for Overlapping {
 // every `MultiTable` member operation asserts that check at compile time.
 impl MemberOf<Access> for Tablet {
     const VARIANT: usize = 1;
-    const SEAL: AccessSeal = AccessSeal(());
+    const SEAL: AccessSeal<Self> = AccessSeal(std::marker::PhantomData);
     fn into_object(self) -> Access {
         Access::Device(Device { id: self.id })
     }

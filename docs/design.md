@@ -548,12 +548,13 @@ an unprefixed field key under any prefix). Manual implementations call the same
 
 **Runtime contract.** `MultiObject` has a keys-only `SCHEMA` (the shared
 partition and optional sort descriptors, no indexes or TTL), static `VARIANTS`
-(`MultiVariant { name, record, keys }`), `decode_variant`, and a `MemberSeal`
-type. `MemberOf<M>` requires `const SEAL: M::MemberSeal`, so implementing it
-needs a value only the enum's declaring module can construct. The derive declares
-its seal in an anonymous scope with a private field, so no other module or crate
-can add a member to a derived enum; manual enums use a type such as
-`pub struct Seal(());`. As with manual schema metadata, the declaring module
+(`MultiVariant { name, record, keys }`), `decode_variant`, and a generic
+`MemberSeal<R>` type. `MemberOf<M>` for `R` requires
+`const SEAL: M::MemberSeal<R>`, a value only the enum's declaring module can
+construct. A real member's seal names that member's type, so it cannot be
+reused for another type. The derive declares its seal in an anonymous scope with
+a private field, so no other module or crate can add a member to a derived enum.
+Manual enums use a type such as `pub struct Seal<R>(PhantomData<R>);`. As with manual schema metadata, the declaring module
 itself remains trusted. The derive
 implements `MemberOf<M>` for every member, with its variant position and
 `into_object`, plus `From<Member> for M`, and inherent `from_item`, `to_item`, and

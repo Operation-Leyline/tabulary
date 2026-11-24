@@ -26,12 +26,12 @@ mod elsewhere {
         pub customer_ref: String,
     }
 
-    type Seal = <AccountTable as MultiObject>::MemberSeal;
+    type Seal<R> = <AccountTable as MultiObject>::MemberSeal<R>;
 
-    // Another module cannot construct the enum's seal, so it cannot add a member.
+    // Another module cannot construct the enum's seal for its own type.
     impl MemberOf<AccountTable> for Impostor {
         const VARIANT: usize = 0;
-        const SEAL: Seal = Seal { 0: () };
+        const SEAL: Seal<Self> = Seal { 0: std::marker::PhantomData };
         fn into_object(self) -> AccountTable {
             AccountTable::Customer(Customer {
                 customer_ref: self.customer_ref,

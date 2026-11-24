@@ -57,7 +57,7 @@ pub fn multi_object(object: &MultiObject) -> TokenStream {
         quote_spanned! {span=>
             impl #path::MemberOf<#ident> for #ty {
                 const VARIANT: usize = #i;
-                const SEAL: __TabularyMemberSeal = __TabularyMemberSeal(());
+                const SEAL: __TabularyMemberSeal<#ty> = __TabularyMemberSeal(::core::marker::PhantomData);
                 fn into_object(self) -> #ident { #ident::#variant(self) }
             }
             impl ::core::convert::From<#ty> for #ident {
@@ -76,9 +76,9 @@ pub fn multi_object(object: &MultiObject) -> TokenStream {
         // The seal is declared in an anonymous scope with a private field, so
         // only this expansion can construct it and implement `MemberOf`.
         const _: () = {
-        pub struct __TabularyMemberSeal(());
+        pub struct __TabularyMemberSeal<R>(::core::marker::PhantomData<R>);
         impl #path::MultiObject for #ident {
-            type MemberSeal = __TabularyMemberSeal;
+            type MemberSeal<R> = __TabularyMemberSeal<R>;
             const SCHEMA: #path::RecordSchema = #path::__private::schema(
                 #name,
                 &[#path::__private::multi_key::<#first>(#partition, 0, false), #sort_field],

@@ -1,5 +1,5 @@
 error[E0451]: field `0` of struct `__TabularyMemberSeal` is private
-  --> tests/ui/multi_object/foreign_member.rs:34:35
+  --> tests/ui/multi_object/foreign_member.rs:34:41
    |
-34 |         const SEAL: Seal = Seal { 0: () };
-   |                                   ^ private field
+34 |         const SEAL: Seal<Self> = Seal { 0: std::marker::PhantomData };
+   |                                         ^ private field

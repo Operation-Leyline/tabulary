@@ -25,10 +25,11 @@ pub struct MultiVariant {
 pub trait MultiObject: Sized {
     const SCHEMA: RecordSchema;
     const VARIANTS: &'static [MultiVariant];
-    /// A type that only the enum's declaring module can construct, such as a
-    /// `pub struct Seal(());` with a private field. Every `MemberOf` impl must
-    /// produce one, so no other module or crate can add a member.
-    type MemberSeal;
+    /// A per-member proof type that only the enum's declaring module can
+    /// construct, such as `pub struct Seal<R>(PhantomData<R>);` with a private
+    /// field. `MemberOf` for `R` must produce a `MemberSeal<R>`; a real member's
+    /// seal has a different type, so no other module or crate can add a member.
+    type MemberSeal<R>;
 
     /// Decode `item` strictly as the member at `variant`, using `cx` for paths.
     fn decode_variant(
@@ -50,7 +51,7 @@ pub trait MemberOf<M: MultiObject>: Record + Document {
     /// Position of this member's entry in `M::VARIANTS`.
     const VARIANT: usize;
     /// Proof that the enum's declaring module wrote this membership.
-    const SEAL: M::MemberSeal;
+    const SEAL: M::MemberSeal<Self>;
     fn into_object(self) -> M;
 }
 
