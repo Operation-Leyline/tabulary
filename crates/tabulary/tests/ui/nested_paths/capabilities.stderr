@@ -1,0 +1,142 @@
+error[E0599]: the method `lt` exists for struct `tabulary::Path<Order, bool>`, but its trait bounds were not satisfied
+  --> tests/ui/nested_paths/capabilities.rs:32:58
+   |
+32 |     OrderAttrs::SHIPPING.field(ShippingAttrs::DELIVERED).lt(true);
+   |                                                          ^^ method cannot be called on `tabulary::Path<Order, bool>` due to unsatisfied trait bounds
+   |
+  ::: src/wire.rs
+   |
+   |         pub struct $name;
+   |         ----------------- doesn't satisfy `tabulary::wire::Bool: Ordered`
+   |
+  ::: src/update_path.rs
+   |
+   | pub struct Path<R, T, P = Required, A = Mutable, C = Native<T>> {
+   | --------------------------------------------------------------- doesn't satisfy `tabulary::Path<Order, bool>: Iterator`
+   |
+   = note: the following trait bounds were not satisfied:
+           `tabulary::wire::Bool: Ordered`
+           `tabulary::Path<Order, bool>: Iterator`
+           which is required by `&mut tabulary::Path<Order, bool>: Iterator`
+
+error[E0277]: the trait bound `Number: tabulary::condition::Prefix` is not satisfied
+  --> tests/ui/nested_paths/capabilities.rs:33:57
+   |
+33 |     OrderAttrs::SHIPPING.field(ShippingAttrs::ATTEMPTS).begins_with(1);
+   |                                                         ^^^^^^^^^^^ the trait `tabulary::condition::Prefix` is not implemented for `Number`
+   |
+help: the following other types implement trait `tabulary::condition::Prefix`
+  --> src/condition.rs
+   |
+   |     ($cap:ident: $($wire:ident),+) => {$(impl $cap for wire::$wire {})+};
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                                          |
+   |                                          `tabulary::wire::Binary`
+   |                                          `tabulary::wire::String`
+...
+   | capabilities!(Prefix: String, Binary);
+   | ------------------------------------- in this macro invocation
+note: required by a bound in `tabulary::Path::<R, T, P, A, C>::begins_with`
+  --> src/update_path.rs
+   |
+   |     pub fn begins_with(self, value: T) -> Condition<R>
+   |            ----------- required by a bound in this associated function
+   |     where
+   |         C::Wire: Prefix,
+   |                  ^^^^^^ required by this bound in `Path::<R, T, P, A, C>::begins_with`
+   = note: this error originates in the macro `capabilities` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Number: SizedWire` is not satisfied
+  --> tests/ui/nested_paths/capabilities.rs:34:57
+   |
+34 |     OrderAttrs::SHIPPING.field(ShippingAttrs::ATTEMPTS).size();
+   |                                                         ^^^^ the trait `SizedWire` is not implemented for `Number`
+   |
+   = help: the following other types implement trait `SizedWire`:
+             tabulary::wire::Binary
+             tabulary::wire::BinarySet
+             tabulary::wire::List
+             tabulary::wire::Map
+             tabulary::wire::NumberSet
+             tabulary::wire::String
+             tabulary::wire::StringSet
+note: required by a bound in `tabulary::Path::<R, T, P, A, C>::size`
+  --> src/update_path.rs
+   |
+   |     pub fn size(self) -> Size<R>
+   |            ---- required by a bound in this associated function
+   |     where
+   |         C::Wire: SizedWire,
+   |                  ^^^^^^^^^ required by this bound in `Path::<R, T, P, A, C>::size`
+
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/capabilities.rs:35:64
+   |
+35 |     OrderAttrs::SHIPPING.field(ShippingAttrs::LABELS).contains("1".to_owned());
+   |                                                       -------- ^^^^^^^^^^^^^^ expected `u64`, found `String`
+   |                                                       |
+   |                                                       arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/update_path.rs
+   |
+   |     pub fn contains(self, value: C::Element) -> Condition<R>
+   |            ^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/capabilities.rs:36:60
+   |
+36 |     OrderAttrs::SHIPPING.field(ShippingAttrs::ATTEMPTS).eq("1".to_owned());
+   |                                                         -- ^^^^^^^^^^^^^^ expected `u64`, found `String`
+   |                                                         |
+   |                                                         arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/update_path.rs
+   |
+   |     comparisons!(T; eq => Eq, ne => Ne);
+   |                     ^^
+
+error[E0599]: the method `add` exists for struct `tabulary::Path<Order, u64, tabulary::Element>`, but its trait bounds were not satisfied
+  --> tests/ui/nested_paths/capabilities.rs:37:61
+   |
+37 |     OrderAttrs::SHIPPING.field(ShippingAttrs::LABELS).at(0).add(1);
+   |                                                             ^^^ method cannot be called on `tabulary::Path<Order, u64, tabulary::Element>` due to unsatisfied trait bounds
+   |
+  ::: src/update_path.rs
+   |
+   | pub struct Element;
+   | ------------------ doesn't satisfy `tabulary::Element: PresenceMarker`
+   |
+   = note: the following trait bounds were not satisfied:
+           `tabulary::Element: PresenceMarker`
+
+error[E0599]: no method named `delete_members` found for struct `tabulary::Path<R, T, P, A, C>` in the current scope
+  --> tests/ui/nested_paths/capabilities.rs:40:10
+   |
+38 |       OrderAttrs::SHIPPING
+   |       --------------------
+   |       |
+   |  _____method `delete_members` is available on `Attr<Order, Shipping>`
+   | |
+39 | |         .field(ShippingAttrs::TAGS)
+40 | |         .delete_members(tabulary::StringSet::try_from(vec!["a".to_owned()]).unwrap());
+   | |         -^^^^^^^^^^^^^^ method not found in `tabulary::Path<Order, tabulary::StringSet>`
+   | |_________|
+   |
+
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/capabilities.rs:41:57
+   |
+41 |     OrderAttrs::SHIPPING.field(ShippingAttrs::NOTE).set(None);
+   |                                                     --- ^^^^ expected `String`, found `Option<_>`
+   |                                                     |
+   |                                                     arguments to this method are incorrect
+   |
+   = note: expected struct `std::string::String`
+                found enum `Option<_>`
+note: method defined here
+  --> src/update_path.rs
+   |
+   |     pub fn set(self, value: T) -> Action<R> {
+   |            ^^^

@@ -5,8 +5,8 @@ use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::condition::{ConditionNode, Operand, Operator};
 use crate::{
-    BuildError, BuiltCondition, BuiltKeyCondition, Decimal, FieldDescriptor, IndexDefinition, Item,
-    ReadConsistency, Record, RecordSchema, Table,
+    AttributePath, BuildError, BuiltCondition, BuiltKeyCondition, Decimal, FieldDescriptor,
+    IndexDefinition, Item, ReadConsistency, Record, RecordSchema, Table,
 };
 
 /// Physical sort-key traversal order for a Query.
@@ -251,6 +251,8 @@ enum CanonicalNode {
 enum CanonicalOperand {
     Attribute(FieldDescriptor),
     Size(FieldDescriptor),
+    Path(AttributePath),
+    PathSize(AttributePath),
     Value(CanonicalValue),
 }
 impl CanonicalNode {
@@ -270,6 +272,8 @@ impl CanonicalNode {
                         Ok(match operand {
                             Operand::Attribute(field) => CanonicalOperand::Attribute(*field),
                             Operand::Size(field) => CanonicalOperand::Size(*field),
+                            Operand::Path(path) => CanonicalOperand::Path(path.clone()),
+                            Operand::PathSize(path) => CanonicalOperand::PathSize(path.clone()),
                             Operand::Value(value) => {
                                 CanonicalOperand::Value(CanonicalValue::new(value, 0)?)
                             }

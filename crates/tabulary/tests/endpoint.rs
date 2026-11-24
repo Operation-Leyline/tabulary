@@ -2,6 +2,8 @@
 
 #[path = "endpoint/indexed.rs"]
 mod indexed;
+#[path = "endpoint/nested_paths.rs"]
+mod nested_paths;
 #[path = "endpoint/support.rs"]
 mod support;
 #[path = "endpoint/transactions_batches.rs"]

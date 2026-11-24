@@ -3,6 +3,8 @@ use std::collections::HashMap;
 
 use aws_sdk_dynamodb::types::AttributeValue;
 
+use crate::{AttributePath, PathSegment, condition::Operand};
+
 #[derive(Default)]
 pub(crate) struct AliasAllocator {
     by_segment: HashMap<String, String>,
@@ -18,6 +20,35 @@ impl AliasAllocator {
         self.by_segment.insert(segment.into(), alias.clone());
         self.names.insert(alias.clone(), segment.into());
         alias
+    }
+    /// Alias every attribute segment; list indexes stay literal `[n]` dereferences.
+    pub(crate) fn path(&mut self, path: &AttributePath) -> String {
+        let mut text = String::new();
+        for segment in path.segments() {
+            match segment {
+                PathSegment::Attribute(name) => {
+                    if !text.is_empty() {
+                        text.push('.');
+                    }
+                    text.push_str(&self.name(name));
+                }
+                PathSegment::Index(index) => text.push_str(&format!("[{index}]")),
+                PathSegment::Component(_) => {
+                    unreachable!("expression paths have no key components")
+                }
+            }
+        }
+        text
+    }
+    /// Render one validated operand, allocating names before values in traversal order.
+    pub(crate) fn operand(&mut self, operand: &Operand) -> String {
+        match operand {
+            Operand::Attribute(field) => self.name(field.name),
+            Operand::Size(field) => format!("size({})", self.name(field.name)),
+            Operand::Path(path) => self.path(path),
+            Operand::PathSize(path) => format!("size({})", self.path(path)),
+            Operand::Value(value) => self.value(value),
+        }
     }
     pub(crate) fn value(&mut self, value: &AttributeValue) -> String {
         let alias = format!(":v{}", self.values.len());

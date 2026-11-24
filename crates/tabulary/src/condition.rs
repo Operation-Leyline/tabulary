@@ -4,8 +4,9 @@ use std::{fmt, marker::PhantomData};
 use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::{
-    AccessMarker, Attr, BinarySet, BuildError, Converter, EncodeContext, FieldDescriptor, List,
-    Native, NumberSet, PathSegment, PresenceMarker, Record, StringSet, Value, WireType, wire,
+    AccessMarker, Attr, AttributePath, BinarySet, BuildError, Converter, EncodeContext,
+    FieldDescriptor, List, Native, NumberSet, PathSegment, PresenceMarker, Record, StringSet,
+    Value, WireType, update_path::UpdatePath, wire,
 };
 
 /// Wire categories whose encoded order preserves the logical order.
@@ -64,10 +65,14 @@ pub enum Operator {
 }
 
 /// Built operands can be inspected explicitly; Debug always hides constants.
+/// `Path` and `PathSize` address a multi-segment document path below a
+/// top-level attribute; each attribute segment is aliased separately.
 #[derive(Clone, PartialEq)]
 pub enum Operand {
     Attribute(FieldDescriptor),
     Size(FieldDescriptor),
+    Path(AttributePath),
+    PathSize(AttributePath),
     Value(AttributeValue),
 }
 impl fmt::Debug for Operand {
@@ -75,7 +80,34 @@ impl fmt::Debug for Operand {
         match self {
             Self::Attribute(field) => f.debug_tuple("Attribute").field(field).finish(),
             Self::Size(field) => f.debug_tuple("Size").field(field).finish(),
+            Self::Path(path) => f.debug_tuple("Path").field(path).finish(),
+            Self::PathSize(path) => f.debug_tuple("PathSize").field(path).finish(),
             Self::Value(_) => f.write_str("Value([redacted])"),
+        }
+    }
+}
+
+/// A validated predicate subject: a top-level field or a typed nested path.
+#[derive(Clone)]
+pub(crate) enum Subject {
+    Field(FieldDescriptor),
+    Path(UpdatePath),
+}
+impl Subject {
+    fn operand(&self, size: bool) -> Operand {
+        match (self, size) {
+            (Self::Field(field), false) => Operand::Attribute(*field),
+            (Self::Field(field), true) => Operand::Size(*field),
+            (Self::Path(path), false) => Operand::Path(path.path.clone()),
+            (Self::Path(path), true) => Operand::PathSize(path.path.clone()),
+        }
+    }
+    fn context<R: Record>(&self) -> EncodeContext {
+        match self {
+            Self::Field(field) => {
+                EncodeContext::new(R::SCHEMA.name).at(PathSegment::Attribute(field.name.into()))
+            }
+            Self::Path(path) => path.context::<R>(),
         }
     }
 }
@@ -238,13 +270,13 @@ impl<R> Condition<R> {
 }
 
 pub(crate) fn predicate<R: Record, T: 'static, C: Converter<T> + 'static>(
-    field: Result<FieldDescriptor, BuildError>,
+    subject: Result<Subject, BuildError>,
     size: bool,
     operator: Operator,
     values: Vec<T>,
 ) -> Condition<R> {
     Condition::new(move || {
-        let field = field?;
+        let subject = subject?;
         if operator == Operator::In {
             if values.is_empty() {
                 return Err(BuildError::EmptyOperation);
@@ -256,13 +288,8 @@ pub(crate) fn predicate<R: Record, T: 'static, C: Converter<T> + 'static>(
                 });
             }
         }
-        let mut operands = vec![if size {
-            Operand::Size(field)
-        } else {
-            Operand::Attribute(field)
-        }];
-        let mut cx =
-            EncodeContext::new(R::SCHEMA.name).at(PathSegment::Attribute(field.name.into()));
+        let mut operands = vec![subject.operand(size)];
+        let mut cx = subject.context::<R>();
         for value in values {
             operands.push(Operand::Value(C::encode(&value, &mut cx)?));
         }
@@ -286,8 +313,11 @@ pub(crate) use {comparisons, ordered_comparisons};
 impl<R: Record, T: 'static, P: PresenceMarker, A: AccessMarker, C: Converter<T> + 'static>
     Attr<R, T, P, A, C>
 {
+    fn subject(self) -> Result<Subject, BuildError> {
+        self.validate().map(Subject::Field)
+    }
     fn predicate(self, operator: Operator, values: Vec<T>) -> Condition<R> {
-        predicate::<R, T, C>(self.validate(), false, operator, values)
+        predicate::<R, T, C>(self.subject(), false, operator, values)
     }
     comparisons!(T; eq => Eq, ne => Ne);
     pub fn exists(self) -> Condition<R> {
@@ -322,7 +352,7 @@ impl<R: Record, T: 'static, P: PresenceMarker, A: AccessMarker, C: Converter<T> 
         C::Wire: SizedWire,
     {
         Size {
-            field: self.validate(),
+            field: self.subject(),
             guard: None,
             owner: PhantomData,
         }
@@ -332,7 +362,7 @@ impl<R: Record, T: 'static, P: PresenceMarker, A: AccessMarker, C: Converter<T> 
         C: Contains<T>,
     {
         predicate::<R, C::Element, C::ElementCodec>(
-            self.validate(),
+            self.subject(),
             false,
             Operator::Contains,
             vec![value],
@@ -347,10 +377,10 @@ where
     ordered_comparisons!(T);
 }
 
-/// A numeric size operand. It retains its source's record and validated descriptor.
+/// A numeric size operand. It retains its source's record and validated subject.
 pub struct Size<R> {
     pub(crate) guard: Option<Condition<R>>,
-    pub(crate) field: Result<FieldDescriptor, BuildError>,
+    pub(crate) field: Result<Subject, BuildError>,
     pub(crate) owner: PhantomData<fn(R) -> R>,
 }
 impl<R: Record> Size<R> {

@@ -3,7 +3,7 @@ use crate::{
     Attr, BuildError, Condition, Converter, DerivedOnly, FieldDescriptor, Native, PresenceMarker,
     Record, Required, Value,
     condition::{
-        self, Contains, Operator, Ordered, Prefix, Size, SizedWire, comparisons,
+        self, Contains, Operator, Ordered, Prefix, Size, SizedWire, Subject, comparisons,
         ordered_comparisons,
     },
 };
@@ -54,14 +54,14 @@ impl<R, T, C> std::fmt::Debug for ScopedAttr<R, T, C> {
 impl<R: Record, T: 'static, C: Converter<T> + 'static> ScopedAttr<R, T, C> {
     fn guard(self) -> Condition<R> {
         condition::predicate::<R, String, Native<String>>(
-            self.group,
+            self.group.map(Subject::Field),
             false,
             Operator::Eq,
             vec![self.tag.into()],
         )
     }
     fn predicate(self, operator: Operator, values: Vec<T>) -> Condition<R> {
-        condition::predicate::<R, T, C>(Ok(self.field), false, operator, values)
+        condition::predicate::<R, T, C>(Ok(Subject::Field(self.field)), false, operator, values)
             .guarded(self.guard())
     }
     comparisons!(T; eq => Eq, ne => Ne);
@@ -99,7 +99,7 @@ impl<R: Record, T: 'static, C: Converter<T> + 'static> ScopedAttr<R, T, C> {
         C: Contains<T>,
     {
         condition::predicate::<R, C::Element, C::ElementCodec>(
-            Ok(self.field),
+            Ok(Subject::Field(self.field)),
             false,
             Operator::Contains,
             vec![value],
@@ -111,7 +111,7 @@ impl<R: Record, T: 'static, C: Converter<T> + 'static> ScopedAttr<R, T, C> {
         C::Wire: SizedWire,
     {
         Size {
-            field: Ok(self.field),
+            field: Ok(Subject::Field(self.field)),
             guard: Some(self.guard()),
             owner: PhantomData,
         }

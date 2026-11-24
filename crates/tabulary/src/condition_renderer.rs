@@ -1,5 +1,5 @@
 use crate::aliases::AliasAllocator;
-use crate::condition::{ConditionNode, Operand, Operator};
+use crate::condition::{ConditionNode, Operator};
 use crate::{BuiltCondition, RenderedExpressions};
 
 impl<R> BuiltCondition<R> {
@@ -34,11 +34,7 @@ pub(crate) fn render_condition(node: &ConditionNode, aliases: &mut AliasAllocato
             // Only validated BuiltCondition trees reach this renderer; their arity is fixed.
             let operands: Vec<_> = operands
                 .iter()
-                .map(|operand| match operand {
-                    Operand::Attribute(field) => aliases.name(field.name),
-                    Operand::Size(field) => format!("size({})", aliases.name(field.name)),
-                    Operand::Value(value) => aliases.value(value),
-                })
+                .map(|operand| aliases.operand(operand))
                 .collect();
             let path = &operands[0];
             match operator {
@@ -69,6 +65,7 @@ pub(crate) fn render_condition(node: &ConditionNode, aliases: &mut AliasAllocato
 mod tests {
     use super::*;
     use crate::Attr;
+    use crate::condition::Operand;
     use aws_sdk_dynamodb::types::AttributeValue;
 
     #[test]

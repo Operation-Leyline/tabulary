@@ -1044,3 +1044,54 @@ fn canonicalization_checks_depth_before_recursing_or_cloning() {
         }
     }
 }
+
+#[test]
+fn nested_path_operands_round_trip_and_refuse_malformed_segments() {
+    let path: AttributePath = vec![
+        crate::PathSegment::Attribute("shipping".into()),
+        crate::PathSegment::Index(3),
+        crate::PathSegment::Attribute("status".into()),
+    ]
+    .into();
+    for operand in [
+        CanonicalOperand::Path(path.clone()),
+        CanonicalOperand::PathSize(path.clone()),
+    ] {
+        let mut binding = query();
+        binding.filter = Some(CanonicalNode::Predicate(Operator::Exists, vec![operand]));
+        let cursor = binding.cursor(Some(key())).unwrap().unwrap();
+        let bytes = cursor.to_bytes().unwrap();
+        assert!(bytes.windows(8).any(|v| v == b"shipping"));
+        assert_eq!(parse(&bytes).unwrap().to_bytes().unwrap(), bytes);
+    }
+    let mut component = query();
+    component.filter = Some(CanonicalNode::Predicate(
+        Operator::Exists,
+        vec![CanonicalOperand::Path(
+            vec![crate::PathSegment::Component("part")].into(),
+        )],
+    ));
+    let cursor = component.cursor(Some(key())).unwrap().unwrap();
+    assert!(matches!(cursor.to_bytes(), Err(BuildError::InvalidCursor)));
+
+    let operand = |tag: u8, segments: &[u8]| {
+        let mut filter = vec![1, 0, 0, 0, 0, 0, 1, tag];
+        filter.extend(segments);
+        scan_with_filter(&filter)
+    };
+    let mut valid = vec![0, 0, 0, 2, 0];
+    blob(&mut valid, b"shipping");
+    valid.push(1);
+    valid.extend(3_u64.to_be_bytes());
+    assert!(parse(&operand(3, &valid)).is_ok());
+    assert!(parse(&operand(4, &valid)).is_ok());
+    let mut unknown_segment = vec![0, 0, 0, 1, 2];
+    blob(&mut unknown_segment, b"shipping");
+    for bytes in [
+        operand(3, &[0, 0, 0, 0]),
+        operand(3, &unknown_segment),
+        operand(5, &valid),
+    ] {
+        assert!(matches!(parse(&bytes), Err(CursorError::InvalidFormat)));
+    }
+}

@@ -1,16 +1,15 @@
 use crate::{
     AttributePath, BuildError, BuiltCondition, BuiltUpdate, PathSegment, RenderedExpressions,
     aliases::AliasAllocator,
-    condition::Operand,
     condition_renderer::render_condition,
     update::{ActionNode, SetNode},
 };
 
 fn target(node: &ActionNode) -> AttributePath {
     match node {
-        ActionNode::NestedSet { target, .. } | ActionNode::NestedRemove { target } => {
-            target.clone()
-        }
+        ActionNode::NestedSet { target, .. }
+        | ActionNode::NestedRemove { target }
+        | ActionNode::NestedAdd { target, .. } => target.clone(),
         ActionNode::Set { target, .. }
         | ActionNode::Remove { target }
         | ActionNode::Add { target, .. }
@@ -35,49 +34,23 @@ pub(crate) fn validate_targets(actions: &[ActionNode]) -> Result<(), BuildError>
     }
     Ok(())
 }
-fn path(path: &AttributePath, aliases: &mut AliasAllocator) -> String {
-    let mut text = String::new();
-    for segment in path.segments() {
-        match segment {
-            PathSegment::Attribute(name) => {
-                if !text.is_empty() {
-                    text.push('.');
-                }
-                text.push_str(&aliases.name(name));
-            }
-            PathSegment::Index(index) => text.push_str(&format!("[{index}]")),
-            PathSegment::Component(_) => unreachable!("update paths have no key components"),
-        }
-    }
-    text
-}
-fn operand(value: &Operand, aliases: &mut AliasAllocator) -> String {
-    match value {
-        Operand::Attribute(field) => aliases.name(field.name),
-        Operand::Size(field) => format!("size({})", aliases.name(field.name)),
-        Operand::Value(value) => aliases.value(value),
-    }
-}
 fn set(node: &SetNode, aliases: &mut AliasAllocator) -> String {
     match node {
-        SetNode::Operand(value) => operand(value, aliases),
-        SetNode::Path(value) => path(value, aliases),
+        SetNode::Operand(value) => aliases.operand(value),
+        SetNode::Path(value) => aliases.path(value),
         SetNode::IfNotExists { path, default } => {
             let name = aliases.name(path.name);
-            format!("if_not_exists({name}, {})", operand(default, aliases))
+            format!("if_not_exists({name}, {})", aliases.operand(default))
         }
-        SetNode::IfPathNotExists {
-            path: value,
-            default,
-        } => {
-            let name = path(value, aliases);
-            format!("if_not_exists({name}, {})", operand(default, aliases))
+        SetNode::IfPathNotExists { path, default } => {
+            let name = aliases.path(path);
+            format!("if_not_exists({name}, {})", aliases.operand(default))
         }
         SetNode::Plus(left, right)
         | SetNode::Minus(left, right)
         | SetNode::ListAppend(left, right) => {
             let left = set(left, aliases);
-            let right = operand(right, aliases);
+            let right = aliases.operand(right);
             match node {
                 SetNode::Plus(..) => format!("{left} + {right}"),
                 SetNode::Minus(..) => format!("{left} - {right}"),
@@ -92,7 +65,7 @@ pub(crate) fn render_update(actions: &[ActionNode], aliases: &mut AliasAllocator
         groups[match action {
             ActionNode::Set { .. } | ActionNode::NestedSet { .. } => 0,
             ActionNode::Remove { .. } | ActionNode::NestedRemove { .. } => 1,
-            ActionNode::Add { .. } => 2,
+            ActionNode::Add { .. } | ActionNode::NestedAdd { .. } => 2,
             ActionNode::Delete { .. } => 3,
         }]
         .push(action);
@@ -105,14 +78,16 @@ pub(crate) fn render_update(actions: &[ActionNode], aliases: &mut AliasAllocator
             let actions: Vec<_> = group
                 .into_iter()
                 .map(|action| {
-                    let target = path(&target(action), aliases);
+                    let target = aliases.path(&target(action));
                     match action {
                         ActionNode::Set { value, .. } | ActionNode::NestedSet { value, .. } => {
                             format!("{target} = {}", set(value, aliases))
                         }
                         ActionNode::Remove { .. } | ActionNode::NestedRemove { .. } => target,
-                        ActionNode::Add { value, .. } | ActionNode::Delete { value, .. } => {
-                            format!("{target} {}", operand(value, aliases))
+                        ActionNode::Add { value, .. }
+                        | ActionNode::NestedAdd { value, .. }
+                        | ActionNode::Delete { value, .. } => {
+                            format!("{target} {}", aliases.operand(value))
                         }
                     }
                 })

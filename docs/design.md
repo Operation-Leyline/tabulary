@@ -783,8 +783,9 @@ condition. Variant payload handles are scoped through
 include the tag guard. They cannot be used as unconditional update targets.
 
 Scoped payload access is available for a record's flattened group only. Nested
-variant maps retain whole-map handles; their existing nested `Path` API supports
-updates, not condition operands, so nested scoped predicates are deferred.
+variant maps retain whole-map handles; the nested `Path` API (section 7.2)
+traverses document fields, not variant payloads, so nested scoped predicates
+are deferred.
 A generated singleton type for each tag selects a peer such as
 `DeliveryStageSentAttrs<Delivery>`. Its named fields (for example,
 `.tracking_ref`) are read-only `ScopedAttr` handles with the declared logical
@@ -921,13 +922,14 @@ attribute names or placeholder tokens. Handle codecs encode constants at build.
 | `begins_with(T)` | String or binary, including key sort predicates when valid. |
 | `contains(element)`, `size()`, `in_values(values)` | Typed collection/string capabilities; IN length checked against the service limit. |
 | `set(T)` | Mutable required/optional field; optional None is not an operand. |
+| `set_if_not_exists(T)` | `SET path = if_not_exists(path, value)` on a mutable field or nested path. |
 | `remove()` | Optional fields; indexed list elements through an explicit remove-element action. Required fields cannot be removed. |
-| `add(delta)`, `delete_members(set)` | Top-level native numbers/sets for ADD; sets for DELETE. |
+| `add(delta)`, `delete_members(set)` | Native numbers/sets for ADD, top-level or on a nested document field or map entry (not a list element); top-level sets only for DELETE. |
 | `if_not_exists(T)` | Typed operand usable on the right side of SET. |
 | `increment(delta)` | Numeric SET with the existing path plus delta; missing values fail unless if_not_exists is explicit. |
 | `decrement(amount)` | Numeric SET with path minus amount, allowing unsigned fields to subtract a positive typed value. |
 | `list_append(List<T>)`, `append_or_empty(List<T>)` | SET list_append(path, value); the latter explicitly uses if_not_exists(path, empty-list). |
-| `field(DocumentAttrs::FIELD)` | Compose a known nested document path; root owner is preserved. |
+| `field(DocumentAttrs::FIELD)` | Compose a known nested document path; root owner is preserved. The path has the condition and update methods above (section 7.2). |
 | `at(index)` | List element path, checked nonnegative index. |
 | `entry(MapKey::new(data_key)?)` | Dynamic map data keys are aliased as one segment, never parsed as schema names. |
 
@@ -985,6 +987,8 @@ lists implement it. Ordinary `list_append` never inserts a missing-list default.
 
 Nested updates do not create missing parent maps. DynamoDB can reject such a
 path; the caller must create the map explicitly or choose a put.
+Nested ADD shares this rule: an absent leaf is initialized by service semantics,
+an absent parent map is not.
 The builder rejects duplicate and ancestor/descendant target paths, including
 targets contributed by version, transition, and reindex expansion. A pair of
 different nonoverlapping list indexes is allowed; service list-index semantics
@@ -1049,6 +1053,64 @@ service boundary; it avoids treating approximate billed number bytes as wire
 bytes. Transaction actions validate their own maps independently.
 These limits follow the [AWS expression constraints](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html#limits-expression-parameters)
 and [document path rules](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.Attributes.html#Expressions.Attributes.DocumentPaths).
+
+### 7.2 Nested document paths
+
+A field whose type is a derived `Document` (or `Option` of one) composes child
+handles with `field`, to any depth:
+
+```rust,ignore
+let city = OrderAttrs::SHIPPING
+    .field(ShippingAttrs::ADDRESS)
+    .field(AddressAttrs::CITY);            // Path<Order, String>
+Update::new()
+    .and(OrderAttrs::SHIPPING.field(ShippingAttrs::ATTEMPTS).add(1))
+    .and(OrderAttrs::SHIPPING.field(ShippingAttrs::NOTE).remove());
+city.eq("Portland".into())                 // #n0.#n1.#n2 = :v0
+```
+
+The generated `DocumentAttrs` constants are the only child accessors; there is
+no second, string-keyed or method-per-field accessor surface. `field` accepts
+only a handle owned by the parent's document type, and the result keeps the
+root record, the child's logical type, presence, access, and codec. Wire names
+come from the child document's own `rename`/`rename_all`, never the parent's.
+
+`Path` offers the same condition surface as a top-level `Attr`, with the same
+codec capability bounds: `eq`, `ne`, `in_values`, `exists`, `not_exists`,
+`lt`/`le`/`gt`/`ge`/`between` (ordered wires), `begins_with` (prefix wires),
+`contains` (declared element codecs), `size()` (sized wires), and `eq_path`
+against another path of the same owner, type, and codec. Updates are `set`,
+`set_if_not_exists`, `set_expr`, `increment`, `decrement`, `list_append`,
+`append_or_empty`, `add` (native numbers and sets), and `remove` (optional
+leaves only). A required leaf has no `remove` even below an optional parent,
+because removing it would leave a map that no longer decodes.
+`delete_members` stays top-level. A path through a protected root is still
+readable in conditions and SET operands, and mutation through it fails at build
+with `protected_update_path`.
+
+Built trees hold the complete physical path: conditions use
+`condition::Operand::Path` and `Operand::PathSize`; nested updates use
+`ActionNode::NestedSet`, `NestedRemove`, and `NestedAdd`. Rendering aliases
+every attribute segment, as everywhere else, so reserved words (`status`,
+`name`, `size`, `data`) and names containing dots or brackets need no special
+handling; list indexes render as literal `[n]`. A shared segment such as
+`shipping` gets one alias across all paths in a request. Constants are encoded
+at the full path inside the leaf's document, so a fault reports the record, the
+nested document, and every segment.
+
+An optional parent is never guarded implicitly. A child predicate on an absent
+map follows the service: comparisons and `exists` are false and `not_exists` is
+true. A nested write below an absent map is rejected by the service. Callers
+state the requirement: guard with `OrderAttrs::GIFT.exists()`, or write the
+whole map with `OrderAttrs::GIFT.set(gift)`.
+
+Filters may use nested paths. A non-ALL index must project the path's root
+attribute; a nested path's root is a map and therefore never a key attribute.
+Query and scan cursors bind nested filter paths structurally: in the V1 cursor
+bytes, operand tags 3 (path) and 4 (size of path) carry a nonempty segment list
+of `0` + name or `1` + 64-bit list index. Earlier cursor bytes remain valid.
+ProjectionExpression still selects whole top-level attributes; a nested view
+(section 9.2) decodes the part of a map it needs.
 
 ## 8. Prepared operations and SDK integration
 
@@ -2212,8 +2274,9 @@ with a provided method constrained by `Document`, as described in section 13.
 No real DynamoDB run has verified extreme numeric continuation-key spellings
 and therefore acceptance of the 192-byte cursor number bound. The 2 MiB
 expression-binding cap uses a conservative JSON measurement rather than an
-observed service boundary. Transaction aggregation assumes binary megabytes
-(4 MiB) for the service's documented 4 MB limit. TTL request shapes and stored
+observed service boundary. Nested ADD paths (section 7.2) have SDK-fixture and
+emulator coverage but no real-service run. Transaction aggregation assumes
+binary megabytes (4 MiB) for the service's documented 4 MB limit. TTL request shapes and stored
 values have fixtures/emulator coverage, but real-service TTL activation timing
 and physical expiry remain unverified. Conservative item sizing also lacks
 remote billing-equivalence evidence. None of these offline gates claims exact

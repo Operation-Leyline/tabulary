@@ -1,0 +1,74 @@
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/owners.rs:33:32
+   |
+33 |     OrderAttrs::SHIPPING.field(GiftAttrs::MESSAGE);
+   |                          ----- ^^^^^^^^^^^^^^^^^^ expected `Attr<Shipping, _, _, _, _>`, found `Attr<Gift, String>`
+   |                          |
+   |                          arguments to this method are incorrect
+   |
+   = note: expected struct `Attr<Shipping, _, _, _, _>`
+              found struct `Attr<Gift, std::string::String, tabulary::Required, tabulary::Mutable, Native<std::string::String>>`
+note: method defined here
+  --> src/update_path.rs
+   |
+   |     pub fn field<U, Q: PresenceMarker, B: AccessMarker, C: Converter<U>>(
+   |            ^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/owners.rs:36:9
+   |
+35 |     let _: tabulary::Condition<Order> =
+   |            -------------------------- expected due to this
+36 |         InvoiceAttrs::SHIPPING.field(ShippingAttrs::CARRIER).exists();
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Condition<Order>`, found `Condition<Invoice>`
+   |
+   = note: expected struct `Condition<Order>`
+              found struct `Condition<Invoice>`
+
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/owners.rs:38:14
+   |
+38 |         .and(InvoiceAttrs::SHIPPING.field(ShippingAttrs::ATTEMPTS).add(1));
+   |          --- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Action<Order>`, found `Action<Invoice>`
+   |          |
+   |          arguments to this method are incorrect
+   |
+   = note: expected struct `Action<Order>`
+              found struct `Action<Invoice>`
+note: method defined here
+  --> src/update.rs
+   |
+   |     pub fn and(mut self, action: Action<R>) -> Self {
+   |            ^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/owners.rs:41:18
+   |
+41 |         .eq_path(InvoiceAttrs::SHIPPING.field(ShippingAttrs::CARRIER));
+   |          ------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Path<Order, String, _, _>`, found `Path<Invoice, String>`
+   |          |
+   |          arguments to this method are incorrect
+   |
+   = note: expected struct `tabulary::Path<Order, std::string::String, _, _>`
+              found struct `tabulary::Path<Invoice, std::string::String, tabulary::Required, tabulary::Mutable>`
+note: method defined here
+  --> src/update_path.rs
+   |
+   |     pub fn eq_path<P2, A2>(self, other: Path<R, T, P2, A2, C>) -> Condition<R> {
+   |            ^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/nested_paths/owners.rs:44:45
+   |
+44 |         .eq_path(OrderAttrs::SHIPPING.field(ShippingAttrs::ATTEMPTS));
+   |                                       ----- ^^^^^^^^^^^^^^^^^^^^^^^ expected `Attr<Shipping, String, _, _>`, found `Attr<Shipping, u64>`
+   |                                       |
+   |                                       arguments to this method are incorrect
+   |
+   = note: expected struct `Attr<Shipping, std::string::String, _, _, Native<std::string::String>>`
+              found struct `Attr<Shipping, u64, tabulary::Required, tabulary::Mutable, Native<u64>>`
+note: method defined here
+  --> src/update_path.rs
+   |
+   |     pub fn field<U, Q: PresenceMarker, B: AccessMarker, C: Converter<U>>(
+   |            ^^^^^
