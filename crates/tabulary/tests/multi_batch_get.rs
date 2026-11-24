@@ -274,6 +274,43 @@ fn build_refuses_empty_duplicate_and_more_than_one_hundred_keys() {
     );
     assert!(batch.build().is_ok());
 
+    // Same-named tables in different accounts or regions are distinct tables.
+    for (first, second, expected) in [
+        (
+            "arn:aws:dynamodb:us-east-1:111122223333:table/orders",
+            "arn:aws:dynamodb:us-east-1:444455556666:table/orders",
+            Ok(()),
+        ),
+        (
+            "arn:aws:dynamodb:us-east-1:111122223333:table/orders",
+            "arn:aws:dynamodb:eu-west-1:111122223333:table/orders",
+            Ok(()),
+        ),
+        (
+            "arn:aws:dynamodb:us-east-1:111122223333:table/orders",
+            "arn:aws:dynamodb:us-east-1:111122223333:table/orders",
+            code("duplicate_batch_table"),
+        ),
+        (
+            "orders",
+            "arn:aws:dynamodb:us-east-1:444455556666:table/orders",
+            code("duplicate_batch_table"),
+        ),
+    ] {
+        let mut batch = MultiBatchGet::new();
+        batch.get(
+            &Table::<Order>::new(first).unwrap(),
+            vec![order_key(1)],
+            ReadConsistency::Strong,
+        );
+        batch.get(
+            &Table::<Order>::new(second).unwrap(),
+            vec![order_key(2)],
+            ReadConsistency::Strong,
+        );
+        assert_eq!(batch.build().map(|_| ()), expected, "{first} {second}");
+    }
+
     for alias in [
         "orders",
         "arn:aws:dynamodb:us-east-1:111122223333:table/orders",

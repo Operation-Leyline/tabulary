@@ -59,6 +59,8 @@ impl<K, P> fmt::Debug for BatchGetSlot<K, P> {
 pub struct MultiBatchGet {
     identity: Arc<()>,
     tables: Vec<Result<TableEntry, BuildError>>,
+    /// Keys supplied so far, including tables whose entries failed.
+    requested: usize,
     capacity: Capacity,
 }
 impl Default for MultiBatchGet {
@@ -71,6 +73,7 @@ impl MultiBatchGet {
         Self {
             identity: Arc::new(()),
             tables: Vec::new(),
+            requested: 0,
             capacity: Capacity::None,
         }
     }
@@ -118,7 +121,17 @@ impl MultiBatchGet {
         selection: Option<Result<RenderedExpressions, BuildError>>,
         decode_item: fn(&Item) -> Result<P, DecodeError>,
     ) -> BatchGetSlot<K, P> {
+        self.requested = self.requested.saturating_add(keys.len());
+        let requested = self.requested;
         let entry = (|| {
+            // A request already over the cap is refused by build; never encode
+            // or compare keys it can never send.
+            if requested > 100 {
+                return Err(BuildError::RequestLimit {
+                    max: 100,
+                    actual: requested,
+                });
+            }
             if keys.is_empty() {
                 return Err(BuildError::EmptyOperation);
             }
@@ -156,25 +169,23 @@ impl MultiBatchGet {
         }
     }
 
-    /// Validate every table's keys and projection in insertion order, then
-    /// 1..=100 keys in total and distinct tables (a name and its ARN are aliases).
+    /// Require at least one table and at most 100 keys in total, then validate
+    /// every table's keys and projection in insertion order, then distinct tables.
     pub fn build(self) -> Result<PreparedMultiBatchGet, BuildError> {
-        let tables = self.tables.into_iter().collect::<Result<Vec<_>, _>>()?;
-        if tables.is_empty() {
+        if self.tables.is_empty() {
             return Err(BuildError::EmptyOperation);
         }
-        let total: usize = tables.iter().map(|table| table.attributes.keys.len()).sum();
-        if total > 100 {
+        if self.requested > 100 {
             return Err(BuildError::RequestLimit {
                 max: 100,
-                actual: total,
+                actual: self.requested,
             });
         }
+        let tables = self.tables.into_iter().collect::<Result<Vec<_>, _>>()?;
         for (i, table) in tables.iter().enumerate() {
-            let name = crate::transaction::table_identity(&table.table).1;
             if tables[..i]
                 .iter()
-                .any(|other| crate::transaction::table_identity(&other.table).1 == name)
+                .any(|other| same_table(&other.table, &table.table))
             {
                 return Err(constraint("duplicate_batch_table"));
             }
@@ -201,6 +212,13 @@ impl MultiBatchGet {
             identity: self.identity,
         })
     }
+}
+/// Two explicit ARNs name one table only in the same partition, region and account;
+/// a bare name is an alias of any ARN with that table name.
+fn same_table(a: &str, b: &str) -> bool {
+    let (a_scope, a_name) = crate::transaction::table_identity(a);
+    let (b_scope, b_name) = crate::transaction::table_identity(b);
+    a_name == b_name && (a_scope.is_none() || b_scope.is_none() || a_scope == b_scope)
 }
 impl fmt::Debug for MultiBatchGet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

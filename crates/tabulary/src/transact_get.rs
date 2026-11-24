@@ -116,6 +116,13 @@ impl TransactGet {
         decode: fn(&Item) -> Result<P, DecodeError>,
     ) -> GetSlot<P> {
         let entry = (|| {
+            // Build refuses more than 100 reads before any entry; skip the work.
+            if self.entries.len() >= 100 {
+                return Err(BuildError::RequestLimit {
+                    max: 100,
+                    actual: self.entries.len() + 1,
+                });
+            }
             let key = crate::batch_get::canonical_key::<R>(key.encode_key()?)?;
             let expressions = selection.transpose()?.unwrap_or_default();
             let names = (!expressions.names().is_empty()).then(|| expressions.names().clone());

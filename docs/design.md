@@ -1836,14 +1836,20 @@ any record types. `get(&table, keys, consistency)` reads complete records and
 `V::Source`. Each table has its own explicit `ReadConsistency` and optional
 projection. Each call returns a `BatchGetSlot<K, P>` that carries the table's
 key and output decoders and the identity of its request. Adding a table never
-fails; `build()` reports, in insertion order, each table's key encoding and
+fails. `build()` first requires at least one table (`EmptyOperation`) and at most
+100 keys in total across all tables (`RequestLimit { max: 100, actual }`, where
+`actual` counts every supplied key). Once the running total exceeds 100, later
+keys are never encoded or compared, so an oversized input costs no quadratic
+work. It then reports, in insertion order, each table's key encoding and
 canonical physical-key checks (as in `BatchGetProgress::new`), an empty key list
 (`EmptyOperation`), and duplicate canonical keys within that table
-(`duplicate_batch_key`). It then requires at least one table, at most 100 keys in
-total across all tables (`RequestLimit { max: 100, actual }`), and distinct tables
-(`duplicate_batch_table`, treating a table name and its ARN as aliases). The same
-key in two different tables is not a duplicate. `set_capacity(Capacity)` selects
-the request-wide ReturnConsumedCapacity.
+(`duplicate_batch_key`). Finally it requires distinct tables
+(`duplicate_batch_table`). Two explicit ARNs name the same table only when their
+partition, region, account and table name all match, so same-named tables in
+different accounts or regions may share a request. A bare table name is an alias
+of any ARN with that name. The same key in two different tables is not a
+duplicate. `set_capacity(Capacity)` selects the request-wide
+ReturnConsumedCapacity.
 
 `PreparedMultiBatchGet` is one immutable request. `input()`, `expressions()`
 (one binding per table, in insertion order) and `apply` follow the other
@@ -2129,7 +2135,8 @@ reads a typed projection and returns `GetSlot<V>`. TransactGetItems is always
 serializable, so there is no consistency argument. Adding a read never fails.
 `build()` rejects an empty request (`EmptyOperation`) and more than 100 reads
 (`RequestLimit { max: 100, actual }`), then reports the first key-encoding,
-canonical-key or projection fault in request order. It applies the write
+canonical-key or projection fault in request order. Reads added after the
+hundredth are never encoded. It applies the write
 transaction's target rules: duplicate table/key targets
 (`duplicate_transaction_target`, including a full and a projected read of one
 item, and a table name and its ARN as aliases) and ARNs in different locations
@@ -2169,6 +2176,10 @@ also selects any omitted physical key attributes. `decode` returns
 - `KeyMismatch { position, capacity }` when a present item's physical key is
   absent, malformed or differs from the requested key, including a present
   empty map. None of that response is trusted.
+
+The service reports a missing item as an `ItemResponse` with no `Item` member;
+the SDK decodes it as `item: None`, which is the slot's `None`. The SDK refuses a
+literal `null` entry, so it becomes `Sdk` and is never read as a missing item.
 
 `response.get(&slot)` returns `Result<Option<P>, GetSlotError>`. An absent item
 is `None`; a present item decodes strictly, and a malformed one is

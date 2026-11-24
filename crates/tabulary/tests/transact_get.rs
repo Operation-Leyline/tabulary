@@ -544,3 +544,87 @@ fn slots_from_another_request_are_refused() {
         .unwrap();
     assert!(response.get(&first_slots.order).unwrap().is_some());
 }
+
+/// Send through a real SDK client whose connector replays one JSON body.
+async fn send_through_sdk(
+    request: &tabulary::PreparedTransactGet,
+    body: &'static str,
+) -> Result<TransactGetItemsOutput, SdkError<TransactGetItemsError>> {
+    use aws_sdk_dynamodb::{
+        Client, Config,
+        config::{BehaviorVersion, Credentials, Region, retry::RetryConfig},
+    };
+    use aws_smithy_runtime_api::client::http::{
+        HttpConnector, HttpConnectorFuture, SharedHttpConnector, http_client_fn,
+    };
+    #[derive(Debug)]
+    struct Replay(&'static str);
+    impl HttpConnector for Replay {
+        fn call(
+            &self,
+            request: aws_smithy_runtime_api::client::orchestrator::HttpRequest,
+        ) -> HttpConnectorFuture {
+            assert_eq!(
+                request.headers().get("x-amz-target"),
+                Some("DynamoDB_20120810.TransactGetItems")
+            );
+            let mut response =
+                HttpResponse::new(StatusCode::try_from(200).unwrap(), SdkBody::from(self.0));
+            response
+                .headers_mut()
+                .insert("content-type", "application/x-amz-json-1.0");
+            HttpConnectorFuture::new(async move { Ok(response) })
+        }
+    }
+    let connector = SharedHttpConnector::new(Replay(body));
+    let client = Client::from_conf(
+        Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .credentials_provider(Credentials::new("dummy", "dummy", None, None, "fixture"))
+            .retry_config(RetryConfig::disabled())
+            .http_client(http_client_fn(move |_, _| connector.clone()))
+            .build(),
+    );
+    request.apply(client.transact_get_items()).send().await
+}
+
+#[tokio::test]
+async fn missing_items_on_the_wire_decode_through_the_sdk_and_nulls_fail_closed() {
+    let (tx, slots) = three_tables();
+    let request = tx.build().unwrap();
+    // The service's missing-item entry is an ItemResponse without an Item member.
+    let raw = send_through_sdk(
+        &request,
+        r#"{"Responses":[
+            {"Item":{"id":{"S":"private-order"},"line":{"N":"1"},"quantity":{"N":"7"}}},
+            {},
+            {"Item":{}}
+        ]}"#,
+    )
+    .await
+    .unwrap();
+    assert!(raw.responses()[1].item.is_none());
+    assert_eq!(raw.responses()[2].item, Some(Item::new()));
+    // A present empty map is an item without its key, never a missing read.
+    assert!(matches!(
+        request.decode(Ok(raw)).unwrap_err(),
+        TransactGetError::KeyMismatch { position: 2, .. }
+    ));
+    let raw = send_through_sdk(
+        &request,
+        r#"{"Responses":[
+            {"Item":{"id":{"S":"private-order"},"line":{"N":"1"},"quantity":{"N":"7"}}},
+            {},
+            {}
+        ]}"#,
+    )
+    .await;
+    let response = request.decode(raw).unwrap();
+    assert_eq!(response.get(&slots.order).unwrap().unwrap().quantity, 7);
+    assert!(response.get(&slots.invoice).unwrap().is_none());
+    assert!(response.get(&slots.session).unwrap().is_none());
+    // A literal null entry is never read as a missing item: the SDK refuses it.
+    let raw = send_through_sdk(&request, r#"{"Responses":[null,{},{}]}"#).await;
+    assert!(matches!(request.decode(raw), Err(TransactGetError::Sdk(_))));
+}

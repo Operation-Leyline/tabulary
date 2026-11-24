@@ -218,3 +218,43 @@ fn multi_batch_get_returns_typed_unprocessed_keys_with_manual_codecs() {
     assert_eq!(failures[0].0, 0);
     assert_eq!(failures[0].1.kind, DecodeFault::Missing);
 }
+
+#[test]
+fn over_limit_requests_are_refused_before_encoding_any_further_key() {
+    // Every key after the cap is malformed; the refusal is the limit, which
+    // proves those keys were never encoded or compared.
+    let orders = Table::<Order>::new("orders").unwrap();
+    let mut tx = TransactGet::new();
+    for i in 0..100 {
+        tx.get(&orders, OrderKey(format!("order-{i}")));
+    }
+    for _ in 0..50 {
+        tx.get(&orders, OrderKey(String::new()));
+    }
+    assert_eq!(
+        tx.build().unwrap_err(),
+        BuildError::RequestLimit {
+            max: 100,
+            actual: 150
+        }
+    );
+
+    let mut batch = MultiBatchGet::new();
+    batch.get(
+        &orders,
+        (0..60).map(|i| OrderKey(format!("order-{i}"))).collect(),
+        ReadConsistency::Strong,
+    );
+    batch.get(
+        &Table::<Order>::new("orders-archive").unwrap(),
+        (0..10_000).map(|_| OrderKey(String::new())).collect(),
+        ReadConsistency::Strong,
+    );
+    assert_eq!(
+        batch.build().unwrap_err(),
+        BuildError::RequestLimit {
+            max: 100,
+            actual: 10_060
+        }
+    );
+}
