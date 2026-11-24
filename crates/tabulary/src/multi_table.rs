@@ -50,8 +50,51 @@ impl<M: MultiObject> MultiTable<M> {
 
     /// The ordinary single-record binding for one member. Its operations are
     /// the plain `Table<R>` ones; `MultiTable::update` adds an existence guard.
+    #[cfg_attr(
+        feature = "derive",
+        doc = r#"
+Every member operation goes through this method, which evaluates `R::SEAL` and
+`member_fault` at compile time. A seal that diverges instead of being
+constructed fails when the operation is monomorphized, in any build:
+
+```compile_fail
+mod accounts {
+    #[derive(tabulary::Record)]
+    #[tabulary(rename_all = "snake_case", partition(name = "pk", template = "CUST#{customer_ref:text}"))]
+    pub struct Customer { pub customer_ref: String }
+
+    #[derive(tabulary::MultiObject)]
+    #[tabulary(partition = "pk")]
+    pub enum AccountTable {
+        #[tabulary(partition(prefix = "CUST#"))]
+        Customer(Customer),
+    }
+}
+use accounts::{AccountTable, Customer};
+use tabulary::{MemberOf, MultiObject, MultiTable};
+
+#[derive(tabulary::Record)]
+#[tabulary(rename_all = "snake_case", partition(name = "pk", template = "CUST#{customer_ref:text}"))]
+struct Impostor { customer_ref: String }
+
+impl MemberOf<AccountTable> for Impostor {
+    const VARIANT: usize = 0;
+    const SEAL: <AccountTable as MultiObject>::MemberSeal<Self> = panic!("no seal");
+    fn into_object(self) -> AccountTable {
+        AccountTable::Customer(Customer { customer_ref: self.customer_ref })
+    }
+}
+
+let accounts = MultiTable::<AccountTable>::new("accounts").unwrap();
+let _ = accounts.member::<Impostor>();
+```
+"#
+    )]
     pub fn member<R: MemberOf<M>>(&self) -> Table<R> {
+        // Evaluate the seal: an associated const is otherwise checked only on use,
+        // so a diverging `SEAL` would let an undeclared type through.
         const {
+            core::mem::forget(<R as MemberOf<M>>::SEAL);
             if let Some(fault) = member_fault::<M, R>() {
                 panic!("{}", fault);
             }

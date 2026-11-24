@@ -553,8 +553,14 @@ partition and optional sort descriptors, no indexes or TTL), static `VARIANTS`
 `const SEAL: M::MemberSeal<R>`, a value only the enum's declaring module can
 construct. A real member's seal names that member's type, so it cannot be
 reused for another type. The derive declares its seal in an anonymous scope with
-a private field, so no other module or crate can add a member to a derived enum.
-Manual enums use a type such as `pub struct Seal<R>(PhantomData<R>);`. As with manual schema metadata, the declaring module
+a private field, so no other module or crate can construct a seal for a derived
+enum. Every member operation goes through `MultiTable::member`, whose inline
+`const` block evaluates `R::SEAL` and `member_fault::<M, R>()`. So a seal that
+diverges (`const SEAL: ... = panic!()`) instead of being constructed fails when
+the operation is monomorphized, which happens in every build. `cargo check`
+alone does not monomorphize, so it does not report that case; a `compile_fail`
+doctest on `MultiTable::member` covers it. Manual enums use a type such as
+`pub struct Seal<R>(PhantomData<R>);`. As with manual schema metadata, the declaring module
 itself remains trusted. The derive
 implements `MemberOf<M>` for every member, with its variant position and
 `into_object`, plus `From<Member> for M`, and inherent `from_item`, `to_item`, and
