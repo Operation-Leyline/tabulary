@@ -548,7 +548,13 @@ an unprefixed field key under any prefix). Manual implementations call the same
 
 **Runtime contract.** `MultiObject` has a keys-only `SCHEMA` (the shared
 partition and optional sort descriptors, no indexes or TTL), static `VARIANTS`
-(`MultiVariant { name, record, keys }`), and `decode_variant`. The derive
+(`MultiVariant { name, record, keys }`), `decode_variant`, and a `MemberSeal`
+type. `MemberOf<M>` requires `const SEAL: M::MemberSeal`, so implementing it
+needs a value only the enum's declaring module can construct. The derive declares
+its seal in an anonymous scope with a private field, so no other module or crate
+can add a member to a derived enum; manual enums use a type such as
+`pub struct Seal(());`. As with manual schema metadata, the declaring module
+itself remains trusted. The derive
 implements `MemberOf<M>` for every member, with its variant position and
 `into_object`, plus `From<Member> for M`, and inherent `from_item`, `to_item`, and
 `variant_name`. Manual implementations of all of these are supported and tested
@@ -558,8 +564,8 @@ without the `derive` feature.
 `delete`, `check`, `batch_get`, `batch_write`, `query_entity`, and `member`
 methods accept only `R: MemberOf<M>`; any other record type is a compile error
 naming the table enum. Each asserts `member_fault::<M, R>()` at compile time,
-which also requires the variant's declared record name to equal `R`'s, so a
-hand-written `MemberOf` for a type the enum does not hold is refused. Each
+which also requires the variant's declared record name to equal `R`'s, catching
+a mistaken membership inside the declaring module. Each
 returns the ordinary builder for `R`, so write options, version policy,
 conditions, and transaction conversion are unchanged, with one addition:
 `update` starts with an `attribute_exists` guard on the partition key. Later

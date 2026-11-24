@@ -94,7 +94,10 @@ enum Access {
     Session(Session),
     Device(Device),
 }
+/// Only this module can construct the seal, so only it can declare members.
+pub struct AccessSeal(());
 impl MultiObject for Access {
+    type MemberSeal = AccessSeal;
     const SCHEMA: RecordSchema = RecordSchema {
         name: "Access",
         fields: KEYS_ONLY,
@@ -137,12 +140,14 @@ impl MultiObject for Access {
 }
 impl MemberOf<Access> for Session {
     const VARIANT: usize = 0;
+    const SEAL: AccessSeal = AccessSeal(());
     fn into_object(self) -> Access {
         Access::Session(self)
     }
 }
 impl MemberOf<Access> for Device {
     const VARIANT: usize = 1;
+    const SEAL: AccessSeal = AccessSeal(());
     fn into_object(self) -> Access {
         Access::Device(self)
     }
@@ -156,6 +161,7 @@ const _: () = assert!(tabulary::member_fault::<Access, Device>().is_none());
 #[derive(Debug)]
 struct Overlapping;
 impl MultiObject for Overlapping {
+    type MemberSeal = ();
     const SCHEMA: RecordSchema = RecordSchema {
         name: "Overlapping",
         ..Access::SCHEMA
@@ -175,11 +181,13 @@ impl MultiObject for Overlapping {
         unreachable!("an invalid multi-object contract never dispatches")
     }
 }
-// A hand-written membership for a type the enum does not hold. Its keys fit the
-// Device pattern, but the record check refuses it, and every `MultiTable`
-// member operation asserts that check at compile time.
+// A hand-written membership for a type the enum does not hold, written inside
+// the trusted declaring module (other modules cannot construct `AccessSeal`).
+// Its keys fit the Device pattern, but the record check still refuses it, and
+// every `MultiTable` member operation asserts that check at compile time.
 impl MemberOf<Access> for Tablet {
     const VARIANT: usize = 1;
+    const SEAL: AccessSeal = AccessSeal(());
     fn into_object(self) -> Access {
         Access::Device(Device { id: self.id })
     }

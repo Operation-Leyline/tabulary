@@ -25,6 +25,10 @@ pub struct MultiVariant {
 pub trait MultiObject: Sized {
     const SCHEMA: RecordSchema;
     const VARIANTS: &'static [MultiVariant];
+    /// A type that only the enum's declaring module can construct, such as a
+    /// `pub struct Seal(());` with a private field. Every `MemberOf` impl must
+    /// produce one, so no other module or crate can add a member.
+    type MemberSeal;
 
     /// Decode `item` strictly as the member at `variant`, using `cx` for paths.
     fn decode_variant(
@@ -36,6 +40,8 @@ pub trait MultiObject: Sized {
 
 /// A record declared as one variant of `M`. Operations on a `MultiTable<M>`
 /// accept only member types, so an undeclared record cannot reach that table.
+/// Implementing it requires constructing `M::MemberSeal`, which only the enum's
+/// declaring module can do; the derive's seal is also unnameable there.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a declared member of multi-object table `{M}`",
     note = "add a variant holding `{Self}` to `{M}`, or use a table bound to `{Self}`"
@@ -43,6 +49,8 @@ pub trait MultiObject: Sized {
 pub trait MemberOf<M: MultiObject>: Record + Document {
     /// Position of this member's entry in `M::VARIANTS`.
     const VARIANT: usize;
+    /// Proof that the enum's declaring module wrote this membership.
+    const SEAL: M::MemberSeal;
     fn into_object(self) -> M;
 }
 
@@ -178,8 +186,8 @@ pub const fn multi_object_fault<M: MultiObject>() -> Option<&'static str> {
 /// Validate that `R` is the record its declared variant names, that it shares
 /// `M`'s physical keys, and that its key templates always produce text matching
 /// that variant's discriminators. Every `MultiTable` member operation asserts
-/// this at compile time, so a hand-written `MemberOf` for a type the enum does
-/// not hold is rejected rather than writing items another member would decode.
+/// this at compile time. `MemberSeal` keeps other modules from adding members;
+/// this check catches a mistaken membership inside the declaring module.
 pub const fn member_fault<M: MultiObject, R: MemberOf<M>>() -> Option<&'static str> {
     let (table, member) = (M::SCHEMA, R::SCHEMA);
     if R::VARIANT >= M::VARIANTS.len() {
