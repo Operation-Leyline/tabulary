@@ -282,3 +282,124 @@ fn manual_multi_object_changes() {
     );
     assert_eq!(key.member::<Session, SessionKey>(), Ok(None));
 }
+
+/// A key codec stricter than the record's own: ids have at least five bytes.
+struct StrictKey(String);
+impl RecordKey<Session> for StrictKey {
+    fn encode_key(&self) -> Result<Item, EncodeError> {
+        SessionKey(self.0.clone()).encode_key()
+    }
+    fn decode_key(item: &Item) -> Result<Self, DecodeError> {
+        let SessionKey(id) = SessionKey::decode_key(item)?;
+        if id.len() < 5 {
+            let cx = DecodeContext::new("Session").at(PathSegment::Attribute("pk".into()));
+            return Err(cx.error(DecodeFault::Validation { code: "short_id" }));
+        }
+        Ok(Self(id))
+    }
+}
+
+#[test]
+fn image_views_validate_keys_with_the_key_codec() {
+    use StreamEventName::*;
+    // The image decodes as a Session, but Keys fails the view's key codec.
+    let keys = key("SES#moss");
+    let open = row("SES#moss", "open");
+    let error = StreamImages {
+        event: Insert,
+        keys: &keys,
+        old_image: None,
+        new_image: Some(&open),
+    }
+    .new_and_old(StreamDecoder::<Session, StrictKey>::record())
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        StreamError::Decode { image: StreamImage::Keys, ref source }
+            if source.kind == DecodeFault::Validation { code: "short_id" }
+    ));
+
+    // An oversized multi-object key is refused whether or not images are present.
+    let long = format!("SES#{}", "m".repeat(2048));
+    let (keys, image) = (key(&long), row(&long, "open"));
+    let decoder = StreamDecoder::<Access, _>::multi_object();
+    for images in [
+        StreamImages {
+            event: Insert,
+            keys: &keys,
+            old_image: None,
+            new_image: Some(&image),
+        },
+        StreamImages {
+            event: Insert,
+            keys: &keys,
+            old_image: None,
+            new_image: None,
+        },
+    ] {
+        let error = match images.new_image.is_some() {
+            true => images.new_and_old(decoder).unwrap_err(),
+            false => images.keys_only(decoder).unwrap_err(),
+        };
+        assert!(matches!(
+            error,
+            StreamError::Decode { image: StreamImage::Keys, ref source }
+                if matches!(source.kind, DecodeFault::KeyFormat(_))
+        ));
+    }
+}
+
+/// A manual multi-object schema whose key position is out of range.
+#[derive(Debug)]
+struct Broken;
+impl MultiObject for Broken {
+    type MemberSeal<R> = R;
+    const SCHEMA: RecordSchema = RecordSchema {
+        name: "Broken",
+        primary: KeyDefinition {
+            partition: 3,
+            sort: None,
+        },
+        ..Access::SCHEMA
+    };
+    const VARIANTS: &'static [MultiVariant] = Access::VARIANTS;
+    fn decode_variant(_: usize, _: &Item, _: &mut DecodeContext) -> Result<Self, DecodeError> {
+        unreachable!("an invalid multi-object contract never dispatches")
+    }
+}
+
+#[test]
+fn invalid_manual_schemas_are_typed_faults_not_panics() {
+    let decoder = StreamDecoder::<Broken, _>::multi_object();
+    let keys = key("SES#moss");
+    let open = row("SES#moss", "open");
+    for images in [
+        StreamImages {
+            event: StreamEventName::Insert,
+            keys: &keys,
+            old_image: None,
+            new_image: Some(&open),
+        },
+        StreamImages {
+            event: StreamEventName::Remove,
+            keys: &keys,
+            old_image: None,
+            new_image: None,
+        },
+    ] {
+        let error = match images.new_image.is_some() {
+            true => images.new_and_old(decoder).map(drop).unwrap_err(),
+            false => images.keys_only(decoder).map(drop).unwrap_err(),
+        };
+        let StreamError::Decode { source, .. } = error else {
+            panic!("expected a decode fault, got {error:?}")
+        };
+        assert_eq!(source.record, "Broken");
+        assert_eq!(
+            source.kind,
+            DecodeFault::Custom {
+                code: "multi_object_keys_only_schema"
+            }
+        );
+    }
+}

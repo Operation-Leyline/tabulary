@@ -374,6 +374,16 @@ fn corrupt_attributes_and_keys_fail_closed() {
         }
     );
 
+    // Numbers compare by value: equivalent spellings of one key agree.
+    let mut spelled = keys.clone();
+    spelled.insert("seq".into(), Av::N("2.0".into()));
+    assert_eq!(
+        images(Insert, &spelled, None, Some(&open))
+            .new_and_old(sessions())
+            .ok(),
+        Some(StreamChange::Insert(session("open")))
+    );
+
     // Keys hold primary attributes only, all of them, correctly typed.
     let mut extra = keys.clone();
     extra.insert("status".into(), Av::S("open".into()));

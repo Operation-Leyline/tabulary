@@ -1073,11 +1073,16 @@ stream view type, each with its own result type, so a missing image is never an
 Each method fails closed with a `StreamError` that names the part
 (`StreamImage::{Keys, OldImage, NewImage}`) and never an attribute value:
 `MissingImage` when the view and event require an absent image,
-`UnexpectedImage` when an image the view or event does not carry is present
-(so a record from a differently configured stream is refused, not
-reinterpreted), `Decode` with the strict `DecodeError`, and `KeyMismatch` when
-an image's primary key attribute differs from `Keys`, which must hold exactly
-the primary attributes. A modification whose old and new images select
+`UnexpectedImage` when an image the view or event does not carry is present,
+`Decode` with the strict `DecodeError`, and `KeyMismatch` when an image's
+primary key attribute differs from `Keys`. The methods check the images a record
+carries, not its `StreamViewType`: a record from a differently configured stream
+is refused when its images differ from the method's view for that event (a
+`NEW_IMAGE` modification passed to `new_and_old` is `MissingImage`), and
+accepted when they coincide (an insertion carries only its new image in both
+views). `Keys` always decodes with the view's key codec, also when the images
+carry the record, so it holds exactly the valid primary attributes; image keys
+then compare with it attribute by attribute, numbers by value. A modification whose old and new images select
 different multi-object members is `VariantMismatch { old, new }`, checked
 before the key comparison. An unrecognized event name is `UnknownEventName`.
 `StreamImages` and `MultiKey` Debug output redacts item contents.

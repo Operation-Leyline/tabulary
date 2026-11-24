@@ -121,9 +121,7 @@ impl<M: MultiObject> fmt::Debug for MultiKey<M> {
 /// How a stream view's images and keys decode: as one record type, or as a
 /// multi-object enum. Pick the view's method on [`StreamImages`] to use it.
 pub struct StreamDecoder<T, K> {
-    record: &'static str,
-    partition: &'static str,
-    sort: Option<&'static str>,
+    schema: RecordSchema,
     image: fn(&Item) -> Result<T, DecodeError>,
     key: fn(&Item) -> Result<K, DecodeError>,
     variant: fn(&Item) -> Option<&'static str>,
@@ -137,18 +135,15 @@ impl<T, K> Copy for StreamDecoder<T, K> {}
 impl<T, K> fmt::Debug for StreamDecoder<T, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamDecoder")
-            .field("record", &self.record)
+            .field("record", &self.schema.name)
             .finish_non_exhaustive()
     }
 }
 impl<R: Record + Document, K: RecordKey<R>> StreamDecoder<R, K> {
     /// Images decode strictly as `R`; keys decode as `K`.
     pub fn record() -> Self {
-        let (partition, sort) = key_names(R::SCHEMA);
         Self {
-            record: R::SCHEMA.name,
-            partition,
-            sort,
+            schema: R::SCHEMA,
             image: decode_record_image::<R>,
             key: decode_record_key::<R, K>,
             variant: |_| None,
@@ -159,11 +154,8 @@ impl<M: MultiObject> StreamDecoder<M, MultiKey<M>> {
     /// Images decode as members of `M`; keys decode as [`MultiKey<M>`]. A
     /// modification whose images select different members is refused.
     pub fn multi_object() -> Self {
-        let (partition, sort) = key_names(M::SCHEMA);
         Self {
-            record: M::SCHEMA.name,
-            partition,
-            sort,
+            schema: M::SCHEMA,
             image: decode_multi_object_image::<M>,
             key: decode_multi_object_key::<M>,
             variant: |item| {
@@ -290,8 +282,9 @@ impl<'a> StreamImages<'a> {
                 {
                     return Err(StreamError::VariantMismatch { old, new });
                 }
-                self.same_key(StreamImage::OldImage, old_item, decoder)?;
-                self.same_key(StreamImage::NewImage, new_item, decoder)?;
+                self.valid_keys(decoder)?;
+                self.same_key(StreamImage::OldImage, old_item, decoder.schema)?;
+                self.same_key(StreamImage::NewImage, new_item, decoder.schema)?;
                 Ok(StreamChange::Modify { old, new })
             }
             StreamEventName::Remove => {
@@ -380,46 +373,58 @@ impl<'a> StreamImages<'a> {
     ) -> Result<T, StreamError> {
         let item = self.present(image)?;
         let value = decode(image, item, decoder.image)?;
-        self.same_key(image, item, decoder)?;
+        self.valid_keys(decoder)?;
+        self.same_key(image, item, decoder.schema)?;
         Ok(value)
     }
     fn key<T, K>(&self, decoder: StreamDecoder<T, K>) -> Result<K, StreamError> {
         decode(StreamImage::Keys, self.keys, decoder.key)
     }
-    /// The image's key attributes equal `keys`, which holds nothing else.
-    fn same_key<T, K>(
+    /// `Keys` decodes with the view's key codec, which refuses any non-key
+    /// attribute, even when the images carry the record.
+    fn valid_keys<T, K>(&self, decoder: StreamDecoder<T, K>) -> Result<(), StreamError> {
+        self.key(decoder).map(drop)
+    }
+    /// The image's key attributes equal the validated `Keys`. Numbers compare
+    /// by value, so equivalent spellings of one number agree.
+    fn same_key(
         &self,
         image: StreamImage,
         item: &Item,
-        decoder: StreamDecoder<T, K>,
+        schema: RecordSchema,
     ) -> Result<(), StreamError> {
-        let names = [Some(decoder.partition), decoder.sort];
-        let names = names.into_iter().flatten();
-        let cx = DecodeContext::new(decoder.record);
-        only_names(names.clone(), self.keys, &cx).map_err(|source| StreamError::Decode {
+        let (partition, sort) = key_names(schema).map_err(|source| StreamError::Decode {
             image: StreamImage::Keys,
             source,
         })?;
-        for name in names {
-            match self.keys.get(name) {
-                None => {
-                    return Err(StreamError::Decode {
-                        image: StreamImage::Keys,
-                        source: cx
-                            .at(PathSegment::Attribute(name.into()))
-                            .error(DecodeFault::Missing),
-                    });
-                }
-                Some(key) if item.get(name) != Some(key) => {
-                    return Err(StreamError::KeyMismatch {
-                        image,
-                        attribute: name,
-                    });
-                }
-                Some(_) => {}
+        for name in [Some(partition), sort].into_iter().flatten() {
+            let key = self.keys.get(name).ok_or_else(|| StreamError::Decode {
+                image: StreamImage::Keys,
+                source: DecodeContext::new(schema.name)
+                    .at(PathSegment::Attribute(name.into()))
+                    .error(DecodeFault::Missing),
+            })?;
+            if !item
+                .get(name)
+                .is_some_and(|value| same_key_value(key, value))
+            {
+                return Err(StreamError::KeyMismatch {
+                    image,
+                    attribute: name,
+                });
             }
         }
         Ok(())
+    }
+}
+
+fn same_key_value(a: &AttributeValue, b: &AttributeValue) -> bool {
+    match (a, b) {
+        (AttributeValue::N(a), AttributeValue::N(b)) => matches!(
+            (a.parse::<crate::Decimal>(), b.parse::<crate::Decimal>()),
+            (Ok(a), Ok(b)) if a == b
+        ),
+        _ => a == b,
     }
 }
 
@@ -431,32 +436,31 @@ fn decode<T>(
     decode(item).map_err(|source| StreamError::Decode { image, source })
 }
 
-fn key_names(schema: RecordSchema) -> (&'static str, Option<&'static str>) {
-    let name = |position: usize| schema.fields[position].name;
-    (
-        name(schema.primary.partition),
-        schema.primary.sort.map(name),
-    )
+/// The physical key names; a manual schema whose key positions are out of
+/// range is a typed fault, never a panic.
+fn key_names(schema: RecordSchema) -> Result<(&'static str, Option<&'static str>), DecodeError> {
+    let name = |position: usize| {
+        schema.fields.get(position).map(|f| f.name).ok_or_else(|| {
+            DecodeContext::new(schema.name).error(DecodeFault::Custom {
+                code: "invalid_key_schema",
+            })
+        })
+    };
+    Ok((
+        name(schema.primary.partition)?,
+        schema.primary.sort.map(name).transpose()?,
+    ))
 }
 
 /// Refuse any attribute of `keys` that is not one of `schema`'s primary keys.
 fn only_keys(schema: RecordSchema, keys: &Item) -> Result<(), DecodeError> {
-    let (partition, sort) = key_names(schema);
-    let cx = DecodeContext::new(schema.name);
-    only_names([Some(partition), sort].into_iter().flatten(), keys, &cx)
-}
-
-fn only_names<'n>(
-    names: impl Iterator<Item = &'n str> + Clone,
-    keys: &Item,
-    cx: &DecodeContext,
-) -> Result<(), DecodeError> {
+    let (partition, sort) = key_names(schema)?;
     let extra = keys
         .keys()
-        .filter(|key| !names.clone().any(|name| name == key.as_str()))
+        .filter(|key| key.as_str() != partition && Some(key.as_str()) != sort)
         .min();
     match extra {
-        Some(name) => Err(cx
+        Some(name) => Err(DecodeContext::new(schema.name)
             .at(PathSegment::Attribute(name.clone()))
             .error(DecodeFault::UnknownAttribute)),
         None => Ok(()),
