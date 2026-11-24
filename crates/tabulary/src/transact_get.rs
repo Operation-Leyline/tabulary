@@ -60,9 +60,14 @@ impl<P> fmt::Debug for GetSlot<P> {
 
 /// Collects keyed reads from any record types and table bindings.
 /// Every fallible step is reported by `build`; adding a read never fails.
+/// It retains at most 100 entries and the first fault, whatever the caller adds.
 pub struct TransactGet {
     identity: Arc<()>,
-    entries: Vec<Result<Entry, BuildError>>,
+    entries: Vec<Entry>,
+    /// The first fault in request order; later reads are not prepared.
+    fault: Option<BuildError>,
+    /// Reads added so far, including any that were not prepared.
+    requested: usize,
     capacity: Capacity,
 }
 impl Default for TransactGet {
@@ -75,6 +80,8 @@ impl TransactGet {
         Self {
             identity: Arc::new(()),
             entries: Vec::new(),
+            fault: None,
+            requested: 0,
             capacity: Capacity::None,
         }
     }
@@ -115,14 +122,19 @@ impl TransactGet {
         selection: Option<Result<RenderedExpressions, BuildError>>,
         decode: fn(&Item) -> Result<P, DecodeError>,
     ) -> GetSlot<P> {
+        let position = self.requested;
+        self.requested = self.requested.saturating_add(1);
+        let slot = GetSlot {
+            identity: Arc::clone(&self.identity),
+            position,
+            decode,
+        };
+        // Build refuses an over-cap or already faulty request before any entry:
+        // retain and prepare nothing more for it.
+        if self.requested > 100 || self.fault.is_some() {
+            return slot;
+        }
         let entry = (|| {
-            // Build refuses more than 100 reads before any entry; skip the work.
-            if self.entries.len() >= 100 {
-                return Err(BuildError::RequestLimit {
-                    max: 100,
-                    actual: self.entries.len() + 1,
-                });
-            }
             let key = crate::batch_get::canonical_key::<R>(key.encode_key()?)?;
             let expressions = selection.transpose()?.unwrap_or_default();
             let names = (!expressions.names().is_empty()).then(|| expressions.names().clone());
@@ -140,28 +152,29 @@ impl TransactGet {
                 key: crate::batch_get_adapter::response_key::<R>,
             })
         })();
-        let position = self.entries.len();
-        self.entries.push(entry);
-        GetSlot {
-            identity: Arc::clone(&self.identity),
-            position,
-            decode,
+        match entry {
+            Ok(entry) => self.entries.push(entry),
+            Err(fault) => self.fault = Some(fault),
         }
+        slot
     }
 
     /// Validate 1..=100 reads, then every key and projection in request order,
     /// then same-location tables and distinct physical targets.
     pub fn build(self) -> Result<PreparedTransactGet, BuildError> {
-        if self.entries.is_empty() {
+        if self.requested == 0 {
             return Err(BuildError::EmptyOperation);
         }
-        if self.entries.len() > 100 {
+        if self.requested > 100 {
             return Err(BuildError::RequestLimit {
                 max: 100,
-                actual: self.entries.len(),
+                actual: self.requested,
             });
         }
-        let entries = self.entries.into_iter().collect::<Result<Vec<_>, _>>()?;
+        if let Some(fault) = self.fault {
+            return Err(fault);
+        }
+        let entries = self.entries;
         let targets: Vec<_> = entries.iter().map(|entry| entry.target.clone()).collect();
         crate::transaction::validate_targets(&targets)?;
         let (mut items, mut expressions, mut keys) = (Vec::new(), Vec::new(), Vec::new());

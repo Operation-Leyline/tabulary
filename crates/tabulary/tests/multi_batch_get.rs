@@ -274,7 +274,8 @@ fn build_refuses_empty_duplicate_and_more_than_one_hundred_keys() {
     );
     assert!(batch.build().is_ok());
 
-    // Same-named tables in different accounts or regions are distinct tables.
+    // Same-named tables in different accounts are distinct tables; one request
+    // goes to one regional endpoint, so explicit ARNs must share a region.
     for (first, second, expected) in [
         (
             "arn:aws:dynamodb:us-east-1:111122223333:table/orders",
@@ -284,6 +285,16 @@ fn build_refuses_empty_duplicate_and_more_than_one_hundred_keys() {
         (
             "arn:aws:dynamodb:us-east-1:111122223333:table/orders",
             "arn:aws:dynamodb:eu-west-1:111122223333:table/orders",
+            code("batch_table_location"),
+        ),
+        (
+            "arn:aws:dynamodb:us-east-1:111122223333:table/orders",
+            "arn:aws-cn:dynamodb:us-east-1:111122223333:table/orders",
+            code("batch_table_location"),
+        ),
+        (
+            "orders-archive",
+            "arn:aws:dynamodb:us-east-1:444455556666:table/orders",
             Ok(()),
         ),
         (

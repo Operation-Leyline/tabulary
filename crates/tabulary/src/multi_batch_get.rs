@@ -56,10 +56,15 @@ impl<K, P> fmt::Debug for BatchGetSlot<K, P> {
 
 /// Collects keyed reads from several distinct tables into one BatchGetItem request.
 /// Every fallible step is reported by `build`; adding a table never fails.
+/// It retains at most 100 keys and the first fault, whatever the caller adds.
 pub struct MultiBatchGet {
     identity: Arc<()>,
-    tables: Vec<Result<TableEntry, BuildError>>,
-    /// Keys supplied so far, including tables whose entries failed.
+    tables: Vec<TableEntry>,
+    /// The first fault in insertion order; later tables are not prepared.
+    fault: Option<BuildError>,
+    /// Tables added so far, including any that were not prepared.
+    added: usize,
+    /// Keys supplied so far, including tables that were not prepared.
     requested: usize,
     capacity: Capacity,
 }
@@ -73,6 +78,8 @@ impl MultiBatchGet {
         Self {
             identity: Arc::new(()),
             tables: Vec::new(),
+            fault: None,
+            added: 0,
             requested: 0,
             capacity: Capacity::None,
         }
@@ -121,17 +128,21 @@ impl MultiBatchGet {
         selection: Option<Result<RenderedExpressions, BuildError>>,
         decode_item: fn(&Item) -> Result<P, DecodeError>,
     ) -> BatchGetSlot<K, P> {
+        let position = self.added;
+        self.added = self.added.saturating_add(1);
         self.requested = self.requested.saturating_add(keys.len());
-        let requested = self.requested;
+        let slot = BatchGetSlot {
+            identity: Arc::clone(&self.identity),
+            table: position,
+            decode_item,
+            decode_key: K::decode_key,
+        };
+        // Build refuses an over-cap or already faulty request before any table:
+        // never encode, compare or retain keys it can never send.
+        if self.requested > 100 || self.fault.is_some() {
+            return slot;
+        }
         let entry = (|| {
-            // A request already over the cap is refused by build; never encode
-            // or compare keys it can never send.
-            if requested > 100 {
-                return Err(BuildError::RequestLimit {
-                    max: 100,
-                    actual: requested,
-                });
-            }
             if keys.is_empty() {
                 return Err(BuildError::EmptyOperation);
             }
@@ -159,20 +170,17 @@ impl MultiBatchGet {
                 key: crate::batch_get_adapter::response_key::<R>,
             })
         })();
-        let position = self.tables.len();
-        self.tables.push(entry);
-        BatchGetSlot {
-            identity: Arc::clone(&self.identity),
-            table: position,
-            decode_item,
-            decode_key: K::decode_key,
+        match entry {
+            Ok(entry) => self.tables.push(entry),
+            Err(fault) => self.fault = Some(fault),
         }
+        slot
     }
 
     /// Require at least one table and at most 100 keys in total, then validate
     /// every table's keys and projection in insertion order, then distinct tables.
     pub fn build(self) -> Result<PreparedMultiBatchGet, BuildError> {
-        if self.tables.is_empty() {
+        if self.added == 0 {
             return Err(BuildError::EmptyOperation);
         }
         if self.requested > 100 {
@@ -181,8 +189,21 @@ impl MultiBatchGet {
                 actual: self.requested,
             });
         }
-        let tables = self.tables.into_iter().collect::<Result<Vec<_>, _>>()?;
+        if let Some(fault) = self.fault {
+            return Err(fault);
+        }
+        let tables = self.tables;
+        let mut location = None;
         for (i, table) in tables.iter().enumerate() {
+            // One regional endpoint serves the request; accounts may differ.
+            if let (Some((partition, region, _)), _) =
+                crate::transaction::table_identity(&table.table)
+            {
+                if location.is_some_and(|previous| previous != (partition, region)) {
+                    return Err(constraint("batch_table_location"));
+                }
+                location = Some((partition, region));
+            }
             if tables[..i]
                 .iter()
                 .any(|other| same_table(&other.table, &table.table))

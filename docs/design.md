@@ -1838,16 +1838,18 @@ projection. Each call returns a `BatchGetSlot<K, P>` that carries the table's
 key and output decoders and the identity of its request. Adding a table never
 fails. `build()` first requires at least one table (`EmptyOperation`) and at most
 100 keys in total across all tables (`RequestLimit { max: 100, actual }`, where
-`actual` counts every supplied key). Once the running total exceeds 100, later
-keys are never encoded or compared, so an oversized input costs no quadratic
-work. It then reports, in insertion order, each table's key encoding and
-canonical physical-key checks (as in `BatchGetProgress::new`), an empty key list
-(`EmptyOperation`), and duplicate canonical keys within that table
-(`duplicate_batch_key`). Finally it requires distinct tables
-(`duplicate_batch_table`). Two explicit ARNs name the same table only when their
-partition, region, account and table name all match, so same-named tables in
-different accounts or regions may share a request. A bare table name is an alias
-of any ARN with that name. The same key in two different tables is not a
+`actual` counts every supplied key). It then reports the first fault in
+insertion order: a table's key encoding or canonical physical-key check (as in
+`BatchGetProgress::new`), an empty key list (`EmptyOperation`), or duplicate
+canonical keys within that table (`duplicate_batch_key`). Once the running total
+exceeds 100 or a fault is recorded, later tables are neither encoded, compared
+nor retained, so the builder holds at most 100 keys and one fault whatever the
+caller adds. Finally `build` requires explicit ARNs to share a partition and
+region (`batch_table_location`), because one regional endpoint serves the
+request; accounts may differ. Tables must be distinct (`duplicate_batch_table`):
+two explicit ARNs name the same table only when their partition, region, account
+and table name all match, and a bare table name is an alias of any ARN with that
+name. The same key in two different tables is not a
 duplicate. `set_capacity(Capacity)` selects the request-wide
 ReturnConsumedCapacity.
 
@@ -2136,7 +2138,7 @@ serializable, so there is no consistency argument. Adding a read never fails.
 `build()` rejects an empty request (`EmptyOperation`) and more than 100 reads
 (`RequestLimit { max: 100, actual }`), then reports the first key-encoding,
 canonical-key or projection fault in request order. Reads added after the
-hundredth are never encoded. It applies the write
+hundredth or after the first fault are neither prepared nor retained. It applies the write
 transaction's target rules: duplicate table/key targets
 (`duplicate_transaction_target`, including a full and a projected read of one
 item, and a table name and its ARN as aliases) and ARNs in different locations
