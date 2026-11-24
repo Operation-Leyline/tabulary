@@ -63,28 +63,36 @@ pub trait MemberOf<M: MultiObject>: Record + Document {
 /// of every error is the enum; its document names the selected member.
 pub fn decode_object<M: MultiObject>(item: &Item) -> Result<M, DecodeError> {
     let cx = DecodeContext::new(M::SCHEMA.name);
+    let index = select_variant::<M>(item, &cx)?;
+    M::decode_variant(index, item, &mut cx.in_document(M::VARIANTS[index].record))
+}
+
+/// The position in `M::VARIANTS` that `item`'s stored keys select, with the
+/// same refusals as [`decode_object`] and no member decode.
+pub(crate) fn select_variant<M: MultiObject>(
+    item: &Item,
+    cx: &DecodeContext,
+) -> Result<usize, DecodeError> {
     if let Some(code) = multi_object_fault::<M>() {
         return Err(cx.error(DecodeFault::Custom { code }));
     }
-    let partition = key_text::<M>(item, Some(M::SCHEMA.primary.partition), &cx, |k| {
-        k.partition
-    })?;
-    let sort = key_text::<M>(item, M::SCHEMA.primary.sort, &cx, |k| k.sort)?;
+    let partition = key_text::<M>(item, Some(M::SCHEMA.primary.partition), cx, |k| k.partition)?;
+    let sort = key_text::<M>(item, M::SCHEMA.primary.sort, cx, |k| k.sort)?;
     let by_partition = |v: &&MultiVariant| matches(v.keys.partition, partition);
     let selected = M::VARIANTS
         .iter()
         .enumerate()
         .find(|(_, v)| by_partition(v) && matches(v.keys.sort, sort));
-    let Some((index, variant)) = selected else {
+    let Some((index, _)) = selected else {
         // Name the key that failed to discriminate: the sort key when the
         // partition alone matched a member, otherwise the partition key.
         let field = match M::SCHEMA.primary.sort {
             Some(sort) if M::VARIANTS.iter().any(|v| by_partition(&v)) => sort,
             _ => M::SCHEMA.primary.partition,
         };
-        return Err(at::<M>(&cx, field).error(DecodeFault::UnknownVariant));
+        return Err(at::<M>(cx, field).error(DecodeFault::UnknownVariant));
     };
-    M::decode_variant(index, item, &mut cx.in_document(variant.record))
+    Ok(index)
 }
 
 fn matches(pattern: KeyPattern, value: Option<&str>) -> bool {
