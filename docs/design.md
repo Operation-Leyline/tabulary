@@ -2274,9 +2274,9 @@ with a provided method constrained by `Document`, as described in section 13.
 No real DynamoDB run has verified extreme numeric continuation-key spellings
 and therefore acceptance of the 192-byte cursor number bound. The 2 MiB
 expression-binding cap uses a conservative JSON measurement rather than an
-observed service boundary. Nested ADD paths (section 7.2) have SDK-fixture coverage only.
-Transaction aggregation assumes binary megabytes
-(4 MiB) for the service's documented 4 MB limit. TTL request shapes and stored
+observed service boundary. Nested ADD paths (section 7.2) have SDK-fixture and
+emulator coverage but no real-service run. Transaction aggregation assumes
+binary megabytes (4 MiB) for the service's documented 4 MB limit. TTL request shapes and stored
 values have fixtures/emulator coverage, but real-service TTL activation timing
 and physical expiry remain unverified. Conservative item sizing also lacks
 remote billing-equivalence evidence. None of these offline gates claims exact
