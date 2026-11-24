@@ -1026,6 +1026,62 @@ produce a structured `UnsupportedType` fault, never a panic or a default.
 Partial projections have their own decoders (§9). They never call
 `Record::from_item` and never fabricate a full record with missing fields.
 
+### 6.1 Stream images
+
+DynamoDB Streams images decode with the same strict codecs as reads. The runtime
+does not read a stream, depend on a Streams SDK, or convert a Streams or Lambda
+event type: the caller turns each image into an `Item` of
+`aws_sdk_dynamodb::types::AttributeValue` and passes it in.
+
+```rust,ignore
+let orders = StreamDecoder::<OrderTable, MultiKey<OrderTable>>::multi_object();
+let images = StreamImages {
+    event: StreamEventName::from_wire(event_name)?, // INSERT, MODIFY, or REMOVE
+    keys: &keys,
+    old_image: old.as_ref(),
+    new_image: new.as_ref(),
+};
+match images.new_and_old(orders)? {
+    StreamChange::Insert(created) => { /* ... */ }
+    StreamChange::Modify { old, new } => { /* same member, same key */ }
+    StreamChange::Remove(removed) => { /* ... */ }
+}
+```
+
+Single images decode with `decode_record_image::<R>` (as `GetItem`) and
+`decode_multi_object_image::<M>` (as a polymorphic query row, §3.4). A record's
+`Keys` decode with `decode_record_key::<R, K: RecordKey<R>>`. A multi-object key
+decodes with `decode_multi_object_key::<M>` into `MultiKey<M>`: every key
+attribute is present with its declared wire type, nonempty, and within the key
+size limit, and it selects a member (`UnknownVariant` otherwise). `variant()`
+names the member, and `member::<R, K>()` decodes it as that member's key or
+returns `None` for another member. Unlike `RecordKey::decode_key`, which accepts
+a full item, both key decoders refuse any non-key attribute (`UnknownAttribute`).
+
+`StreamDecoder::<R, K>::record()` and `StreamDecoder::<M, MultiKey<M>>::multi_object()`
+pair an image decoder with a key decoder. `StreamImages` has one method per
+stream view type, each with its own result type, so a missing image is never an
+`Option`:
+
+| View | Method | Insert | Modify | Remove |
+| --- | --- | --- | --- | --- |
+| `NEW_AND_OLD_IMAGES` | `new_and_old` → `StreamChange<T>` | `Insert(new)` | `Modify { old, new }` | `Remove(old)` |
+| `NEW_IMAGE` | `new_image` → `NewImageChange<T, K>` | `Insert(new)` | `Modify(new)` | `Remove(key)` |
+| `OLD_IMAGE` | `old_image` → `OldImageChange<T, K>` | `Insert(key)` | `Modify(old)` | `Remove(old)` |
+| `KEYS_ONLY` | `keys_only` → `KeysOnlyChange<K>` | `Insert(key)` | `Modify(key)` | `Remove(key)` |
+
+Each method fails closed with a `StreamError` that names the part
+(`StreamImage::{Keys, OldImage, NewImage}`) and never an attribute value:
+`MissingImage` when the view and event require an absent image,
+`UnexpectedImage` when an image the view or event does not carry is present
+(so a record from a differently configured stream is refused, not
+reinterpreted), `Decode` with the strict `DecodeError`, and `KeyMismatch` when
+an image's primary key attribute differs from `Keys`, which must hold exactly
+the primary attributes. A modification whose old and new images select
+different multi-object members is `VariantMismatch { old, new }`, checked
+before the key comparison. An unrecognized event name is `UnknownEventName`.
+`StreamImages` and `MultiKey` Debug output redacts item contents.
+
 ## 7. Expression system
 
 Expressions use owned AST nodes with a record owner parameter. No caller writes
@@ -2496,6 +2552,7 @@ operations described above:
 | `Cursor::last_evaluated_key`, `PageMetadata::last_evaluated_key` | Explicit raw continuation-key access; Debug remains redacted. Page metadata retains SDK counts. |
 | `Batch*Progress`, `Batch*Chunk`, `Batch*Entry`, `Batch*State`, `Batch*Complete`, `Batch*Incomplete`, `Batch*Partial` | Public pure progress cores and ordered results in section 10. `positions`, `keys`, `entries`, and `calls_issued` inspect state without issuing work. Adapter round/result/error names specialize each API. `BatchAction::key/item` explicitly expose frozen raw values. |
 | `KeyPattern`, `KeyPatterns`, `MultiVariant`, `decode_object`, `multi_object_fault`, `member_fault` | Static multi-object metadata and the checks the `MultiObject` derive asserts (§3.4); public so manual implementations get the same compile-time and run-time validation. |
+| `StreamImages`, `StreamDecoder`, `StreamChange`, `NewImageChange`, `OldImageChange`, `KeysOnlyChange`, `MultiKey`, `StreamError`, `decode_*_image`, `decode_*_key` | Strict stream image decoding (§6.1). `MultiKey::item` explicitly exposes the raw key; Debug remains redacted. |
 | `Redacted::new/expose/into_inner`, `OldItem::decode`, `Table::name`, `BatchBudget::max_calls` | Explicit wrapping/raw access, standalone old-record decoding, binding identifier and budget inspection. |
 
 Reserved public hooks also exist outside `__private`: doc-hidden
@@ -2579,6 +2636,7 @@ those choices are fixed above.
 | TTL/timestamps, converters, explicit defaults, secret redaction | 4.1–4.2 |
 | Unit and discriminator-selected payload enums | 5 |
 | Strict typed faults, full paths, unknown attributes | 6 |
+| Stream image decoding for records and multi-object tables | 6.1 |
 | Typed conditions, updates, nested paths, inspectable expressions | 7 |
 | Caller-owned SDK client and explicit consistency | 8 |
 | Get, put, delete, update, consumed capacity, no hidden calls/retries | 8 |
